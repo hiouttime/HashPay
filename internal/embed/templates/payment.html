@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HashPay - 支付</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 480px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .amount {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .currency {
+            font-size: 20px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .payment-methods {
+            display: grid;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .payment-method {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .payment-method:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+        .payment-method.selected {
+            border-color: #667eea;
+            background: #f5f7ff;
+        }
+        .payment-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .payment-info {
+            flex: 1;
+        }
+        .payment-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+        .payment-rate {
+            color: #666;
+            font-size: 14px;
+        }
+        .qr-section {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .qr-section.active {
+            display: block;
+        }
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+        }
+        .address {
+            font-family: monospace;
+            font-size: 12px;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .copy-btn:hover {
+            background: #5a67d8;
+        }
+        .timer {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="currency">订单金额</div>
+            <div class="amount">¥{{.Amount}}</div>
+            <div class="order-id" style="font-size: 12px; opacity: 0.8; margin-top: 10px;">
+                订单号: {{.OrderID}}
+            </div>
+        </div>
+        
+        <div class="content">
+            <h3 style="margin-bottom: 20px;">选择支付方式</h3>
+            
+            <div class="payment-methods" id="paymentMethods">
+                <!-- 动态加载支付方式 -->
+            </div>
+            
+            <div class="qr-section" id="qrSection">
+                <h4>扫码支付</h4>
+                <div class="qr-code" id="qrCode"></div>
+                <div class="address" id="address"></div>
+                <button class="copy-btn" onclick="copyAddress()">复制地址</button>
+            </div>
+            
+            <div class="timer">
+                <span>请在 <strong id="countdown">30:00</strong> 内完成支付</span>
+                <div class="loading"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const orderID = '{{.OrderID}}';
+        let selectedMethod = null;
+        let countdownInterval = null;
+        let checkInterval = null;
+        
+        // 加载支付方式
+        async function loadPaymentMethods() {
+            try {
+                const response = await fetch(`/api/v1/order/${orderID}/payment-methods`);
+                const methods = await response.json();
+                
+                const container = document.getElementById('paymentMethods');
+                container.innerHTML = methods.map(method => `
+                    <div class="payment-method" onclick="selectPayment('${method.id}', '${method.type}')">
+                        <div class="payment-icon">${getIcon(method.type)}</div>
+                        <div class="payment-info">
+                            <div class="payment-name">${method.name}</div>
+                            <div class="payment-rate">汇率: ${method.rate} | 需支付: ${method.amount} ${method.currency}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载支付方式失败:', error);
+            }
+        }
+        
+        // 选择支付方式
+        async function selectPayment(methodId, type) {
+            // 更新UI
+            document.querySelectorAll('.payment-method').forEach(el => {
+                el.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            
+            // 获取支付信息
+            try {
+                const response = await fetch(`/api/v1/order/${orderID}/select-payment`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({method_id: methodId})
+                });
+                
+                const data = await response.json();
+                
+                if (type === 'blockchain') {
+                    // 显示二维码
+                    document.getElementById('qrSection').classList.add('active');
+                    document.getElementById('address').textContent = data.address;
+                    generateQR(data.address);
+                } else if (type === 'exchange' || type === 'wallet') {
+                    // 跳转到第三方
+                    window.location.href = data.redirect_url;
+                }
+                
+                // 开始检查支付状态
+                startCheckPayment();
+                
+            } catch (error) {
+                console.error('选择支付方式失败:', error);
+            }
+        }
+        
+        // 生成二维码
+        function generateQR(text) {
+            // 这里应该使用 qrcode.js 库
+            document.getElementById('qrCode').innerHTML = '<div style="padding: 50px;">QR Code</div>';
+        }
+        
+        // 复制地址
+        function copyAddress() {
+            const address = document.getElementById('address').textContent;
+            navigator.clipboard.writeText(address);
+            alert('地址已复制');
+        }
+        
+        // 倒计时
+        function startCountdown(seconds) {
+            let remaining = seconds;
+            
+            countdownInterval = setInterval(() => {
+                remaining--;
+                const minutes = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                document.getElementById('countdown').textContent = 
+                    `${minutes}:${secs.toString().padStart(2, '0')}`;
+                
+                if (remaining <= 0) {
+                    clearInterval(countdownInterval);
+                    alert('订单已超时');
+                    window.location.reload();
+                }
+            }, 1000);
+        }
+        
+        // 检查支付状态
+        function startCheckPayment() {
+            checkInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/v1/order/${orderID}/status`);
+                    const data = await response.json();
+                    
+                    if (data.status === 'paid') {
+                        clearInterval(checkInterval);
+                        clearInterval(countdownInterval);
+                        // 跳转到成功页面
+                        window.location.href = `/payment/success/${orderID}`;
+                    }
+                } catch (error) {
+                    console.error('检查支付状态失败:', error);
+                }
+            }, 3000);
+        }
+        
+        // 获取图标
+        function getIcon(type) {
+            const icons = {
+                'TRON': '💎',
+                'BSC': '🔶',
+                'ETH': '💠',
+                'OKX': '🏦',
+                'Huione': '💳'
+            };
+            return icons[type] || '💰';
+        }
+        
+        // 初始化
+        loadPaymentMethods();
+        startCountdown(1800);
+    </script>
+</body>
+</html>

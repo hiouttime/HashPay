@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HashPay - 支付</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 480px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .amount {
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .currency {
+            font-size: 18px;
+            color: #666;
+        }
+        
+        .timer {
+            background: #f0f0f0;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .timer-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .timer-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff4757;
+        }
+        
+        .payment-methods {
+            margin-bottom: 30px;
+        }
+        
+        .method-title {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        
+        .method-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .method-btn {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .method-btn:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+        
+        .method-btn.active {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .method-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+        
+        .method-name {
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .payment-info {
+            display: none;
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .payment-info.active {
+            display: block;
+        }
+        
+        .info-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+            word-break: break-all;
+            margin-bottom: 15px;
+        }
+        
+        .qr-code {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .qr-code canvas {
+            border: 4px solid white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .copy-btn:hover {
+            background: #5a67d8;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.expired {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .help-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .help-btn {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: #333;
+        }
+        
+        .help-btn:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="amount" id="amount">0.00</div>
+            <div class="currency" id="currency">CNY</div>
+        </div>
+        
+        <div class="timer">
+            <div class="timer-label">剩余支付时间</div>
+            <div class="timer-value" id="timer">30:00</div>
+        </div>
+        
+        <div class="payment-methods">
+            <div class="method-title">选择支付方式</div>
+            <div class="method-grid">
+                <div class="method-btn" data-chain="TRON" data-currency="USDT">
+                    <div class="method-icon">💎</div>
+                    <div class="method-name">TRON USDT</div>
+                </div>
+                <div class="method-btn" data-chain="BSC" data-currency="USDT">
+                    <div class="method-icon">🔶</div>
+                    <div class="method-name">BSC USDT</div>
+                </div>
+                <div class="method-btn" data-chain="ETH" data-currency="USDT">
+                    <div class="method-icon">⟠</div>
+                    <div class="method-name">ETH USDT</div>
+                </div>
+                <div class="method-btn" data-chain="TRON" data-currency="USDC">
+                    <div class="method-icon">💠</div>
+                    <div class="method-name">TRON USDC</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="payment-info" id="paymentInfo">
+            <div class="info-label">支付金额</div>
+            <div class="info-value" id="payAmount">0.00 USDT</div>
+            
+            <div class="info-label">收款地址</div>
+            <div class="info-value" id="payAddress">-</div>
+            
+            <button class="copy-btn" onclick="copyAddress()">复制地址</button>
+            
+            <div class="qr-code" id="qrCode"></div>
+        </div>
+        
+        <div class="status pending" id="status">
+            等待支付...
+        </div>
+        
+        <div class="help-buttons" id="helpButtons" style="display: none;">
+            <button class="help-btn" onclick="confirmPaid()">我已支付</button>
+            <a href="#" class="help-btn">需要帮助</a>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script>
+        const orderId = new URLSearchParams(window.location.search).get('id') || window.location.pathname.split('/').pop();
+        let orderData = {};
+        let expireTime = 0;
+        let selectedMethod = null;
+        let checkInterval = null;
+        
+        async function loadOrder() {
+            try {
+                const resp = await fetch(`/api/pay/status/${orderId}`);
+                const data = await resp.json();
+                
+                if (data.paid) {
+                    showSuccess();
+                    return;
+                }
+                
+                const methods = await fetch('/api/pay/methods', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({order_id: orderId})
+                });
+                const methodsData = await methods.json();
+                
+                updatePaymentMethods(methodsData.methods);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        
+        function updatePaymentMethods(methods) {
+            const grid = document.querySelector('.method-grid');
+            grid.innerHTML = '';
+            
+            methods.forEach(method => {
+                const btn = document.createElement('div');
+                btn.className = 'method-btn';
+                btn.dataset.chain = method.chain;
+                btn.dataset.currency = method.currency;
+                btn.dataset.address = method.address;
+                btn.innerHTML = `
+                    <div class="method-icon">${getIcon(method.chain)}</div>
+                    <div class="method-name">${method.chain} ${method.currency}</div>
+                `;
+                btn.onclick = () => selectMethod(method);
+                grid.appendChild(btn);
+            });
+        }
+        
+        function getIcon(chain) {
+            const icons = {
+                'TRON': '💎',
+                'BSC': '🔶',
+                'ETH': '⟠',
+                'MATIC': '🟣',
+                'SOL': '🟢',
+                'TON': '💠'
+            };
+            return icons[chain] || '💰';
+        }
+        
+        async function selectMethod(method) {
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            event.target.closest('.method-btn').classList.add('active');
+            selectedMethod = method;
+            
+            const resp = await fetch('/api/pay/submit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    order_id: orderId,
+                    chain: method.chain,
+                    currency: method.currency,
+                    address: method.address
+                })
+            });
+            
+            const data = await resp.json();
+            
+            document.getElementById('payAmount').textContent = `${data.pay_amount} ${data.pay_currency}`;
+            document.getElementById('payAddress').textContent = data.pay_address;
+            document.getElementById('paymentInfo').classList.add('active');
+            
+            QRCode.toCanvas(document.createElement('canvas'), data.pay_address, {
+                width: 200,
+                margin: 1
+            }, (err, canvas) => {
+                if (!err) {
+                    document.getElementById('qrCode').innerHTML = '';
+                    document.getElementById('qrCode').appendChild(canvas);
+                }
+            });
+            
+            startChecking();
+            
+            setTimeout(() => {
+                document.getElementById('helpButtons').style.display = 'grid';
+            }, 180000);
+        }
+        
+        function copyAddress() {
+            const address = document.getElementById('payAddress').textContent;
+            navigator.clipboard.writeText(address).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '已复制!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+        
+        function startTimer() {
+            const endTime = expireTime || Date.now() + 30 * 60 * 1000;
+            
+            const timer = setInterval(() => {
+                const now = Date.now();
+                const remaining = Math.max(0, endTime - now);
+                
+                if (remaining === 0) {
+                    clearInterval(timer);
+                    showExpired();
+                    return;
+                }
+                
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                
+                document.getElementById('timer').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+        
+        function startChecking() {
+            if (checkInterval) {
+                clearInterval(checkInterval);
+            }
+            
+            checkInterval = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/pay/status/${orderId}`);
+                    const data = await resp.json();
+                    
+                    if (data.paid) {
+                        clearInterval(checkInterval);
+                        showSuccess();
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            }, 5000);
+        }
+        
+        function showSuccess() {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = '✅ 支付成功!';
+            
+            if (checkInterval) {
+                clearInterval(checkInterval);
+            }
+        }
+        
+        function showExpired() {
+            const status = document.getElementById('status');
+            status.className = 'status expired';
+            status.textContent = '❌ 订单已过期';
+            
+            if (checkInterval) {
+                clearInterval(checkInterval);
+            }
+        }
+        
+        async function confirmPaid() {
+            alert('功能开发中...');
+        }
+        
+        window.onload = () => {
+            loadOrder();
+            startTimer();
+        };
+    </script>
+</body>
+</html>

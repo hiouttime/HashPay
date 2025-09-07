@@ -1,0 +1,76 @@
+# Binaries
+hashpay
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build directories
+dist/
+build/
+
+# Data files
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Config files with secrets
+config.yaml
+!config.yaml.example
+
+# Log files
+logs/
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Mini App
+miniapp/node_modules/
+miniapp/dist/
+miniapp/.vite/
+miniapp/package-lock.json
+miniapp/yarn.lock
+miniapp/pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Certificates
+*.pem
+*.key
+*.crt
+*.cer
+
+# Backup files
+*.bak
+*.backup
+
+# OS files
+Thumbs.db
+Desktop.ini

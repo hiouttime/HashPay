@@ -1,0 +1,26 @@
+{
+  "name": "hashpay-miniapp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0",
+    "pinia": "^2.2.0",
+    "@telegram-apps/sdk": "^1.0.0",
+    "axios": "^1.7.0",
+    "dayjs": "^1.11.0",
+    "vant": "^4.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^5.4.0",
+    "unplugin-vue-components": "^0.27.0",
+    "unplugin-auto-import": "^0.18.0",
+    "sass": "^1.77.0"
+  }
+}
