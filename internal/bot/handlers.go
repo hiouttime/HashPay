@@ -1,9 +1,7 @@
 package bot
 
 import (
-	"database/sql"
 	"fmt"
-	"hashpay/internal/database"
 	"log"
 	"strings"
 	"time"
@@ -13,25 +11,15 @@ import (
 
 func (h *Handlers) handleStart(c tele.Context) error {
 	userID := c.Sender().ID
+	log.Printf("[BOT] /start command from user %d (@%s)", userID, c.Sender().Username)
 	
-	if !h.bot.isSetup() {
-		pin := h.bot.genPIN()
-		h.bot.setPIN(userID, pin)
-		
-		log.Printf("PIN for user %d: %s", userID, pin)
-		fmt.Printf("\n========================================\n")
-		fmt.Printf("PIN CODE: %s\n", pin)
-		fmt.Printf("Please send this PIN to the bot\n")
-		fmt.Printf("========================================\n\n")
-		
-		return c.Send("欢迎使用 HashPay!\n\n" +
-			"这是初始化设置。请输入控制台显示的 4 位 PIN 码来验证管理员身份。")
-	}
+	// 正常运行模式，不处理初始化
+	// 初始化在独立的流程中完成
 	
 	if h.bot.isAdmin(userID) {
 		menu := &tele.ReplyMarkup{}
 		btnMiniApp := menu.WebApp("打开管理后台", &tele.WebApp{
-			URL: fmt.Sprintf("https://t.me/%s/miniapp", h.bot.bot.Me.Username),
+			URL: "https://testapp.timetl.com", // 开发环境URL
 		})
 		btnQuickPay := menu.Text("快速收款")
 		btnOrders := menu.Text("订单管理")
@@ -52,6 +40,7 @@ func (h *Handlers) handleStart(c tele.Context) error {
 }
 
 func (h *Handlers) handleHelp(c tele.Context) error {
+	log.Printf("[BOT] /help command from user %d (@%s)", c.Sender().ID, c.Sender().Username)
 	helpText := `HashPay 帮助
 
 管理员命令：
@@ -73,6 +62,7 @@ func (h *Handlers) handleHelp(c tele.Context) error {
 }
 
 func (h *Handlers) handleStats(c tele.Context) error {
+	log.Printf("[BOT] /stats command from user %d (@%s)", c.Sender().ID, c.Sender().Username)
 	if !h.bot.isAdmin(c.Sender().ID) {
 		return c.Send("此命令仅管理员可用")
 	}
@@ -114,6 +104,7 @@ func (h *Handlers) handleStats(c tele.Context) error {
 }
 
 func (h *Handlers) handleOrders(c tele.Context) error {
+	log.Printf("[BOT] /orders command from user %d (@%s)", c.Sender().ID, c.Sender().Username)
 	if !h.bot.isAdmin(c.Sender().ID) {
 		return c.Send("此命令仅管理员可用")
 	}
@@ -153,6 +144,7 @@ func (h *Handlers) handleOrders(c tele.Context) error {
 }
 
 func (h *Handlers) handleConfig(c tele.Context) error {
+	log.Printf("[BOT] /config command from user %d (@%s)", c.Sender().ID, c.Sender().Username)
 	if !h.bot.isAdmin(c.Sender().ID) {
 		return c.Send("此命令仅管理员可用")
 	}
@@ -178,49 +170,17 @@ func (h *Handlers) handleConfig(c tele.Context) error {
 func (h *Handlers) handleText(c tele.Context) error {
 	text := c.Text()
 	userID := c.Sender().ID
+	log.Printf("[BOT] Text message from user %d (@%s): %s", userID, c.Sender().Username, text)
 	
-	if len(text) == 4 && h.bot.pins[userID] != "" {
-		if h.bot.checkPIN(userID, text) {
-			now := time.Now().Unix()
-			
-			user := &database.User{
-				TgID:      userID,
-				Username:  sql.NullString{String: c.Sender().Username, Valid: true},
-				IsAdmin:   sql.NullInt64{Int64: 1, Valid: true},
-				CreatedAt: now,
-				UpdatedAt: now,
-			}
-			
-			err := h.bot.db.CreateUser(user)
-			if err != nil {
-				return c.Send("初始化失败，请重试")
-			}
-			
-			err = h.bot.db.SetConfig("setup_completed", "true")
-			if err != nil {
-				return c.Send("配置保存失败")
-			}
-			
-			h.bot.removePIN(userID)
-			
-			menu := &tele.ReplyMarkup{}
-			btnMiniApp := menu.WebApp("开始配置", &tele.WebApp{
-				URL: fmt.Sprintf("https://t.me/%s/miniapp", h.bot.bot.Me.Username),
-			})
-			menu.Inline(menu.Row(btnMiniApp))
-			
-			return c.Send("✅ 管理员认证成功!\n\n" +
-				"请点击下方按钮打开 Mini App 完成初始化配置：", menu)
-		} else {
-			return c.Send("❌ PIN 码错误，请重新输入")
-		}
-	}
+	// 正常运行模式下不处理PIN验证
+	// PIN验证只在初始化流程的临时Bot中处理
 	
 	return nil
 }
 
 func (h *Handlers) handleInlineQuery(c tele.Context) error {
 	query := c.Query().Text
+	log.Printf("[BOT] Inline query from user %d: %s", c.Sender().ID, query)
 	
 	results := make(tele.Results, 0)
 	
@@ -260,6 +220,7 @@ func (h *Handlers) handleInlineResult(c tele.Context) error {
 
 func (h *Handlers) handleCallback(c tele.Context) error {
 	data := c.Callback().Data
+	log.Printf("[BOT] Callback from user %d: %s", c.Sender().ID, data)
 	
 	switch {
 	case strings.HasPrefix(data, "cfg_"):

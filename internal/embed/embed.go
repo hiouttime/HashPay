@@ -2,16 +2,10 @@ package embed
 
 import (
 	_ "embed"
-	"embed"
 )
 
-// Web 静态文件
-//go:embed all:web
-var WebFiles embed.FS
-
-// Mini App 静态文件
-//go:embed all:miniapp/dist
-var MiniAppFiles embed.FS
+// 注意: miniapp/dist 需要在构建前先执行 npm run build
+// 开发时可以直接从文件系统读取
 
 // 支付页面模板
 //go:embed templates/payment.html

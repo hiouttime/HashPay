@@ -3,14 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"hashpay/internal/database/sqlc"
+	"hashpay/internal/database"
 	"time"
 
 	"github.com/shopspring/decimal"
 )
 
 type StatsService struct {
-	db     db.Querier
+	db     *database.DB
 	orders *OrderService
 }
 
@@ -48,7 +48,7 @@ type PaymentStats struct {
 	Percentage  float64        `json:"percentage"`
 }
 
-func NewStatsService(database db.Querier, orders *OrderService) *StatsService {
+func NewStatsService(database *database.DB, orders *OrderService) *StatsService {
 	return &StatsService{
 		db:     database,
 		orders: orders,
@@ -80,14 +80,14 @@ func (s *StatsService) GetOverviewStats(ctx context.Context) (*Stats, error) {
 	for _, order := range allOrders {
 		// 总计
 		stats.TotalOrders++
-		if order.Status == 1 {
+		if order.Status.Valid && order.Status.Int64 == 1 {
 			stats.TotalAmount = stats.TotalAmount.Add(decimal.NewFromFloat(order.Amount))
 		}
 		
 		// 今日
 		if order.CreatedAt >= todayStart {
 			stats.TodayOrders++
-			if order.Status == 1 {
+			if order.Status.Valid && order.Status.Int64 == 1 {
 				stats.TodaySuccess++
 				stats.TodayAmount = stats.TodayAmount.Add(decimal.NewFromFloat(order.Amount))
 			}
@@ -96,7 +96,7 @@ func (s *StatsService) GetOverviewStats(ctx context.Context) (*Stats, error) {
 		// 本周
 		if order.CreatedAt >= weekStart {
 			stats.WeekOrders++
-			if order.Status == 1 {
+			if order.Status.Valid && order.Status.Int64 == 1 {
 				stats.WeekAmount = stats.WeekAmount.Add(decimal.NewFromFloat(order.Amount))
 			}
 		}
@@ -104,13 +104,13 @@ func (s *StatsService) GetOverviewStats(ctx context.Context) (*Stats, error) {
 		// 本月
 		if order.CreatedAt >= monthStart {
 			stats.MonthOrders++
-			if order.Status == 1 {
+			if order.Status.Valid && order.Status.Int64 == 1 {
 				stats.MonthAmount = stats.MonthAmount.Add(decimal.NewFromFloat(order.Amount))
 			}
 		}
 		
 		// 待支付
-		if order.Status == 0 && order.ExpireAt > now.Unix() {
+		if order.Status.Valid && order.Status.Int64 == 0 && order.ExpireAt > now.Unix() {
 			stats.PendingOrders++
 		}
 		
@@ -178,7 +178,7 @@ func (s *StatsService) GetDailyStats(ctx context.Context, days int) ([]DailyStat
 		for _, order := range allOrders {
 			if order.CreatedAt >= dayStart && order.CreatedAt < dayEnd {
 				daily.OrderCount++
-				if order.Status == 1 {
+				if order.Status.Valid && order.Status.Int64 == 1 {
 					daily.SuccessCount++
 					daily.Amount = daily.Amount.Add(decimal.NewFromFloat(order.Amount))
 				}
@@ -210,7 +210,7 @@ func (s *StatsService) GetPaymentStats(ctx context.Context) ([]PaymentStats, err
 	totalOrders := 0
 	
 	for _, order := range allOrders {
-		if order.Status != 1 {
+		if !order.Status.Valid || order.Status.Int64 != 1 {
 			continue
 		}
 		
@@ -262,7 +262,7 @@ func (s *StatsService) GetHourlyStats(ctx context.Context) (map[int]int, error) 
 	}
 	
 	for _, order := range allOrders {
-		if order.CreatedAt >= todayStart && order.Status == 1 {
+		if order.CreatedAt >= todayStart && order.Status.Valid && order.Status.Int64 == 1 {
 			hour := time.Unix(order.CreatedAt, 0).Hour()
 			hourlyStats[hour]++
 		}
@@ -280,16 +280,17 @@ func (s *StatsService) GetTopMerchants(ctx context.Context, limit int) ([]Mercha
 	merchantMap := make(map[string]*MerchantStats)
 	
 	for _, order := range allOrders {
-		if !order.SiteID.Valid || order.Status != 1 {
+		if !order.SiteID.Valid || !order.Status.Valid || order.Status.Int64 != 1 {
 			continue
 		}
 		
 		siteID := order.SiteID.String
 		if _, exists := merchantMap[siteID]; !exists {
-			site, _ := s.db.GetSite(ctx, siteID)
+			// TODO: 获取站点信息
+			siteName := "Site-" + siteID
 			merchantMap[siteID] = &MerchantStats{
 				SiteID:      siteID,
-				SiteName:    site.Name,
+				SiteName:    siteName,
 				TotalAmount: decimal.Zero,
 			}
 		}
@@ -327,11 +328,10 @@ type MerchantStats struct {
 	TotalAmount decimal.Decimal `json:"total_amount"`
 }
 
-func (s *StatsService) getAllOrders(ctx context.Context) ([]db.Order, error) {
+func (s *StatsService) getAllOrders(ctx context.Context) ([]database.Order, error) {
 	// 这里应该实现一个获取所有订单的查询
 	// 暂时使用 GetPendingOrders 作为示例
-	futureTime := time.Now().Add(365 * 24 * time.Hour).Unix()
-	return s.db.GetPendingOrders(ctx, futureTime)
+	return s.db.GetPendingOrders()
 }
 
 func (s *StatsService) ExportReport(ctx context.Context, startDate, endDate time.Time) ([]byte, error) {

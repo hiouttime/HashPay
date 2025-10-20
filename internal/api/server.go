@@ -52,10 +52,39 @@ func (s *Server) setupRoutes() {
 	// 健康检查
 	s.app.Get("/health", s.handleHealth)
 	
-	// 静态文件和支付页面
-	// Fiber v3 removed Static method, use Get instead
+	// 首页 - 返回Mini App页面
 	s.app.Get("/", func(c fiber.Ctx) error {
-		return c.SendFile("./web/index.html")
+		// 使用React版本的Mini App
+		return c.SendFile("./miniapp/dist/index.html")
+	})
+	
+	// 静态资源处理
+	s.app.Get("/assets/*", func(c fiber.Ctx) error {
+		return c.SendFile("./miniapp/dist" + c.Path())
+	})
+	
+	// 处理其他Mini App路由 (React Router)
+	s.app.Get("/*", func(c fiber.Ctx) error {
+		path := c.Path()
+		// API路由和静态资源除外
+		if len(path) > 4 && (path[:4] == "/api" || path[:7] == "/assets") {
+			return c.Next()
+		}
+		return c.SendFile("./miniapp/dist/index.html")
+	})
+	
+	// API信息端点
+	s.app.Get("/api", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"name":    "HashPay API",
+			"version": "1.0.0",
+			"status":  "running",
+			"endpoints": fiber.Map{
+				"health":  "/health",
+				"api":     "/api",
+				"payment": "/pay/:orderId",
+			},
+		})
 	})
 	s.app.Get("/pay/:orderId", s.handlePaymentPage)
 	

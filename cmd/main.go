@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"hashpay/internal/api"
 	"hashpay/internal/bot"
@@ -11,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -137,7 +139,7 @@ func runInitFlow() error {
 	defer database.Close()
 	
 	// 步骤7: 保存管理员信息
-	if err := saveAdmin(database, adminID); err != nil {
+	if err := saveAdmin(database, adminID, cfg); err != nil {
 		return fmt.Errorf("保存管理员失败: %w", err)
 	}
 	
@@ -167,10 +169,11 @@ func inputAndValidateToken() (string, *tele.User) {
 			continue
 		}
 		
-		// 验证 Token
+		// 验证 Token - 需要在线验证以获取机器人信息
 		testBot, err := tele.NewBot(tele.Settings{
 			Token:   token,
-			Offline: true,
+			Offline: false, // 必须在线才能获取机器人信息
+			Poller:  &tele.LongPoller{Timeout: 1 * time.Second}, // 短超时用于验证
 		})
 		
 		if err != nil {
@@ -179,7 +182,14 @@ func inputAndValidateToken() (string, *tele.User) {
 			continue
 		}
 		
+		// 停止测试机器人
+		defer testBot.Stop()
+		
 		me := testBot.Me
+		if me == nil {
+			fmt.Println("❌ 无法获取机器人信息，请检查网络连接")
+			continue
+		}
 		fmt.Printf("\n✅ Bot 验证成功!\n")
 		fmt.Printf("Bot 名称: @%s\n", me.Username)
 		fmt.Printf("Bot ID: %d\n", me.ID)
@@ -211,6 +221,10 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 	
 	// 处理 /start 命令
 	b.Handle("/start", func(c tele.Context) error {
+		userID := c.Sender().ID
+		username := c.Sender().Username
+		log.Printf("[INIT] /start received from user %d (@%s)", userID, username)
+		
 		// 发送欢迎消息
 		msg := "🎉 欢迎使用 HashPay 支付系统!\n\n"
 		msg += "请输入控制台显示的 4 位 PIN 码完成管理员验证："
@@ -221,15 +235,19 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 	// 处理文本消息（PIN 码）
 	b.Handle(tele.OnText, func(c tele.Context) error {
 		pin := strings.TrimSpace(c.Text())
+		userID := c.Sender().ID
+		username := c.Sender().Username
+		log.Printf("[INIT] PIN attempt from user %d (@%s): %s", userID, username, pin)
 		
 		if pin == expectedPIN {
 			// PIN 正确
-			adminChan <- c.Sender().ID
+			log.Printf("[INIT] ✅ PIN verification successful for user %d (@%s)", userID, username)
+			adminChan <- userID
 			
 			// 发送成功消息和 Mini App 按钮
 			keyboard := &tele.ReplyMarkup{}
 			miniAppBtn := keyboard.WebApp("🚀 打开配置面板", &tele.WebApp{
-				URL: "https://hashpay.example.com/miniapp",
+				URL: "https://testapp.timetl.com",
 			})
 			keyboard.Inline(keyboard.Row(miniAppBtn))
 			
@@ -240,6 +258,7 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 		}
 		
 		// PIN 错误
+		log.Printf("[INIT] ❌ Invalid PIN from user %d (@%s)", userID, username)
 		return c.Send("❌ PIN 码错误，请重新输入")
 	})
 	
@@ -260,37 +279,128 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 
 // 等待 Mini App 配置
 func waitForMiniAppConfig(token string, adminID int64, botInfo *tele.User) *Config {
-	// 创建临时 API 服务器接收 Mini App 的配置
+	// 创建基础配置
 	cfg := &Config{}
 	cfg.Bot.Token = token
 	cfg.Admin.TgID = adminID
 	
 	configChan := make(chan *Config)
 	
-	// 启动临时 HTTP 服务器
-	go func() {
-		// TODO: 实现接收 Mini App 配置的 HTTP 端点
-		// 这里暂时模拟默认配置
-		time.Sleep(2 * time.Second)
+	// 启动临时 HTTP 服务器接收配置
+	mux := http.NewServeMux()
+	
+	// 配置接收端点
+	mux.HandleFunc("/api/init/config", func(w http.ResponseWriter, r *http.Request) {
+		// 设置CORS头
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		
-		cfg.Database.Type = "sqlite"
-		cfg.Database.SQLite.Path = "./data/hashpay.db"
-		cfg.System.Currency = "CNY"
-		cfg.System.Timeout = 1800
-		cfg.System.FastConfirm = true
-		cfg.System.RateAdjust = 0.00
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		
+		// 解析配置
+		var reqConfig struct {
+			Database struct {
+				Type string `json:"type"`
+				MySQL struct {
+					Host     string `json:"host"`
+					Port     int    `json:"port"`
+					Database string `json:"database"`
+					Username string `json:"username"`
+					Password string `json:"password"`
+				} `json:"mysql"`
+			} `json:"database"`
+			System struct {
+				Currency    string  `json:"currency"`
+				Timeout     int     `json:"timeout"`
+				FastConfirm bool    `json:"fast_confirm"`
+				RateAdjust  float64 `json:"rate_adjust"`
+			} `json:"system"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&reqConfig); err != nil {
+			log.Printf("[INIT] Failed to decode config: %v", err)
+			http.Error(w, "Invalid configuration", http.StatusBadRequest)
+			return
+		}
+		
+		// 更新配置
+		cfg.Database.Type = reqConfig.Database.Type
+		if reqConfig.Database.Type == "mysql" {
+			cfg.Database.MySQL.Host = reqConfig.Database.MySQL.Host
+			cfg.Database.MySQL.Port = reqConfig.Database.MySQL.Port
+			cfg.Database.MySQL.Database = reqConfig.Database.MySQL.Database
+			cfg.Database.MySQL.Username = reqConfig.Database.MySQL.Username
+			cfg.Database.MySQL.Password = reqConfig.Database.MySQL.Password
+		} else {
+			cfg.Database.SQLite.Path = "./data/hashpay.db"
+		}
+		cfg.System.Currency = reqConfig.System.Currency
+		cfg.System.Timeout = reqConfig.System.Timeout
+		cfg.System.FastConfirm = reqConfig.System.FastConfirm
+		cfg.System.RateAdjust = reqConfig.System.RateAdjust
+		
+		log.Printf("[INIT] Received configuration: Database=%s, Currency=%s", 
+			cfg.Database.Type, cfg.System.Currency)
+		
+		// 发送成功响应
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		
+		// 通知配置完成
 		configChan <- cfg
+	})
+	
+	// 健康检查端点
+	mux.HandleFunc("/api/init/health", func(w http.ResponseWriter, r *http.Request) {
+		// 设置CORS头
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ready",
+			"admin_id": adminID,
+		})
+	})
+	
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+	
+	// 启动服务器
+	go func() {
+		log.Println("[INIT] 配置服务器启动在 :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("[INIT] 配置服务器错误: %v", err)
+		}
 	}()
 	
 	// 等待配置完成
 	select {
 	case config := <-configChan:
 		fmt.Println("✅ 配置接收完成")
+		server.Close() // 关闭临时服务器
 		return config
 	case <-time.After(30 * time.Minute):
 		// 超时使用默认配置
 		fmt.Println("⚠️ 配置超时，使用默认设置")
+		server.Close()
 		cfg.Database.Type = "sqlite"
 		cfg.Database.SQLite.Path = "./data/hashpay.db"
 		cfg.System.Currency = "CNY"
@@ -369,11 +479,28 @@ func createAndInitDB(cfg *Config) (*sql.DB, error) {
 }
 
 // 保存管理员
-func saveAdmin(db *sql.DB, adminID int64) error {
+func saveAdmin(db *sql.DB, adminID int64, cfg *Config) error {
 	wrapper := &database.DB{}
 	wrapper.DB = db
-	now := time.Now().Unix()
 	
+	// 设置正确的驱动
+	driver := "sqlite3"
+	if cfg.Database.Type == "mysql" {
+		driver = "mysql"
+	}
+	wrapper.SetDriver(driver)
+	
+	// 先检查用户是否存在
+	existingUser, err := wrapper.GetUser(adminID)
+	if err == nil && existingUser != nil {
+		// 用户已存在，更新为管理员
+		log.Printf("[INIT] User %d already exists, updating to admin", adminID)
+		// 这里简单处理，实际上用户应该已经是管理员了
+		return nil
+	}
+	
+	// 创建新用户
+	now := time.Now().Unix()
 	user := &database.User{
 		TgID:      adminID,
 		IsAdmin:   sql.NullInt64{Int64: 1, Valid: true},

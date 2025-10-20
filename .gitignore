@@ -45,7 +45,6 @@ logs/
 
 # Mini App
 miniapp/node_modules/
-miniapp/dist/
 miniapp/.vite/
 miniapp/package-lock.json
 miniapp/yarn.lock

@@ -8,7 +8,7 @@ import (
 )
 
 func LoggerMiddleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		start := time.Now()
 		
 		// 处理请求
@@ -35,7 +35,7 @@ func LoggerMiddleware() fiber.Handler {
 }
 
 func RecoverMiddleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		defer func() {
 			if r := recover(); r != nil {
 				utils.Error("Panic recovered in HTTP handler",
