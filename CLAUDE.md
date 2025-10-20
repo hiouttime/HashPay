@@ -19,41 +19,24 @@ HashPay 是一个以 Telegram Bot 为核心的支付处理系统，通过 Telegr
 - **数据库**: SQLite3 / MySQL (可配置)
 - **Mini App**: React + Vite (在 miniapp/ 目录)
 - **数据库代码生成**: sqlc
-- **支付集成**: 多链支持 (Ethereum, Solana, TON)
+- **支付集成**: 区块链支付（当前实现：TRON、BSC；其余链处于规划阶段）
 
 ## 项目结构
 
 ```
-/cmd/main.go              - 主入口，包含初始化流程和配置管理
-/cmd/migrations/          - 数据库迁移 SQL 文件(嵌入式)
+/main.go                 - 精简入口，调用 internal/app 启动服务
 /internal/
+  ├── app/               - 应用生命周期管理、初始化流程、配置读写
   ├── api/               - HTTP API 服务端点和 Web 页面
-  │   ├── server.go      - API 服务器
-  │   └── handlers.go    - 请求处理器
-  ├── bot/               - Telegram Bot 处理逻辑
-  │   ├── bot.go         - Bot 核心逻辑
-  │   └── handlers.go    - 命令处理器
-  ├── database/          - 数据库操作封装
-  │   ├── db.go          - 数据库抽象层
-  │   └── migrations/    - 迁移文件
-  ├── payment/           - 支付处理核心逻辑
-  │   ├── blockchain.go  - 区块链接口定义
-  │   ├── ethereum.go    - 以太坊支持
-  │   ├── solana.go      - Solana 支持
-  │   ├── ton.go         - TON 支持
-  │   ├── exchange.go    - 交易所集成
-  │   ├── wallet.go      - 钱包管理
-  │   ├── scheduler.go   - 交易调度
-  │   └── types.go       - 支付类型定义
-  ├── service/           - 业务服务层
-  │   ├── order.go       - 订单管理
-  │   ├── stats.go       - 统计服务
-  │   ├── rate.go        - 汇率服务
-  │   └── notification.go - 通知服务
+  ├── bot/               - Telegram Bot 适配层
+  ├── command/           - 细分的命令处理器（/start、/help 等）
+  ├── database/          - 数据库访问与实体封装
+  ├── payment/           - 支付处理逻辑（当前实现 Tron/BSC 链）
+  ├── service/           - 业务服务层（占位，含订单/统计等逻辑）
   ├── middleware/        - HTTP 中间件
   └── utils/             - 工具函数
 /miniapp/                - React + Vite Mini App 前端
-/pages/                  - Web 收款页面(规划中)
+/web/                    - Web 收款页面与静态资源
 ```
 
 ## 常用开发命令
@@ -61,7 +44,7 @@ HashPay 是一个以 Telegram Bot 为核心的支付处理系统，通过 Telegr
 ```bash
 # 构建和运行
 make build              # 构建可执行文件
-make run                # 运行项目 (go run cmd/main.go)
+make run                # 运行项目 (go run .)
 make dev                # 开发模式运行
 
 # 测试
@@ -84,7 +67,7 @@ make build-all          # 构建所有平台版本
 
 ## 核心架构
 
-### 1. 初始化流程 (cmd/main.go)
+### 1. 初始化流程 (internal/app)
 - 首次运行时通过 PIN 码验证管理员身份
 - 通过 Mini App 配置数据库和系统参数
 - 自动创建数据库表和初始配置
@@ -96,11 +79,9 @@ make build-all          # 构建所有平台版本
 - 配置和状态持久化存储
 
 ### 3. 支付处理核心 (internal/payment/)
-- **区块链支持**: Ethereum、Solana、TON 多链集成
-- **交易所对接**: 支持主流交易所 API 集成
-- **钱包管理**: 支持 API 钱包的对接和管理
-- **汇率服务**: 实时汇率获取和调整
-- **交易调度**: 自动化交易监控和确认
+- **区块链支持**: 现成实现包括 Tron 与 BSC，其他链条在规划或占位阶段
+- **交易调度**: 利用 `APIScheduler` 轮询链上交易状态
+- **扩展点**: exchange、wallet 相关文件为占位实现，补充时需完善
 
 ### 4. Telegram 集成
 - **Bot 服务** (internal/bot/): 命令处理、用户交互、支付通知
@@ -116,8 +97,7 @@ make build-all          # 构建所有平台版本
 ## 数据库迁移
 
 迁移文件位于：
-- `/cmd/migrations/init.sql` (嵌入到二进制文件)
-- `/internal/database/migrations/001_init.sql` (开发参考)
+- `/internal/database/migrations/init.sql`（通过 `internal/database` 包嵌入，可直接执行）
 
 ## 配置文件格式
 
@@ -140,6 +120,7 @@ admin:
 
 ## 注意事项
 
-1. 数据库包导入路径已从 `database/sqlc` 更改为 `database`
-2. 使用 `database.` 前缀访问数据库类型，而不是 `db.`
-3. 检查 Order.Status 等可空字段时使用 `.Valid` 和 `.Int64`/`.String`
+1. 入口文件保持精简，请将业务初始化放在 `internal/app` 内
+2. SQLite 驱动通过 `internal/app/config.go` 中的匿名导入注册
+3. Bot 命令拆分在 `internal/command` 下，新增命令时按文件夹拆分
+4. 提交前请确认未将真实凭据写入 `config.yaml`，建议改用 `config.yaml.example`

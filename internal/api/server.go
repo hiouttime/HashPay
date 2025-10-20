@@ -2,10 +2,11 @@ package api
 
 import (
 	"database/sql"
+	"time"
+
 	"hashpay/internal/database"
 	"hashpay/internal/payment"
-	"log"
-	"time"
+	"hashpay/internal/ui"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -24,45 +25,45 @@ func NewServer(sqlDB *sql.DB) *Server {
 		AppName:      "HashPay",
 		ErrorHandler: errorHandler,
 	})
-	
+
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: []string{"*"},
 		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "X-Api-Key", "X-Sign"},
 	}))
-	
+
 	db := &database.DB{}
 	db.DB = sqlDB
 	scheduler := payment.NewScheduler(db, 30*time.Second)
-	
+
 	server := &Server{
 		app:       app,
 		db:        db,
 		scheduler: scheduler,
 	}
-	
+
 	server.setupRoutes()
 	server.setupScheduler()
-	
+
 	return server
 }
 
 func (s *Server) setupRoutes() {
 	// 健康检查
 	s.app.Get("/health", s.handleHealth)
-	
+
 	// 首页 - 返回Mini App页面
 	s.app.Get("/", func(c fiber.Ctx) error {
 		// 使用React版本的Mini App
 		return c.SendFile("./miniapp/dist/index.html")
 	})
-	
+
 	// 静态资源处理
 	s.app.Get("/assets/*", func(c fiber.Ctx) error {
 		return c.SendFile("./miniapp/dist" + c.Path())
 	})
-	
+
 	// 处理其他Mini App路由 (React Router)
 	s.app.Get("/*", func(c fiber.Ctx) error {
 		path := c.Path()
@@ -72,7 +73,7 @@ func (s *Server) setupRoutes() {
 		}
 		return c.SendFile("./miniapp/dist/index.html")
 	})
-	
+
 	// API信息端点
 	s.app.Get("/api", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -87,20 +88,20 @@ func (s *Server) setupRoutes() {
 		})
 	})
 	s.app.Get("/pay/:orderId", s.handlePaymentPage)
-	
+
 	// API 路由
 	api := s.app.Group("/api")
-	
+
 	// 商户接口
 	api.Post("/order", s.authMiddleware, s.handleCreateOrder)
 	api.Get("/order/:orderId", s.authMiddleware, s.handleGetOrder)
 	api.Post("/webhook", s.handleWebhook)
-	
+
 	// 支付接口
 	api.Get("/order/:orderId/payment-methods", s.handleGetPaymentMethods)
 	api.Post("/order/:orderId/select-payment", s.handleSelectPayment)
 	api.Get("/order/:orderId/status", s.handleCheckStatus)
-	
+
 	// 内部接口（Mini App 使用）
 	api.Get("/config", s.internalAuth, s.handleGetConfig)
 	api.Put("/config", s.internalAuth, s.handleUpdateConfig)
@@ -113,17 +114,17 @@ func (s *Server) setupScheduler() {
 	// Get all payment methods and filter blockchain types
 	payments, err := s.db.GetAllPayments()
 	if err != nil {
-		log.Printf("Failed to load payment methods: %v", err)
+		ui.Error("加载支付方式失败: %v", err)
 		return
 	}
-	
+
 	for _, p := range payments {
 		// Only process blockchain payment methods
 		if p.Type != "blockchain" {
 			continue
 		}
 		chain := payment.ChainType(p.Chain.String)
-		
+
 		var api payment.ChainAPI
 		switch chain {
 		case payment.ChainTRON:
@@ -131,17 +132,17 @@ func (s *Server) setupScheduler() {
 		case payment.ChainBSC:
 			api = payment.NewBSCAPI("https://api.bscscan.com", p.ApiKey.String)
 		}
-		
+
 		if api != nil {
 			s.scheduler.RegisterChain(chain, api)
 		}
 	}
-	
+
 	s.scheduler.Start()
 }
 
 func (s *Server) Start(addr string) error {
-	log.Printf("Server starting on %s", addr)
+	ui.Info("HTTP 服务监听在 %s", addr)
 	return s.app.Listen(addr)
 }
 
@@ -149,4 +150,3 @@ func (s *Server) Stop() error {
 	s.scheduler.Stop()
 	return s.app.Shutdown()
 }
-

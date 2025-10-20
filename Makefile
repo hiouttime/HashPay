@@ -2,15 +2,15 @@
 
 # 构建项目
 build:
-	go build -o hashpay cmd/main.go
+	go build -o hashpay .
 
 # 运行项目
 run:
-	go run cmd/main.go
+	go run .
 
 # 开发模式
 dev:
-	go run cmd/main.go
+	go run .
 
 # 运行测试
 test:
@@ -28,7 +28,7 @@ sqlc:
 # 执行数据库迁移
 migrate:
 	@echo "Applying database migrations..."
-	@sqlite3 ./data/hashpay.db < internal/database/migrations/001_init.sql
+	@sqlite3 ./data/hashpay.db < internal/database/migrations/init.sql
 
 # 安装依赖
 deps:
@@ -44,14 +44,14 @@ miniapp-build:
 
 # 跨平台编译
 build-linux:
-	GOOS=linux GOARCH=amd64 go build -o hashpay-linux-amd64 cmd/main.go
+	GOOS=linux GOARCH=amd64 go build -o hashpay-linux-amd64 .
 
 build-mac:
-	GOOS=darwin GOARCH=amd64 go build -o hashpay-darwin-amd64 cmd/main.go
-	GOOS=darwin GOARCH=arm64 go build -o hashpay-darwin-arm64 cmd/main.go
+	GOOS=darwin GOARCH=amd64 go build -o hashpay-darwin-amd64 .
+	GOOS=darwin GOARCH=arm64 go build -o hashpay-darwin-arm64 .
 
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -o hashpay-windows-amd64.exe cmd/main.go
+	GOOS=windows GOARCH=amd64 go build -o hashpay-windows-amd64.exe .
 
 build-all: build-linux build-mac build-windows
 

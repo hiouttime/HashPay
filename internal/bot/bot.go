@@ -3,31 +3,28 @@ package bot
 import (
 	"database/sql"
 	"fmt"
-	"hashpay/internal/database"
-	"log"
-	"math/rand"
-	"sync"
 	"time"
+
+	"hashpay/internal/command"
+	configcmd "hashpay/internal/command/config"
+	"hashpay/internal/command/help"
+	"hashpay/internal/command/orders"
+	"hashpay/internal/command/start"
+	"hashpay/internal/command/stats"
+	"hashpay/internal/database"
+	"hashpay/internal/ui"
 
 	tele "gopkg.in/telebot.v4"
 )
 
 type Bot struct {
-	bot      *tele.Bot
-	db       *database.DB
-	handlers *Handlers
-	mu       sync.RWMutex
-	pins     map[int64]string
-	config   *Config
+	bot *tele.Bot
+	db  *database.DB
 }
 
 type Config struct {
-	Token   string
-	AdminID int64
-}
-
-type Handlers struct {
-	bot *Bot
+	Token string
+	Admin int64
 }
 
 func New(cfg *Config, db *sql.DB) (*Bot, error) {
@@ -44,26 +41,23 @@ func New(cfg *Config, db *sql.DB) (*Bot, error) {
 	dbWrapper := &database.DB{}
 	dbWrapper.DB = db
 	bot := &Bot{
-		bot:      b,
-		db:       dbWrapper,
-		pins:     make(map[int64]string),
-		config:   cfg,
+		bot: b,
+		db:  dbWrapper,
 	}
-	
-	bot.handlers = &Handlers{bot: bot}
+
 	bot.setupHandlers()
 
 	return bot, nil
 }
 
 func (b *Bot) Start() {
-	log.Println("Bot started")
+	ui.Info("Bot 服务启动")
 	b.bot.Start()
 }
 
 func (b *Bot) Stop() {
 	b.bot.Stop()
-	log.Println("Bot stopped")
+	ui.Info("Bot 服务停止")
 }
 
 func (b *Bot) Username() string {
@@ -74,51 +68,41 @@ func (b *Bot) Username() string {
 }
 
 func (b *Bot) setupHandlers() {
-	b.bot.Handle("/start", b.handlers.handleStart)
-	b.bot.Handle("/help", b.handlers.handleHelp)
-	b.bot.Handle("/stats", b.handlers.handleStats)
-	b.bot.Handle("/orders", b.handlers.handleOrders)
-	b.bot.Handle("/config", b.handlers.handleConfig)
-	
-	b.bot.Handle(tele.OnQuery, b.handlers.handleInlineQuery)
-	b.bot.Handle(tele.OnInlineResult, b.handlers.handleInlineResult)
-	b.bot.Handle(tele.OnCallback, b.handlers.handleCallback)
-	b.bot.Handle(tele.OnText, b.handlers.handleText)
-}
-
-func (b *Bot) genPIN() string {
-	rand.Seed(time.Now().UnixNano())
-	return fmt.Sprintf("%04d", rand.Intn(10000))
-}
-
-func (b *Bot) setPIN(userID int64, pin string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.pins[userID] = pin
-}
-
-func (b *Bot) checkPIN(userID int64, pin string) bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	expectedPIN, exists := b.pins[userID]
-	if !exists {
-		return false
+	deps := command.Dependencies{
+		DB:         b.db,
+		IsAdmin:    b.IsAdmin,
+		Username:   b.Username,
+		MiniAppURL: "",
 	}
-	return expectedPIN == pin
+
+	handlers := []command.Handler{
+		start.New(deps),
+		help.New(deps),
+		stats.New(deps),
+		orders.New(deps),
+		configcmd.New(deps),
+	}
+
+	for _, h := range handlers {
+		b.bot.Handle(h.Command(), h.Handle)
+	}
+
+	b.bot.Handle(tele.OnQuery, b.handleInlineQuery)
+	b.bot.Handle(tele.OnInlineResult, b.handleInlineResult)
+	b.bot.Handle(tele.OnCallback, b.handleCallback)
+	b.bot.Handle(tele.OnText, b.handleText)
 }
 
-func (b *Bot) removePIN(userID int64) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.pins, userID)
-}
-
-func (b *Bot) isAdmin(userID int64) bool {
+func (b *Bot) IsAdmin(userID int64) bool {
 	user, err := b.db.GetUser(userID)
 	if err != nil {
 		return false
 	}
 	return user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+}
+
+func (b *Bot) DB() *database.DB {
+	return b.db
 }
 
 func (b *Bot) isSetup() bool {

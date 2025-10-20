@@ -3,7 +3,9 @@ module hashpay
 go 1.25.0
 
 require (
+	github.com/fatih/color v1.13.0
 	github.com/gofiber/fiber/v3 v3.0.0-rc.1
+	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/shopspring/decimal v1.4.0
 	gopkg.in/telebot.v4 v4.0.0-beta.4
@@ -12,6 +14,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/gofiber/schema v1.6.0 // indirect
 	github.com/gofiber/utils/v2 v2.0.0-rc.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
