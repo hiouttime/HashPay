@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"hashpay/internal/database"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 )
 
@@ -27,15 +27,68 @@ func NewServer(sqlDB *sql.DB) *Server {
 	})
 
 	app.Use(recover.New())
-	app.Use(logger.New())
+	app.Use(func(c fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		latency := time.Since(start)
+
+		status := c.Response().StatusCode()
+		if status == 0 {
+			status = fiber.StatusOK
+		}
+
+		if err != nil {
+			var fiberErr *fiber.Error
+			if errors.As(err, &fiberErr) {
+				status = fiberErr.Code
+			} else if status < fiber.StatusBadRequest {
+				status = fiber.StatusInternalServerError
+			}
+		}
+
+		method := c.Method()
+		path := c.OriginalURL()
+		if path == "" {
+			path = c.Path()
+		}
+
+		switch {
+		case status >= fiber.StatusInternalServerError:
+			if err != nil {
+				ui.Error("%s %s => %d (%s) 错误: %v", method, path, status, latency, err)
+			} else {
+				ui.Error("%s %s => %d (%s)", method, path, status, latency)
+			}
+		case status >= fiber.StatusBadRequest:
+			if err != nil {
+				ui.Warn("%s %s => %d (%s) 错误: %v", method, path, status, latency, err)
+			} else {
+				ui.Warn("%s %s => %d (%s)", method, path, status, latency)
+			}
+		default:
+			ui.Info("%s %s => %d (%s)", method, path, status, latency)
+		}
+
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: []string{"*"},
 		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "X-Api-Key", "X-Sign"},
 	}))
 
-	db := &database.DB{}
-	db.DB = sqlDB
-	scheduler := payment.NewScheduler(db, 30*time.Second)
+	var db *database.DB
+	if sqlDB != nil {
+		db = &database.DB{}
+		db.DB = sqlDB
+	}
+
+	var scheduler *payment.APIScheduler
+	if db != nil {
+		scheduler = payment.NewScheduler(db, 30*time.Second)
+	}
 
 	server := &Server{
 		app:       app,
@@ -111,6 +164,10 @@ func (s *Server) setupRoutes() {
 }
 
 func (s *Server) setupScheduler() {
+	if s.db == nil || s.scheduler == nil {
+		return
+	}
+
 	// Get all payment methods and filter blockchain types
 	payments, err := s.db.GetAllPayments()
 	if err != nil {
@@ -142,11 +199,26 @@ func (s *Server) setupScheduler() {
 }
 
 func (s *Server) Start(addr string) error {
-	ui.Info("HTTP 服务监听在 %s", addr)
-	return s.app.Listen(addr)
+	ui.Info("网页服务监听在 %s", addr)
+	return s.app.Listen(addr, fiber.ListenConfig{
+		DisableStartupMessage: true,
+	})
 }
 
 func (s *Server) Stop() error {
-	s.scheduler.Stop()
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
 	return s.app.Shutdown()
+}
+
+func (s *Server) App() *fiber.App {
+	return s.app
+}
+
+func (s *Server) ensureDB() error {
+	if s.db == nil {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "服务尚未初始化")
+	}
+	return nil
 }

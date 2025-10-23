@@ -1,29 +1,33 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	tele "gopkg.in/telebot.v4"
+	"hashpay/internal/api"
+	"hashpay/internal/middleware"
 	"hashpay/internal/ui"
+
+	"github.com/gofiber/fiber/v3"
+	tele "gopkg.in/telebot.v4"
 )
 
-func runInitFlow(configPath string) (*Config, error) {
+func runInitFlow(configPath string, server *api.Server) (*Config, error) {
+	ui.Title("👋 欢迎使用 HashPay！ 让我们来完成一些初始配置：")
+	ui.Spacer()
+	url := inputURL()
 	token := inputBotToken()
 
-	pin := genPIN()
-	ui.Spacer()
-	ui.Action("已生成一次性管理员 PIN %s", pin)
-	ui.Text("请向机器人发送 /start 并输入此 PIN 码完成验证")
-	ui.Spacer()
+	pin := fmt.Sprintf("%04d", rand.Intn(10000))
+	ui.Action("请向机器人发送此安装确认码： %s", pin)
 
-	adminID, err := waitForPINVerify(token, pin)
+	adminID, err := waitPINConfirm(token, pin, url)
 	if err != nil {
-		return nil, fmt.Errorf("PIN 验证失败: %w", err)
+		return nil, fmt.Errorf("验证失败: %w", err)
 	}
 
 	ui.Success("验证成功，管理员 ID %d", adminID)
@@ -37,7 +41,7 @@ func runInitFlow(configPath string) (*Config, error) {
 	ui.Spacer()
 	ui.Info("正在等待配置完成…")
 
-	cfg := waitForMiniAppConfig(token, adminID)
+	cfg := waitForMiniAppConfig(server, token, adminID)
 
 	db, err := createAndInitDB(cfg)
 	if err != nil {
@@ -61,54 +65,94 @@ func runInitFlow(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-func inputBotToken() string {
+func inputURL() string {
+	client := middleware.NewClient()
+	client.SetTimeout(5 * time.Second)
+
 	validate := func(val string) error {
-		if strings.TrimSpace(val) == "" {
-			return fmt.Errorf("Token 不能为空")
+		target := strings.TrimSpace(val)
+		if target == "" {
+			return fmt.Errorf("地址不能为空")
+		}
+
+		parsed, err := url.Parse(target)
+		if err != nil {
+			return fmt.Errorf("无效的 URL地址")
+		}
+		if parsed.Scheme != "https" {
+			return fmt.Errorf("仅支持 HTTPS协议")
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("地址格式不正确")
 		}
 		return nil
 	}
 
 	for {
-		token, err := ui.PromptSecret("请提供在 @BotFather 创建的机器人密钥", validate)
+		addr, err := ui.PromptText("请输入服务器外网访问地址", validate)
+		if err != nil {
+			ui.Error("读取地址失败: %v", err)
+			continue
+		}
+
+		ui.Info("正在验证外网地址可访问性…")
+		resp, reqErr := client.Get(addr)
+		if reqErr != nil {
+			ui.Error("无法访问该地址: %v", reqErr)
+			continue
+		}
+
+		if !resp.Success {
+			ui.Error("地址返回异常状态码: HTTP %d", resp.Code)
+			continue
+		}
+
+		ui.Success("外网地址 %s 可访问 (HTTP %d)", addr, resp.Code)
+		return addr
+	}
+}
+
+func inputBotToken() string {
+	validate := func(val string) error {
+		if strings.TrimSpace(val) == "" {
+			return fmt.Errorf("密钥不能为空")
+		}
+		parts := strings.SplitN(val, ":", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return fmt.Errorf("密钥格式不正确")
+		}
+		return nil
+	}
+
+	for {
+		token, err := ui.PromptSecret("提供在 @BotFather 创建的机器人密钥", validate)
 		if err != nil {
 			ui.Error("读取 Token 失败: %v", err)
 			continue
 		}
 
-		testBot, err := tele.NewBot(tele.Settings{
+		b, err := tele.NewBot(tele.Settings{
 			Token:   token,
 			Offline: false,
 			Poller:  &tele.LongPoller{Timeout: 1 * time.Second},
 		})
 		if err != nil {
-			ui.Error("Token 验证失败: %v", err)
-			ui.Text("请重新输入…")
+			ui.Error("密钥验证失败: %v", err)
 			continue
 		}
 
-		me := testBot.Me
-		testBot.Stop()
-
+		me := b.Me
 		if me == nil {
-			ui.Warn("无法获取机器人信息，请检查网络连接")
+			ui.Error("获取机器人信息失败，请检查密钥是否有效")
 			continue
 		}
 
-		ui.Spacer()
-		ui.Success("Bot 验证成功")
-		ui.Info("Bot 名称 @%s", me.Username)
-		ui.Info("Bot ID %d", me.ID)
+		ui.Success("机器人 @%s 登录成功", me.Username)
 		return token
 	}
 }
 
-func genPIN() string {
-	rand.Seed(time.Now().UnixNano())
-	return fmt.Sprintf("%04d", rand.Intn(10000))
-}
-
-func waitForPINVerify(token, expectedPIN string) (int64, error) {
+func waitPINConfirm(token, pin, externalURL string) (int64, error) {
 	b, err := tele.NewBot(tele.Settings{
 		Token:  token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
@@ -117,32 +161,25 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 		return 0, err
 	}
 
-	adminChan := make(chan int64)
+	result := make(chan int64)
 
 	b.Handle("/start", func(c tele.Context) error {
-		userID := c.Sender().ID
-		username := c.Sender().Username
-		ui.Debug("收到 /start 请求，用户 %d (@%s)", userID, username)
-
-		msg := "🎉 欢迎使用 HashPay 支付系统!\n\n"
-		msg += "请输入控制台显示的 4 位 PIN 码完成管理员验证："
-
+		c.Send("🎉")
+		msg := "欢迎使用 HashPay！\n\n我正在等待管理员验证，如果你有一个确认码，请告诉我。"
 		return c.Send(msg)
 	})
 
 	b.Handle(tele.OnText, func(c tele.Context) error {
-		pin := strings.TrimSpace(c.Text())
 		userID := c.Sender().ID
 		username := c.Sender().Username
-		ui.Debug("收到 PIN 输入，用户 %d (@%s): %s", userID, username, pin)
 
-		if pin == expectedPIN {
-			ui.Success("用户 %d (@%s) 完成 PIN 验证", userID, username)
-			adminChan <- userID
+		if strings.TrimSpace(c.Text()) == pin {
+			ui.Success("管理员 %d (@%s) 完成了验证", userID, username)
+			result <- userID
 
 			keyboard := &tele.ReplyMarkup{}
 			miniAppBtn := keyboard.WebApp("🚀 打开配置面板", &tele.WebApp{
-				URL: "https://dc0j7pr9-8080.asse.devtunnels.ms/",
+				URL: externalURL,
 			})
 			keyboard.Inline(keyboard.Row(miniAppBtn))
 
@@ -160,35 +197,30 @@ func waitForPINVerify(token, expectedPIN string) (int64, error) {
 	defer b.Stop()
 
 	select {
-	case adminID := <-adminChan:
-		return adminID, nil
+	case admin := <-result:
+		return admin, nil
 	case <-time.After(5 * time.Minute):
 		return 0, fmt.Errorf("验证超时")
 	}
 }
 
-func waitForMiniAppConfig(token string, adminID int64) *Config {
+func waitForMiniAppConfig(server *api.Server, token string, adminID int64) *Config {
 	cfg := &Config{}
 	cfg.Bot.Token = token
 	cfg.Bot.Admin = adminID
 
-	configChan := make(chan *Config)
+	configChan := make(chan *Config, 1)
+	var once sync.Once
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/init/config", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	initGroup := server.App().Group("/api/init")
 
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+	initGroup.Options("/config", func(c fiber.Ctx) error {
+		setInitHeaders(c)
+		return c.SendStatus(fiber.StatusOK)
+	})
 
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+	initGroup.Post("/config", func(c fiber.Ctx) error {
+		setInitHeaders(c)
 
 		var reqConfig struct {
 			Database struct {
@@ -209,10 +241,9 @@ func waitForMiniAppConfig(token string, adminID int64) *Config {
 			} `json:"system"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&reqConfig); err != nil {
+		if err := c.Bind().JSON(&reqConfig); err != nil {
 			ui.Error("配置解析失败: %v", err)
-			http.Error(w, "Invalid configuration", http.StatusBadRequest)
-			return
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid configuration")
 		}
 
 		cfg.Database.Type = reqConfig.Database.Type
@@ -224,7 +255,9 @@ func waitForMiniAppConfig(token string, adminID int64) *Config {
 			cfg.Database.MySQL.Password = reqConfig.Database.MySQL.Password
 		} else {
 			cfg.Database.Type = "sqlite"
-			cfg.Database.SQLite.Path = "./data/hashpay.db"
+			if strings.TrimSpace(cfg.Database.SQLite.Path) == "" {
+				cfg.Database.SQLite.Path = "./data/hashpay.db"
+			}
 		}
 		cfg.System.Currency = reqConfig.System.Currency
 		cfg.System.Timeout = reqConfig.System.Timeout
@@ -234,51 +267,32 @@ func waitForMiniAppConfig(token string, adminID int64) *Config {
 		ui.Info("已接收到配置: 数据库=%s, 货币=%s",
 			cfg.Database.Type, cfg.System.Currency)
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		once.Do(func() {
+			configChan <- cfg
+		})
 
-		configChan <- cfg
+		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	mux.HandleFunc("/api/init/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	initGroup.Options("/health", func(c fiber.Ctx) error {
+		setInitHeaders(c)
+		return c.SendStatus(fiber.StatusOK)
+	})
 
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	initGroup.Get("/health", func(c fiber.Ctx) error {
+		setInitHeaders(c)
+		return c.JSON(fiber.Map{
 			"status":   "ready",
 			"admin_id": adminID,
 		})
 	})
 
-	const configServerAddr = ":8090"
-
-	server := &http.Server{
-		Addr:    configServerAddr,
-		Handler: mux,
-	}
-
-	go func() {
-		ui.Info("配置服务器启动在 %s", configServerAddr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			ui.Error("配置服务器错误: %v", err)
-		}
-	}()
-
 	select {
 	case config := <-configChan:
 		ui.Success("配置接收完成")
-		_ = server.Close()
 		return config
 	case <-time.After(30 * time.Minute):
 		ui.Warn("配置超时，使用默认设置")
-		_ = server.Close()
 		cfg.Database.Type = "sqlite"
 		cfg.Database.SQLite.Path = "./data/hashpay.db"
 		cfg.System.Currency = "CNY"
@@ -287,4 +301,10 @@ func waitForMiniAppConfig(token string, adminID int64) *Config {
 		cfg.System.RateAdjust = 0.00
 		return cfg
 	}
+}
+
+func setInitHeaders(c fiber.Ctx) {
+	c.Set("Access-Control-Allow-Origin", "*")
+	c.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	c.Set("Access-Control-Allow-Headers", "Content-Type")
 }

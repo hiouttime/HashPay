@@ -38,7 +38,7 @@ func logLine(style *color.Color, icon, format string, args ...any) {
 }
 
 func Info(format string, args ...any) {
-	logLine(infoStyle, "ℹ️", format, args...)
+	logLine(infoStyle, "[INFO] ", format, args...)
 }
 
 func Success(format string, args ...any) {
@@ -46,7 +46,7 @@ func Success(format string, args ...any) {
 }
 
 func Warn(format string, args ...any) {
-	logLine(warnStyle, "⚠️", format, args...)
+	logLine(warnStyle, "[WARNING] ", format, args...)
 }
 
 func Error(format string, args ...any) {
@@ -54,7 +54,7 @@ func Error(format string, args ...any) {
 }
 
 func Debug(format string, args ...any) {
-	logLine(debugStyle, "🐛", format, args...)
+	logLine(debugStyle, "[DEBUG]", format, args...)
 }
 
 func Action(format string, args ...any) {
@@ -62,10 +62,12 @@ func Action(format string, args ...any) {
 }
 
 func Banner(version string) {
-	fmt.Println(bannerStyle.Sprint(bannerArt))
+	fmt.Print(bannerStyle.Sprint(bannerArt))
 	if strings.TrimSpace(version) != "" {
-		fmt.Println(successStyle.Sprintf("版本 %s", version))
+		fmt.Println(" Version ", version)
 	}
+	fmt.Println(successStyle.Sprintf("© TGDash Team. All rights reserved."))
+	fmt.Println()
 }
 
 func Title(format string, args ...any) {

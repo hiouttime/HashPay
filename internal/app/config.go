@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"hashpay/internal/database"
@@ -20,6 +21,9 @@ type Config struct {
 		Token string `yaml:"token"`
 		Admin int64  `yaml:"admin"`
 	} `yaml:"bot"`
+	Server struct {
+		Bind string `yaml:"bind"`
+	} `yaml:"server"`
 	Database struct {
 		Type   string `yaml:"type"`
 		SQLite struct {
@@ -173,4 +177,35 @@ func ensureDir(path string) error {
 		return nil
 	}
 	return os.MkdirAll(path, fs.ModePerm)
+}
+
+// BindAddr 返回用于监听的地址，若未设置则使用默认值。
+func (cfg *Config) BindAddr(defaultAddr string) string {
+	if cfg == nil {
+		return defaultAddr
+	}
+	if strings.TrimSpace(cfg.Server.Bind) != "" {
+		return cfg.Server.Bind
+	}
+	return defaultAddr
+}
+
+// HasDatabase 判断配置中是否包含有效的数据库配置。
+func (cfg *Config) HasDatabase() bool {
+	if cfg == nil {
+		return false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Database.Type)) {
+	case "sqlite":
+		return strings.TrimSpace(cfg.Database.SQLite.Path) != ""
+	case "mysql":
+		mysql := cfg.Database.MySQL
+		return strings.TrimSpace(mysql.Host) != "" &&
+			mysql.Port != 0 &&
+			strings.TrimSpace(mysql.Database) != "" &&
+			strings.TrimSpace(mysql.Username) != ""
+	default:
+		return false
+	}
 }
