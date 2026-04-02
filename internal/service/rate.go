@@ -2,6 +2,7 @@ package service
 
 import (
 	"hashpay/internal/repository"
+	"strings"
 
 	"github.com/shopspring/decimal"
 )
@@ -17,7 +18,10 @@ func NewRateService(config *repository.ConfigRepo) *RateService {
 // Convert 货币转换
 func (s *RateService) Convert(amount float64, from, to string) decimal.Decimal {
 	rate := s.GetRate(from, to)
-	return decimal.NewFromFloat(amount).Div(rate)
+	if rate.IsZero() {
+		return decimal.NewFromFloat(amount).RoundCeil(3)
+	}
+	return decimal.NewFromFloat(amount).Div(rate).RoundCeil(3)
 }
 
 // GetRate 获取汇率
@@ -43,6 +47,8 @@ func (s *RateService) GetRate(from, to string) decimal.Decimal {
 		},
 	}
 
+	from = strings.ToUpper(strings.TrimSpace(from))
+	to = strings.ToUpper(strings.TrimSpace(to))
 	if rateMap, ok := rates[from]; ok {
 		if rate, ok := rateMap[to]; ok {
 			return decimal.NewFromFloat(rate)

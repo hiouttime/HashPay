@@ -20,6 +20,7 @@ type Services struct {
 	Stats   *service.StatsService
 	User    *service.UserService
 	Config  *service.ConfigService
+	Site    *service.SiteService
 }
 
 // New 创建 Handler 实例
@@ -31,7 +32,7 @@ func New(svc *Services) *Handler {
 	if svc != nil {
 		h.Order = NewOrderHandler(svc.Order, svc.Payment, svc.Rate)
 		h.Payment = NewPaymentHandler(svc.Payment, svc.Rate)
-		h.Admin = NewAdminHandler(svc.Config, svc.Payment, svc.Stats)
+		h.Admin = NewAdminHandler(svc.Config, svc.Payment, svc.Stats, svc.Order, svc.Site)
 		h.Init = NewInitHandler(svc.Config, svc.User)
 	}
 

@@ -1,20 +1,24 @@
-.PHONY: build run test clean sqlc migrate dev miniapp-build miniapp-dev
+.PHONY: build run test test-init clean sqlc migrate dev frontend-build web-build web-dev miniapp-build miniapp-dev
 
 # 构建项目
-build: miniapp-build
+build: frontend-build
 	go build -o hashpay .
 
 # 运行项目
-run: miniapp-build
+run: frontend-build
 	go run .
 
 # 开发模式
-dev: miniapp-build
+dev: frontend-build
 	go run .
 
 # 运行测试
 test:
-	go test ./...
+	GOCACHE=$(CURDIR)/.gocache go test ./...
+
+# 初始化阶段流程测试
+test-init:
+	GOCACHE=$(CURDIR)/.gocache go test ./internal/app -run InitFlow -v
 
 # 清理构建文件
 clean:
@@ -42,6 +46,16 @@ miniapp-dev:
 miniapp-build:
 	cd miniapp && npm run build
 
+# 构建 Web 前台
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
+# 构建前后台前端
+frontend-build: web-build miniapp-build
+
 # 跨平台编译
 build-linux:
 	GOOS=linux GOARCH=amd64 go build -o hashpay-linux-amd64 .
@@ -62,6 +76,9 @@ help:
 	@echo "  make run         - 运行项目"
 	@echo "  make dev         - 开发模式运行"
 	@echo "  make test        - 运行测试"
+	@echo "  make test-init   - 运行初始化流程测试"
+	@echo "  make web-dev     - 启动 Web 前台开发服务器"
+	@echo "  make miniapp-dev - 启动 Mini App 开发服务器"
 	@echo "  make clean       - 清理构建文件"
 	@echo "  make sqlc        - 生成 sqlc 代码"
 	@echo "  make migrate     - 执行数据库迁移"

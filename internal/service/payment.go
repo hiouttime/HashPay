@@ -17,6 +17,7 @@ func NewPaymentService(payments *repository.PaymentRepo) *PaymentService {
 
 type AddPaymentRequest struct {
 	Type      model.PaymentType
+	Name      string
 	Chain     string
 	Currency  string
 	Address   string
@@ -30,6 +31,7 @@ func (s *PaymentService) Add(req AddPaymentRequest) (*model.Payment, error) {
 	now := time.Now()
 	payment := &model.Payment{
 		Type:      req.Type,
+		Name:      req.Name,
 		Chain:     req.Chain,
 		Currency:  req.Currency,
 		Address:   req.Address,

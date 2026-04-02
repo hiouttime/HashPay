@@ -11,6 +11,7 @@ type Config struct {
 	Bot      BotConfig      `yaml:"bot"`
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
+	Debug    bool           `yaml:"DEBUG"`
 }
 
 type BotConfig struct {
@@ -19,13 +20,14 @@ type BotConfig struct {
 }
 
 type ServerConfig struct {
-	Bind string `yaml:"bind"`
+	Bind   string `yaml:"bind"`
+	Public string `yaml:"public"`
 }
 
 type DatabaseConfig struct {
-	Type   string            `yaml:"type"`
-	SQLite SQLiteConfig      `yaml:"sqlite"`
-	MySQL  MySQLConfig       `yaml:"mysql"`
+	Type   string       `yaml:"type"`
+	SQLite SQLiteConfig `yaml:"sqlite"`
+	MySQL  MySQLConfig  `yaml:"mysql"`
 }
 
 type SQLiteConfig struct {

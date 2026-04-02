@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type PaymentType string
 
@@ -13,6 +16,7 @@ const (
 type Payment struct {
 	ID        int64
 	Type      PaymentType
+	Name      string
 	Chain     string
 	Currency  string
 	Address   string
@@ -31,6 +35,9 @@ func (p *Payment) IsBlockchain() bool {
 
 // DisplayName 显示名称
 func (p *Payment) DisplayName() string {
+	if strings.TrimSpace(p.Name) != "" {
+		return strings.TrimSpace(p.Name)
+	}
 	if p.Type == PayTypeBlockchain {
 		if p.Chain != "" && p.Currency != "" {
 			return p.Chain + " (" + p.Currency + ")"

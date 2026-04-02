@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strings"
 
 	"hashpay/internal/model"
 	"hashpay/internal/service"
@@ -37,11 +38,13 @@ func (h *PaymentHandler) List(c fiber.Ctx) error {
 
 	result := make([]fiber.Map, 0, len(payments))
 	for _, p := range payments {
+		coins := decodePaymentCoins(p.Config, p.Currency)
 		result = append(result, fiber.Map{
 			"id":         p.ID,
 			"type":       p.Type,
-			"chain":      p.Chain,
-			"currency":   p.Currency,
+			"name":       p.Name,
+			"platform":   p.Chain,
+			"coins":      coins,
 			"address":    p.Address,
 			"enabled":    p.Enabled,
 			"created_at": p.CreatedAt.Unix(),
@@ -54,29 +57,33 @@ func (h *PaymentHandler) List(c fiber.Ctx) error {
 // Add 添加支付方式
 func (h *PaymentHandler) Add(c fiber.Ctx) error {
 	var req struct {
-		Type      string `json:"type"`
-		Chain     string `json:"chain"`
-		Currency  string `json:"currency"`
-		Address   string `json:"address"`
-		APIKey    string `json:"api_key"`
-		APISecret string `json:"api_secret"`
-		Config    string `json:"config"`
-		Enabled   bool   `json:"enabled"`
+		Type     string   `json:"type"`
+		Name     string   `json:"name"`
+		Platform string   `json:"platform"`
+		Coins    []string `json:"coins"`
+		Address  string   `json:"address"`
 	}
 
 	if err := c.Bind().JSON(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
+	req.Platform = strings.ToLower(strings.TrimSpace(req.Platform))
+	req.Address = strings.TrimSpace(req.Address)
+	if err := validatePaymentAddress(req.Platform, req.Address); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
 
+	coins := normalizeCoins(req.Coins)
 	payment, err := h.payments.Add(service.AddPaymentRequest{
 		Type:      model.PaymentType(req.Type),
-		Chain:     req.Chain,
-		Currency:  req.Currency,
+		Name:      req.Name,
+		Chain:     req.Platform,
+		Currency:  primaryCoin(coins),
 		Address:   req.Address,
-		APIKey:    req.APIKey,
-		APISecret: req.APISecret,
-		Config:    req.Config,
-		Enabled:   req.Enabled,
+		APIKey:    "",
+		APISecret: "",
+		Config:    encodePaymentConfig(coins),
+		Enabled:   true,
 	})
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "添加支付方式失败")
@@ -85,8 +92,10 @@ func (h *PaymentHandler) Add(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"id":       payment.ID,
 		"type":     payment.Type,
-		"chain":    payment.Chain,
-		"currency": payment.Currency,
+		"name":     payment.Name,
+		"platform": payment.Chain,
+		"coins":    decodePaymentCoins(payment.Config, payment.Currency),
+		"address":  payment.Address,
 		"enabled":  payment.Enabled,
 	})
 }
@@ -105,25 +114,32 @@ func (h *PaymentHandler) Update(c fiber.Ctx) error {
 	}
 
 	var req struct {
-		Chain     string `json:"chain"`
-		Currency  string `json:"currency"`
-		Address   string `json:"address"`
-		APIKey    string `json:"api_key"`
-		APISecret string `json:"api_secret"`
-		Config    string `json:"config"`
-		Enabled   bool   `json:"enabled"`
+		Type     string   `json:"type"`
+		Name     string   `json:"name"`
+		Platform string   `json:"platform"`
+		Coins    []string `json:"coins"`
+		Address  string   `json:"address"`
+		Enabled  bool     `json:"enabled"`
 	}
 
 	if err := c.Bind().JSON(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
+	req.Platform = strings.ToLower(strings.TrimSpace(req.Platform))
+	req.Address = strings.TrimSpace(req.Address)
+	if err := validatePaymentAddress(req.Platform, req.Address); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
 
-	payment.Chain = req.Chain
-	payment.Currency = req.Currency
+	coins := normalizeCoins(req.Coins)
+	payment.Type = model.PaymentType(req.Type)
+	payment.Name = req.Name
+	payment.Chain = req.Platform
+	payment.Currency = primaryCoin(coins)
 	payment.Address = req.Address
-	payment.APIKey = req.APIKey
-	payment.APISecret = req.APISecret
-	payment.Config = req.Config
+	payment.APIKey = ""
+	payment.APISecret = ""
+	payment.Config = encodePaymentConfig(coins)
 	payment.Enabled = req.Enabled
 
 	if err := h.payments.Update(payment); err != nil {

@@ -1,5 +1,6 @@
 server:
   bind: ":8181"
+  public: "https://pay.example.com"
 
 bot:
   token: "YOUR_BOT_TOKEN"

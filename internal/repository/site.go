@@ -117,10 +117,10 @@ func (r *SiteRepo) GetAll() ([]model.Site, error) {
 
 func (r *SiteRepo) Update(s *model.Site) error {
 	query := `
-		UPDATE sites SET name = ?, callback = ?, notify = ?, updated_at = ?
+		UPDATE sites SET name = ?, api_key = ?, callback = ?, notify = ?, updated_at = ?
 		WHERE id = ?
 	`
-	_, err := r.db.Exec(query, s.Name, s.Callback, s.Notify, time.Now().Unix(), s.ID)
+	_, err := r.db.Exec(query, s.Name, s.APIKey, s.Callback, s.Notify, time.Now().Unix(), s.ID)
 	return err
 }
 

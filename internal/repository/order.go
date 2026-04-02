@@ -74,13 +74,41 @@ func (r *OrderRepo) GetByID(id string) (*model.Order, error) {
 
 func (r *OrderRepo) UpdateStatus(id string, status model.OrderStatus, txHash string) error {
 	now := time.Now().Unix()
+	if status == model.OrderPaid {
+		query := `
+			UPDATE orders
+			SET status = ?, tx_hash = ?, paid_at = ?, updated_at = ?
+			WHERE id = ?
+		`
+		_, err := r.db.Exec(query, status, txHash, now, now, id)
+		return err
+	}
+
 	query := `
-		UPDATE orders 
-		SET status = ?, tx_hash = ?, paid_at = ?, updated_at = ?
+		UPDATE orders
+		SET status = ?, tx_hash = ?, updated_at = ?
 		WHERE id = ?
 	`
-	_, err := r.db.Exec(query, status, txHash, now, now, id)
+	_, err := r.db.Exec(query, status, txHash, now, id)
 	return err
+}
+
+func (r *OrderRepo) ExpirePending(now int64) (int64, error) {
+	query := `
+		UPDATE orders
+		SET status = ?, tx_hash = ?, updated_at = ?
+		WHERE status = ? AND expire_at <= ?
+	`
+	result, err := r.db.Exec(query, model.OrderExpired, "", now, model.OrderPending, now)
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
 }
 
 func (r *OrderRepo) UpdatePayment(id string, chain, currency, addr string, amount float64) error {
@@ -91,6 +119,28 @@ func (r *OrderRepo) UpdatePayment(id string, chain, currency, addr string, amoun
 		WHERE id = ?
 	`
 	_, err := r.db.Exec(query, chain, currency, addr, amount, now, id)
+	return err
+}
+
+func (r *OrderRepo) ClearPayment(id string) error {
+	now := time.Now().Unix()
+	query := `
+		UPDATE orders
+		SET pay_chain = ?, pay_currency = ?, pay_addr = ?, pay_amount = NULL, pay_method = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := r.db.Exec(query, "", "", "", "", now, id)
+	return err
+}
+
+func (r *OrderRepo) RefreshExpire(id string, expireAt int64) error {
+	now := time.Now().Unix()
+	query := `
+		UPDATE orders
+		SET expire_at = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := r.db.Exec(query, expireAt, now, id)
 	return err
 }
 

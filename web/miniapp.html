@@ -270,7 +270,7 @@
             <div class="hero">
                 <div class="chip">初始化进行中</div>
                 <h1>完成 HashPay 启动配置</h1>
-                <p>机器人验证已通过，请填写配置并提交。提交后后台会自动重启加载。</p>
+                <p>机器人验证已通过，请填写配置并提交。提交后配置会立即生效。</p>
                 <div id="inline-status" class="inline-status">
                     <span class="dot live"></span>
                     <span id="inline-status-text">正在等待配置提交</span>
@@ -498,8 +498,8 @@
                     throw new Error(detail || '配置提交失败');
                 }
 
-                showMessage('配置成功！系统正在初始化...', 'success');
-                updateInlineStatus('配置已提交，系统即将重启', 'success');
+                showMessage('配置成功！系统正在加载业务服务...', 'success');
+                updateInlineStatus('配置已提交，服务将自动启用', 'success');
                 setTimeout(() => {
                     tg.close();
                 }, 2000);

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strings"
 
 	"hashpay/internal/model"
 	"hashpay/internal/service"
@@ -56,7 +57,7 @@ func (h *OrderHandler) Create(c fiber.Ctx) error {
 		"order_id":  order.ID,
 		"pay_url":   fmt.Sprintf("/pay/%s", order.ID),
 		"amount":    order.Amount,
-		"currency":  order.Currency,
+		"currency":  strings.ToUpper(strings.TrimSpace(order.Currency)),
 		"expire_at": order.ExpireAt.Unix(),
 	})
 }
@@ -73,7 +74,7 @@ func (h *OrderHandler) Get(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"order_id":   order.ID,
 		"amount":     order.Amount,
-		"currency":   order.Currency,
+		"currency":   strings.ToUpper(strings.TrimSpace(order.Currency)),
 		"status":     order.Status.String(),
 		"tx_hash":    order.TxHash,
 		"paid_at":    order.PaidAt.Unix(),
@@ -105,7 +106,7 @@ func (h *OrderHandler) GetPaymentMethods(c fiber.Ctx) error {
 			"id":       p.ID,
 			"type":     p.Type,
 			"chain":    p.Chain,
-			"currency": p.Currency,
+			"currency": strings.ToUpper(strings.TrimSpace(p.Currency)),
 			"name":     p.DisplayName(),
 			"rate":     rate.InexactFloat64(),
 			"amount":   payAmount.InexactFloat64(),
@@ -146,7 +147,7 @@ func (h *OrderHandler) SelectPayment(c fiber.Ctx) error {
 	}
 
 	response := fiber.Map{
-		"currency": payment.Currency,
+		"currency": strings.ToUpper(strings.TrimSpace(payment.Currency)),
 		"amount":   payAmount.InexactFloat64(),
 		"chain":    payment.Chain,
 	}

@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS configs (
 CREATE TABLE IF NOT EXISTS payments (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     type        TEXT NOT NULL,
+    name        TEXT,
     chain       TEXT,
     currency    TEXT,
     address     TEXT,

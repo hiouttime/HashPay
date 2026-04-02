@@ -1,8 +1,9 @@
 package server
 
 import (
+	"sync"
+
 	"hashpay/internal/handler"
-	"hashpay/internal/pkg/log"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -11,12 +12,13 @@ import (
 
 type Server struct {
 	app     *fiber.App
+	mu      sync.RWMutex
 	handler *handler.Handler
 }
 
 type Config struct {
 	AdminID  int64
-	InitOnly bool
+	BotToken string
 }
 
 func New(h *handler.Handler, cfg *Config) *Server {
@@ -42,10 +44,15 @@ func New(h *handler.Handler, cfg *Config) *Server {
 	return s
 }
 
-func (s *Server) Start(addr string) error {
-	log.Info("HTTP 服务启动: %s", addr)
+func (s *Server) Start(addr string, onReady func()) error {
 	return s.app.Listen(addr, fiber.ListenConfig{
 		DisableStartupMessage: true,
+		BeforeServeFunc: func(*fiber.App) error {
+			if onReady != nil {
+				onReady()
+			}
+			return nil
+		},
 	})
 }
 
@@ -59,7 +66,16 @@ func (s *Server) App() *fiber.App {
 
 // Handler 返回 handler 实例
 func (s *Server) Handler() *handler.Handler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.handler
+}
+
+// SetHandler 更新 handler 实例
+func (s *Server) SetHandler(h *handler.Handler) {
+	s.mu.Lock()
+	s.handler = h
+	s.mu.Unlock()
 }
 
 func errorHandler(c fiber.Ctx, err error) error {

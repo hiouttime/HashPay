@@ -1,95 +1,139 @@
 .init-setup {
-  padding: 16px;
-  padding-bottom: 80px;
   min-height: 100vh;
+  padding-bottom: 92px;
   background: var(--tgui--bg_color);
-
-  .steps-indicator {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 24px;
-    padding: 0 16px;
-
-    .step {
-      flex: 1;
-      text-align: center;
-      padding: 8px;
-      font-size: 12px;
-      color: var(--tgui--hint_color);
-      position: relative;
-
-      &:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        right: -50%;
-        width: 100%;
-        height: 2px;
-        background: var(--tgui--secondary_bg_color);
-        transform: translateY(-50%);
-      }
-
-      &.active {
-        color: var(--tgui--accent_text_color);
-        font-weight: 600;
-      }
-
-      &.completed {
-        color: var(--tgui--text_color);
-        
-        &::after {
-          background: var(--tgui--accent_text_color);
-        }
-      }
-    }
-  }
-
-  .step-content {
-    animation: fadeIn 0.3s ease-in-out;
-
-    &.complete {
-      text-align: center;
-      padding: 32px 0;
-    }
-  }
-
-  .checkbox-group {
-    margin: 16px 0;
-  }
-
-  .api-key-box {
-    background: var(--tgui--secondary_bg_color);
-    padding: 12px;
-    border-radius: 8px;
-    margin: 12px 0;
-    word-break: break-all;
-    font-family: monospace;
-  }
-
-  .button-group {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 16px;
-    background: var(--tgui--bg_color);
-    border-top: 1px solid var(--tgui--secondary_bg_color);
-    display: flex;
-    gap: 8px;
-
-    button {
-      flex: 1;
-    }
-  }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.init-head {
+  padding: 16px 16px 8px;
+}
+
+.init-head-text {
+  margin-top: 8px;
+  color: var(--tgui--subtitle_text_color);
+}
+
+.step-bar {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.step-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.step-pill {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--tgui--secondary_bg_color);
+  color: var(--tgui--hint_color);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.step-pill.active {
+  background: var(--tgui--button_color);
+  color: var(--tgui--button_text_color);
+}
+
+.step-pill.done {
+  color: var(--tgui--text_color);
+}
+
+.chain-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+}
+
+.chain-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chain-caption {
+  display: block;
+  margin: 0;
+  padding: 8px 16px;
+  color: var(--tgui--hint_color);
+}
+
+.desc-note {
+  display: block;
+  position: relative;
+  overflow: visible;
+  margin: 10px 16px 12px;
+  padding: 2px 0 2px 12px;
+  color: var(--tgui--secondary_hint_color);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.desc-note::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--tgui--outline);
+}
+
+.desc-note-header {
+  margin: 8px 16px 0;
+}
+
+.desc-note-top {
+  margin-top: 10px;
+}
+
+.desc-note-compact {
+  margin: 8px 16px;
+}
+
+.desc-note-empty {
+  margin: 4px 16px 12px;
+}
+
+.setting-section {
+  margin-top: 10px;
+}
+
+.setting-section:first-child {
+  margin-top: 0;
+}
+
+.merchant-item {
+  border-top: 1px solid var(--tgui--outline);
+  padding-top: 8px;
+}
+
+.merchant-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 10px;
+}
+
+.step-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px 16px;
+  background: var(--tgui--bg_color);
+  border-top: 1px solid var(--tgui--outline);
+}
+
+.step-actions > * {
+  flex: 1;
 }

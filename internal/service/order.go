@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"hashpay/internal/model"
@@ -34,11 +35,12 @@ type CreateOrderRequest struct {
 func (s *OrderService) Create(req CreateOrderRequest) (*model.Order, error) {
 	timeout := s.getTimeout()
 	now := time.Now()
+	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 
 	order := &model.Order{
 		ID:        generateOrderID(),
 		Amount:    req.Amount,
-		Currency:  req.Currency,
+		Currency:  currency,
 		Status:    model.OrderPending,
 		SiteID:    req.SiteID,
 		Callback:  req.Callback,
@@ -67,7 +69,11 @@ func (s *OrderService) GetAll() ([]model.Order, error) {
 }
 
 func (s *OrderService) SetPayment(orderID string, chain, currency, addr string, amount float64) error {
-	return s.orders.UpdatePayment(orderID, chain, currency, addr, amount)
+	return s.orders.UpdatePayment(orderID, chain, strings.ToUpper(strings.TrimSpace(currency)), addr, amount)
+}
+
+func (s *OrderService) ClearPayment(orderID string) error {
+	return s.orders.ClearPayment(orderID)
 }
 
 func (s *OrderService) MarkPaid(orderID, txHash string) error {
@@ -76,6 +82,18 @@ func (s *OrderService) MarkPaid(orderID, txHash string) error {
 
 func (s *OrderService) MarkExpired(orderID string) error {
 	return s.orders.UpdateStatus(orderID, model.OrderExpired, "")
+}
+
+func (s *OrderService) ExpirePending() (int64, error) {
+	return s.orders.ExpirePending(time.Now().Unix())
+}
+
+func (s *OrderService) RefreshExpire(orderID string) (time.Time, error) {
+	expireAt := time.Now().Add(s.getTimeout())
+	if err := s.orders.RefreshExpire(orderID, expireAt.Unix()); err != nil {
+		return time.Time{}, err
+	}
+	return expireAt, nil
 }
 
 func (s *OrderService) ValidateAPIKey(apiKey string) (*model.Site, error) {
@@ -98,5 +116,5 @@ func (s *OrderService) getTimeout() time.Duration {
 func generateOrderID() string {
 	bytes := make([]byte, 8)
 	rand.Read(bytes)
-	return fmt.Sprintf("PAY%s", hex.EncodeToString(bytes))
+	return strings.ToUpper(hex.EncodeToString(bytes))
 }

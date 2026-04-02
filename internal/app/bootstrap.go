@@ -1,13 +1,17 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"hashpay/internal/bot"
 	"hashpay/internal/config"
 	"hashpay/internal/handler"
+	"hashpay/internal/model"
 	"hashpay/internal/pkg/log"
 	"hashpay/internal/repository"
 	"hashpay/internal/scanner"
@@ -28,134 +32,81 @@ func Run() error {
 	log.Banner(Version)
 
 	// 加载配置，判断是否需要初始化
-	cfg, init, err := loadConfig()
+	cfg, needInit, err := loadConfig()
 	if err != nil {
 		return err
 	}
 
-	var setupServer *server.Server
-	var setupHandler *handler.Handler
-	startInitServer := func() {
-		if setupServer != nil {
-			return
-		}
-		setupHandler = handler.New(nil)
-		setupServer = server.New(setupHandler, &server.Config{InitOnly: true})
-		go func() {
-			if err := setupServer.Start(cfg.BindAddr()); err != nil {
-				log.Error("初始化服务器启动失败: %v", err)
-			}
-		}()
-		log.Info("初始化服务已启动: %s", cfg.BindAddr())
-		log.Info("请确保公网地址可访问到该服务，稍后会通过 /health 进行验证")
-	}
-	stopInitServer := func() {
-		if setupServer == nil {
-			return
-		}
-		if err := setupServer.Stop(); err != nil {
-			log.Warn("初始化服务器关闭失败: %v", err)
-		}
-		setupServer = nil
+	bootstrapHandler := handler.New(nil)
+	if needInit {
+		bootstrapHandler.Init.Enable(0)
 	}
 
-	// 需要初始化
-	if init {
-		startInitServer()
-		cfg, err = runSetup(cfg, setupHandler)
-		if err != nil {
-			stopInitServer()
-			return err
-		}
-		log.Info("初始化服务运行中，请完成配置后重启服务")
-		select {}
-	}
-
-	// 连接数据库（若连接失败，进入初始化流程）
-	driver, dsn := cfg.DSN()
-	db, err := repository.Open(driver, dsn)
-	if err != nil {
-		if init {
-			return err
-		}
-		log.Warn("连接数据库失败，进入初始化流程: %v", err)
-		startInitServer()
-		cfg, err = runSetup(cfg, setupHandler)
-		if err != nil {
-			stopInitServer()
-			return err
-		}
-		log.Info("初始化服务运行中，请完成配置后重启服务")
-		select {}
-	}
-	defer db.Close()
-
-	// 执行迁移
-	if err := db.Migrate(); err != nil {
-		log.Warn("数据库迁移: %v", err)
-	}
-
-	// 创建服务
-	svc := createServices(db)
-
-	// 创建 Handler
-	h := handler.New(svc)
-
-	// 创建并启动 Server
-	srv := server.New(h, &server.Config{
-		AdminID: cfg.Bot.Admin,
+	// 先启动 Web 服务，初始化状态只影响业务服务可用性。
+	srv := server.New(bootstrapHandler, &server.Config{
+		AdminID:  cfg.Bot.Admin,
+		BotToken: cfg.Bot.Token,
 	})
 
-	// 创建扫描器
-	scan := scanner.New(svc.Order, 30*time.Second)
+	serverErrCh := make(chan error, 1)
+	serverReadyCh := make(chan struct{}, 1)
+	var serverReadyOnce sync.Once
+	go func() {
+		serverErrCh <- srv.Start(cfg.BindAddr(), func() {
+			log.Success("HashPay 已启动，运行在 %s", cfg.BindAddr())
+			serverReadyOnce.Do(func() {
+				close(serverReadyCh)
+			})
+		})
+	}()
 
-	// 注册已配置的链
-	payments, _ := svc.Payment.GetBlockchainPayments()
-	for _, p := range payments {
-		switch scanner.ChainType(p.Chain) {
-		case scanner.ChainTRON:
-			scan.RegisterChain(scanner.NewTronAPI("https://api.trongrid.io", p.APIKey))
-		case scanner.ChainBSC:
-			scan.RegisterChain(scanner.NewBSCAPI("https://api.bscscan.com", p.APIKey))
-		}
+	select {
+	case err := <-serverErrCh:
+		return err
+	case <-serverReadyCh:
 	}
 
-	// 创建 Bot（可选）
-	var tgBot *bot.Bot
-	if cfg.Bot.Token != "" {
-		var err error
-		tgBot, err = bot.New(&bot.Config{
-			Token:   cfg.Bot.Token,
-			AdminID: cfg.Bot.Admin,
-		}, &bot.Services{
-			Users: svc.User,
-			Stats: svc.Stats,
-		})
+	var cleanup func()
+	var cleanupMu sync.Mutex
+	defer func() {
+		cleanupMu.Lock()
+		defer cleanupMu.Unlock()
+		if cleanup != nil {
+			cleanup()
+		}
+	}()
+
+	loadRuntime := func(runtimeCfg *config.Config) error {
+		runtimeHandler, runtimeCleanup, loadErr := buildRuntime(runtimeCfg)
+		if loadErr != nil {
+			return loadErr
+		}
+
+		srv.SetHandler(runtimeHandler)
+
+		cleanupMu.Lock()
+		if cleanup != nil {
+			cleanup()
+		}
+		cleanup = runtimeCleanup
+		cleanupMu.Unlock()
+
+		log.Success("业务服务已加载")
+		return nil
+	}
+
+	if needInit {
+		cfg, err = runSetup(cfg, bootstrapHandler, loadRuntime)
 		if err != nil {
-			log.Warn("Bot 初始化失败: %v", err)
+			return err
+		}
+	} else {
+		if err := loadRuntime(cfg); err != nil {
+			log.Warn("业务服务启动失败: %v", err)
 		}
 	}
 
-	// 设置扫描器回调
-	if tgBot != nil {
-		scan.OnConfirm(func(orderID, txHash string) {
-			tgBot.SendNotification("✅ 订单 " + orderID + " 已确认\n交易: " + txHash)
-		})
-	}
-
-	// 启动服务
-	scan.Start()
-	defer scan.Stop()
-
-	if tgBot != nil {
-		go tgBot.Start()
-		defer tgBot.Stop()
-	}
-
-	log.Success("HashPay 启动成功")
-	log.Info("访问地址: http://localhost%s", cfg.BindAddr())
-
-	return srv.Start(cfg.BindAddr())
+	return <-serverErrCh
 }
 
 func loadConfig() (*config.Config, bool, error) {
@@ -192,11 +143,171 @@ func createServices(db *repository.DB) *handler.Services {
 		Stats:   service.NewStatsService(orderRepo),
 		User:    service.NewUserService(userRepo),
 		Config:  service.NewConfigService(configRepo),
+		Site:    service.NewSiteService(siteRepo),
 	}
+}
+
+func buildRuntime(cfg *config.Config) (*handler.Handler, func(), error) {
+	driver, dsn := cfg.DSN()
+	db, err := repository.Open(driver, dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := db.Migrate(); err != nil {
+		log.Warn("数据库迁移: %v", err)
+	}
+
+	svc := createServices(db)
+	h := handler.New(svc)
+	txRepo := repository.NewTransactionRepo(db)
+
+	scan := scanner.New(svc.Order, txRepo, 30*time.Second)
+	payments, _ := svc.Payment.GetBlockchainPayments()
+
+	tronAPIKey := ""
+	for _, p := range payments {
+		if strings.EqualFold(strings.TrimSpace(p.Chain), string(scanner.ChainTRON)) && strings.TrimSpace(p.APIKey) != "" {
+			tronAPIKey = strings.TrimSpace(p.APIKey)
+			break
+		}
+	}
+
+	tronURL := "https://api.trongrid.io"
+	ethRPC := "https://cloudflare-eth.com"
+	bscRPC := "https://bsc-dataseed.binance.org"
+	polygonRPC := "https://polygon-rpc.com"
+	solanaRPC := "https://api.mainnet-beta.solana.com"
+	tonURL := "https://toncenter.com/api/v2"
+	if cfg.Debug {
+		tronURL = "https://nile.trongrid.io"
+		ethRPC = "https://rpc.sepolia.org"
+		bscRPC = "https://data-seed-prebsc-1-s1.binance.org:8545"
+		polygonRPC = "https://rpc-amoy.polygon.technology"
+		solanaRPC = "https://api.devnet.solana.com"
+		tonURL = "https://testnet.toncenter.com/api/v2"
+		log.Info("DEBUG 模式已启用：链监听使用测试网")
+	}
+
+	ethAPI := scanner.NewEVMAPIWithNetwork(scanner.ChainETH, ethRPC, cfg.Debug)
+	bscAPI := scanner.NewEVMAPIWithNetwork(scanner.ChainBSC, bscRPC, cfg.Debug)
+	polygonAPI := scanner.NewEVMAPIWithNetwork(scanner.ChainPolygon, polygonRPC, cfg.Debug)
+
+	scan.RegisterChain(scanner.NewTronAPI(tronURL, tronAPIKey))
+	scan.RegisterChain(ethAPI)
+	scan.RegisterChain(bscAPI)
+	scan.RegisterChain(polygonAPI)
+	scan.RegisterChain(scanner.NewEVMHubAPI(ethAPI, bscAPI, polygonAPI))
+	scan.RegisterChain(scanner.NewSolanaAPI(solanaRPC))
+	scan.RegisterChain(scanner.NewTonAPI(tonURL))
+
+	var tgBot *bot.Bot
+	if cfg.Bot.Token != "" {
+		tgBot, err = bot.New(&bot.Config{
+			Token:   cfg.Bot.Token,
+			AdminID: cfg.Bot.Admin,
+		}, &bot.Services{
+			Users:    svc.User,
+			Stats:    svc.Stats,
+			Orders:   svc.Order,
+			Payments: svc.Payment,
+			Rates:    svc.Rate,
+			Config:   svc.Config,
+		})
+		if err != nil {
+			log.Warn("Bot 初始化失败: %v", err)
+		} else {
+			log.Success("Bot 初始化完成: @%s", tgBot.Username())
+		}
+	} else {
+		log.Warn("未配置 Bot Token，已跳过 Bot 初始化")
+	}
+
+	if tgBot != nil {
+		scan.OnConfirm(func(order model.Order, tx scanner.Transaction) {
+			tgBot.NotifyOrderPaid(order.ID, tx.Hash)
+			_ = tgBot.SendNotification(buildAdminPaidMessage(order, tx))
+		})
+	}
+
+	scan.Start()
+	if tgBot != nil {
+		go tgBot.Start()
+	}
+
+	cleanup := func() {
+		if tgBot != nil {
+			tgBot.Stop()
+		}
+		scan.Stop()
+		db.Close()
+	}
+
+	return h, cleanup, nil
 }
 
 // ensureDataDir 确保数据目录存在
 func ensureDataDir(path string) error {
 	dir := filepath.Dir(path)
 	return os.MkdirAll(dir, 0755)
+}
+
+func buildAdminPaidMessage(order model.Order, tx scanner.Transaction) string {
+	chain := paidChainLabel(tx.Chain)
+	txCurrency := strings.ToUpper(strings.TrimSpace(tx.Currency))
+	orderCurrency := strings.ToUpper(strings.TrimSpace(order.Currency))
+	fromAddr := strings.TrimSpace(tx.From)
+	if fromAddr == "" {
+		fromAddr = "--"
+	}
+	toAddr := strings.TrimSpace(order.PayAddr)
+	if toAddr == "" {
+		toAddr = strings.TrimSpace(tx.To)
+	}
+	if toAddr == "" {
+		toAddr = "--"
+	}
+	payTime := time.Now().Local().Format("2006-01-02 15:04:05")
+	if tx.Timestamp > 0 {
+		payTime = time.Unix(tx.Timestamp, 0).Local().Format("2006-01-02 15:04:05")
+	}
+
+	msg := fmt.Sprintf("✅ 收到付款 (%s %s)\n", chain, txCurrency)
+	msg += fmt.Sprintf("订单号：%s\n", strings.TrimSpace(order.ID))
+	msg += fmt.Sprintf("订单金额：%s%s\n", appFormatAmount(order.Amount), orderCurrency)
+	msg += fmt.Sprintf("实收金额：%s%s\n", tx.Amount.String(), txCurrency)
+	msg += fmt.Sprintf("付款地址：%s\n", fromAddr)
+	msg += fmt.Sprintf("收款地址: %s\n", toAddr)
+	msg += fmt.Sprintf("收款时间：%s\n", payTime)
+	msg += fmt.Sprintf("交易哈希：%s", strings.TrimSpace(tx.Hash))
+	return msg
+}
+
+func paidChainLabel(chain scanner.ChainType) string {
+	switch chain {
+	case scanner.ChainTRON:
+		return "TRC20"
+	case scanner.ChainETH:
+		return "ERC20"
+	case scanner.ChainBSC:
+		return "BEP20"
+	case scanner.ChainPolygon:
+		return "POLYGON"
+	case scanner.ChainSolana:
+		return "SOLANA"
+	case scanner.ChainTON:
+		return "TON"
+	default:
+		return strings.ToUpper(strings.TrimSpace(string(chain)))
+	}
+}
+
+func appFormatAmount(v float64) string {
+	text := fmt.Sprintf("%.8f", v)
+	text = strings.TrimRight(text, "0")
+	text = strings.TrimRight(text, ".")
+	if text == "" {
+		return "0"
+	}
+	return text
 }

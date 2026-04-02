@@ -59,6 +59,7 @@ miniapp/pnpm-lock.yaml
 tmp/
 temp/
 *.tmp
+.gocache/
 
 # Certificates
 *.pem

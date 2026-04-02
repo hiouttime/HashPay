@@ -1,0 +1,342 @@
+.admin-page {
+  min-height: 100vh;
+  padding-bottom: 28px;
+  background: var(--tgui--bg_color);
+}
+
+.admin-head {
+  padding: 16px;
+}
+
+.admin-subtitle {
+  margin-top: 8px;
+  color: var(--tgui--subtitle_text_color);
+}
+
+.admin-toolbar {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-section {
+  margin-top: 10px;
+}
+
+.admin-section:first-child {
+  margin-top: 0;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+
+.overview-card {
+  border-radius: 12px;
+  background: var(--tgui--secondary_bg_color);
+  padding: 12px;
+}
+
+.overview-label {
+  color: var(--tgui--hint_color);
+}
+
+.overview-value {
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--tgui--text_color);
+}
+
+.loading-wrap {
+  padding: 18px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.section-action {
+  padding: 8px 16px 12px;
+}
+
+.form-wrap {
+  padding-bottom: 8px;
+}
+
+.field-wrap {
+  padding: 0 16px 10px;
+}
+
+.form-caption {
+  display: block;
+  padding: 6px 16px 8px;
+  color: var(--tgui--hint_color);
+}
+
+.card-list {
+  padding: 0 16px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.line-card {
+  border-radius: 12px;
+  background: var(--tgui--secondary_bg_color);
+  padding: 10px 12px;
+}
+
+.pay-card {
+  border: 1px solid color-mix(in srgb, var(--tgui--outline) 45%, transparent);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.pay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pay-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pay-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  background: var(--tgui--tertiary_bg_color);
+  flex-shrink: 0;
+}
+
+.pay-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pay-icon img {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+}
+
+.pay-meta {
+  margin-top: 2px;
+  color: var(--tgui--hint_color);
+}
+
+.pay-icon-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pay-icon.tone-tron {
+  color: #f0383a;
+  background: color-mix(in srgb, #f0383a 16%, transparent);
+}
+
+.pay-icon.tone-eth {
+  color: #627eea;
+  background: color-mix(in srgb, #627eea 16%, transparent);
+}
+
+.pay-icon.tone-bsc {
+  color: #f3ba2f;
+  background: color-mix(in srgb, #f3ba2f 16%, transparent);
+}
+
+.pay-icon.tone-polygon {
+  color: #8247e5;
+  background: color-mix(in srgb, #8247e5 16%, transparent);
+}
+
+.pay-icon.tone-solana {
+  color: #14f195;
+  background: color-mix(in srgb, #14f195 16%, transparent);
+}
+
+.pay-icon.tone-ton {
+  color: #0098ea;
+  background: color-mix(in srgb, #0098ea 16%, transparent);
+}
+
+.pay-coins {
+  margin-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.coin-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--tgui--text_color);
+  background: var(--tgui--tertiary_bg_color);
+}
+
+.coin-pill.coin-empty {
+  color: var(--tgui--hint_color);
+}
+
+.pay-address-wrap {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tgui--tertiary_bg_color) 70%, transparent);
+}
+
+.pay-address-wrap.compact {
+  margin-top: 7px;
+}
+
+.pay-address-label {
+  color: var(--tgui--hint_color);
+}
+
+.pay-address-value {
+  margin-top: 2px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.line-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.line-head-start {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.line-title {
+  font-weight: 600;
+  color: var(--tgui--text_color);
+  word-break: break-all;
+}
+
+.line-desc {
+  display: block;
+  margin-top: 6px;
+  color: var(--tgui--hint_color);
+  word-break: break-all;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--tgui--hint_color);
+  background: var(--tgui--tertiary_bg_color);
+}
+
+.status-pill.status-pending {
+  color: #ea580c;
+  background: color-mix(in srgb, #ea580c 14%, transparent);
+}
+
+.status-pill.status-paid {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+}
+
+.status-pill.status-expired,
+.status-pill.status-failed {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 14%, transparent);
+}
+
+.hint-line {
+  display: block;
+  position: relative;
+  margin: 8px 16px 12px;
+  padding-left: 12px;
+  color: var(--tgui--secondary_hint_color);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hint-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--tgui--outline);
+}
+
+.switch-line {
+  padding: 2px 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mini-action {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.page-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.chart-wrap {
+  padding: 0 8px 8px;
+}
+
+.empty-illustration {
+  display: block;
+  width: 140px;
+  height: 102px;
+  margin: 0 auto;
+}
+
+.admin-footer {
+  padding: 14px 16px 10px;
+  text-align: center;
+  color: var(--tgui--secondary_hint_color);
+}
+
+@media (max-width: 380px) {
+  .overview-grid,
+  .page-nav {
+    grid-template-columns: 1fr;
+  }
+}

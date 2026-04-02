@@ -51,7 +51,7 @@ function Setup() {
     return (
       <Placeholder
         header="配置完成"
-        description="系统正在初始化，请稍候后关闭此窗口并重新打开 Mini App"
+        description="配置已生效，稍候即可继续使用 Mini App"
       >
         <img
           src="https://telegram.org/img/t_logo.svg"

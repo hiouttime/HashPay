@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '',
+  baseURL: '',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
@@ -11,7 +11,10 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
   config => {
-    // 可以在这里添加认证token
+    const initData = window.Telegram?.WebApp?.initData
+    if (initData) {
+      config.headers['X-Tg-Init-Data'] = initData
+    }
     return config
   },
   error => {

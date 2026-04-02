@@ -18,9 +18,9 @@ func NewPaymentRepo(db *DB) *PaymentRepo {
 func (r *PaymentRepo) Create(p *model.Payment) error {
 	query := `
 		INSERT INTO payments (
-			type, chain, currency, address, api_key, api_secret,
+			type, name, chain, currency, address, api_key, api_secret,
 			enabled, config, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	enabled := 0
@@ -29,7 +29,7 @@ func (r *PaymentRepo) Create(p *model.Payment) error {
 	}
 
 	result, err := r.db.Exec(query,
-		p.Type, p.Chain, p.Currency, p.Address, p.APIKey, p.APISecret,
+		p.Type, p.Name, p.Chain, p.Currency, p.Address, p.APIKey, p.APISecret,
 		enabled, p.Config, p.CreatedAt.Unix(), p.UpdatedAt.Unix(),
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func (r *PaymentRepo) Create(p *model.Payment) error {
 
 func (r *PaymentRepo) GetByID(id int64) (*model.Payment, error) {
 	query := `
-		SELECT id, type, chain, currency, address, api_key, api_secret,
+		SELECT id, type, name, chain, currency, address, api_key, api_secret,
 		       enabled, config, created_at, updated_at
 		FROM payments WHERE id = ?
 	`
@@ -52,7 +52,7 @@ func (r *PaymentRepo) GetByID(id int64) (*model.Payment, error) {
 
 func (r *PaymentRepo) GetAll() ([]model.Payment, error) {
 	query := `
-		SELECT id, type, chain, currency, address, api_key, api_secret,
+		SELECT id, type, name, chain, currency, address, api_key, api_secret,
 		       enabled, config, created_at, updated_at
 		FROM payments
 	`
@@ -61,7 +61,7 @@ func (r *PaymentRepo) GetAll() ([]model.Payment, error) {
 
 func (r *PaymentRepo) GetEnabled() ([]model.Payment, error) {
 	query := `
-		SELECT id, type, chain, currency, address, api_key, api_secret,
+		SELECT id, type, name, chain, currency, address, api_key, api_secret,
 		       enabled, config, created_at, updated_at
 		FROM payments WHERE enabled = 1
 	`
@@ -71,7 +71,7 @@ func (r *PaymentRepo) GetEnabled() ([]model.Payment, error) {
 func (r *PaymentRepo) Update(p *model.Payment) error {
 	query := `
 		UPDATE payments SET
-			type = ?, chain = ?, currency = ?, address = ?,
+			type = ?, name = ?, chain = ?, currency = ?, address = ?,
 			api_key = ?, api_secret = ?, enabled = ?, config = ?, updated_at = ?
 		WHERE id = ?
 	`
@@ -82,7 +82,7 @@ func (r *PaymentRepo) Update(p *model.Payment) error {
 	}
 
 	_, err := r.db.Exec(query,
-		p.Type, p.Chain, p.Currency, p.Address,
+		p.Type, p.Name, p.Chain, p.Currency, p.Address,
 		p.APIKey, p.APISecret, enabled, p.Config, time.Now().Unix(),
 		p.ID,
 	)
@@ -127,12 +127,12 @@ func (r *PaymentRepo) scanPaymentRow(row *sql.Rows) (*model.Payment, error) {
 func (r *PaymentRepo) scanPaymentScanner(s scanner) (*model.Payment, error) {
 	var p model.Payment
 	var ptype string
-	var chain, currency, address, apiKey, apiSecret, config sql.NullString
+	var name, chain, currency, address, apiKey, apiSecret, config sql.NullString
 	var enabled int
 	var createdAt, updatedAt int64
 
 	err := s.Scan(
-		&p.ID, &ptype, &chain, &currency, &address,
+		&p.ID, &ptype, &name, &chain, &currency, &address,
 		&apiKey, &apiSecret, &enabled, &config,
 		&createdAt, &updatedAt,
 	)
@@ -141,6 +141,7 @@ func (r *PaymentRepo) scanPaymentScanner(s scanner) (*model.Payment, error) {
 	}
 
 	p.Type = model.PaymentType(ptype)
+	p.Name = name.String
 	p.Chain = chain.String
 	p.Currency = currency.String
 	p.Address = address.String
