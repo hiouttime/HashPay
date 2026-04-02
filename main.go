@@ -4,12 +4,12 @@ import (
 	"os"
 
 	"hashpay/internal/app"
-	"hashpay/internal/ui"
+	"hashpay/internal/pkg/log"
 )
 
 func main() {
 	if err := app.Run(); err != nil {
-		ui.Error("启动失败: %v", err)
+		log.Fatal("Failed to start: %v", err)
 		os.Exit(1)
 	}
 }

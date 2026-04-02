@@ -94,21 +94,3 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_tx_order ON transactions(order_id);
 CREATE INDEX IF NOT EXISTS idx_tx_hash ON transactions(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_tx_to ON transactions(to_addr);
-
--- 通知记录表
-CREATE TABLE IF NOT EXISTS notifications (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id    TEXT NOT NULL,
-    type        TEXT NOT NULL,
-    target      TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    status      INTEGER DEFAULT 0,
-    retry_count INTEGER DEFAULT 0,
-    next_retry  INTEGER,
-    created_at  INTEGER NOT NULL,
-    sent_at     INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_notif_order ON notifications(order_id);
-CREATE INDEX IF NOT EXISTS idx_notif_status ON notifications(status);
-CREATE INDEX IF NOT EXISTS idx_notif_retry ON notifications(next_retry);

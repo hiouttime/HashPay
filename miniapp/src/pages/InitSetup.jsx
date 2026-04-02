@@ -145,7 +145,7 @@ const InitSetup = () => {
         }
       }
 
-      const response = await api.post('/api/init/config', fullConfig)
+      const response = await api.post('/api/config', fullConfig)
       
       if (response.data.merchant_api_key) {
         setMerchantConfig(prev => ({ ...prev, apiKey: response.data.merchant_api_key }))

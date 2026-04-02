@@ -1,48 +1,49 @@
 package bot
 
 import (
-	"database/sql"
-	"fmt"
 	"time"
 
-	"hashpay/internal/command"
-	configcmd "hashpay/internal/command/config"
-	"hashpay/internal/command/help"
-	"hashpay/internal/command/orders"
-	"hashpay/internal/command/start"
-	"hashpay/internal/command/stats"
-	"hashpay/internal/database"
-	"hashpay/internal/ui"
+	"hashpay/internal/pkg/log"
+	"hashpay/internal/service"
 
 	tele "gopkg.in/telebot.v4"
 )
 
+// Bot Telegram Bot 实例
 type Bot struct {
-	bot *tele.Bot
-	db  *database.DB
+	bot     *tele.Bot
+	users   *service.UserService
+	stats   *service.StatsService
+	adminID int64
 }
 
+// Config Bot 配置
 type Config struct {
-	Token string
-	Admin int64
+	Token   string
+	AdminID int64
 }
 
-func New(cfg *Config, db *sql.DB) (*Bot, error) {
-	pref := tele.Settings{
+// Services Bot 依赖的服务
+type Services struct {
+	Users *service.UserService
+	Stats *service.StatsService
+}
+
+// New 创建 Bot 实例
+func New(cfg *Config, svc *Services) (*Bot, error) {
+	b, err := tele.NewBot(tele.Settings{
 		Token:  cfg.Token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-	}
-
-	b, err := tele.NewBot(pref)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("new bot: %w", err)
+		return nil, err
 	}
 
-	dbWrapper := &database.DB{}
-	dbWrapper.DB = db
 	bot := &Bot{
-		bot: b,
-		db:  dbWrapper,
+		bot:     b,
+		users:   svc.Users,
+		stats:   svc.Stats,
+		adminID: cfg.AdminID,
 	}
 
 	bot.setupHandlers()
@@ -50,16 +51,19 @@ func New(cfg *Config, db *sql.DB) (*Bot, error) {
 	return bot, nil
 }
 
+// Start 启动 Bot
 func (b *Bot) Start() {
-	ui.Info("Bot 服务启动")
+	log.Info("Telegram Bot 已启动: @%s", b.Username())
 	b.bot.Start()
 }
 
+// Stop 停止 Bot
 func (b *Bot) Stop() {
 	b.bot.Stop()
-	ui.Info("Bot 服务停止")
+	log.Info("Telegram Bot 已停止")
 }
 
+// Username 返回 Bot 用户名
 func (b *Bot) Username() string {
 	if b.bot.Me != nil {
 		return b.bot.Me.Username
@@ -67,48 +71,18 @@ func (b *Bot) Username() string {
 	return ""
 }
 
+// SendNotification 发送通知给管理员
+func (b *Bot) SendNotification(message string) error {
+	_, err := b.bot.Send(&tele.User{ID: b.adminID}, message)
+	return err
+}
+
 func (b *Bot) setupHandlers() {
-	deps := command.Dependencies{
-		DB:         b.db,
-		IsAdmin:    b.IsAdmin,
-		Username:   b.Username,
-		MiniAppURL: "",
-	}
-
-	handlers := []command.Handler{
-		start.New(deps),
-		help.New(deps),
-		stats.New(deps),
-		orders.New(deps),
-		configcmd.New(deps),
-	}
-
-	for _, h := range handlers {
-		b.bot.Handle(h.Command(), h.Handle)
-	}
-
-	b.bot.Handle(tele.OnQuery, b.handleInlineQuery)
-	b.bot.Handle(tele.OnInlineResult, b.handleInlineResult)
-	b.bot.Handle(tele.OnCallback, b.handleCallback)
-	b.bot.Handle(tele.OnText, b.handleText)
+	b.bot.Handle("/start", b.handleStart)
+	b.bot.Handle("/help", b.handleHelp)
+	b.bot.Handle("/stats", b.handleStats)
 }
 
-func (b *Bot) IsAdmin(userID int64) bool {
-	user, err := b.db.GetUser(userID)
-	if err != nil {
-		return false
-	}
-	return user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
-}
-
-func (b *Bot) DB() *database.DB {
-	return b.db
-}
-
-func (b *Bot) isSetup() bool {
-	val, err := b.db.GetConfig("setup_completed")
-	if err != nil {
-		return false
-	}
-	return val == "true"
+func (b *Bot) isAdmin(userID int64) bool {
+	return userID == b.adminID || b.users.IsAdmin(userID)
 }

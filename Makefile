@@ -1,15 +1,15 @@
-.PHONY: build run test clean sqlc migrate dev
+.PHONY: build run test clean sqlc migrate dev miniapp-build miniapp-dev
 
 # 构建项目
-build:
+build: miniapp-build
 	go build -o hashpay .
 
 # 运行项目
-run:
+run: miniapp-build
 	go run .
 
 # 开发模式
-dev:
+dev: miniapp-build
 	go run .
 
 # 运行测试

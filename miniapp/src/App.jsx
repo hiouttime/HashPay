@@ -9,24 +9,24 @@ function App() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    checkInitMode()
-  }, [])
-
-  const checkInitMode = async () => {
-    try {
-      const response = await api.get('/api/init/health')
-      if (response.data.status === 'ready') {
-        // 初始化模式
-        navigate('/init')
-      } else {
-        // 正常模式
-        navigate('/dashboard')
+    let active = true
+    const checkInitMode = async () => {
+      try {
+        const { data } = await api.get('/api/status')
+        if (!active) return
+        navigate(data.status === 'init' ? '/init' : '/dashboard', { replace: true })
+      } catch (error) {
+        if (active) {
+          navigate('/dashboard', { replace: true })
+        }
       }
-    } catch (error) {
-      // 不在初始化模式，显示管理界面
-      navigate('/dashboard')
     }
-  }
+
+    void checkInitMode()
+    return () => {
+      active = false
+    }
+  }, [navigate])
 
   return (
     <AppRoot>

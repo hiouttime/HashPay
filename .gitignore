@@ -70,6 +70,4 @@ temp/
 *.bak
 *.backup
 
-# OS files
-Thumbs.db
-Desktop.ini
+web/node_modules/
