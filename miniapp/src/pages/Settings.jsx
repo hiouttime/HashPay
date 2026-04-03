@@ -1,44 +1,68 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Button } from '@telegram-apps/telegram-ui'
+import { Section, Text, Caption, List, Button, Spinner, Select, Input, Switch } from '@telegram-apps/telegram-ui'
 import { adminApi } from '../utils/api'
-import { AppGroup, AppPage } from '../components/AppPage'
+import useTelegramBackButton from '../utils/useTelegramBackButton'
 import { showNotice } from './AdminCommon'
+import PageTitle from '../components/PageTitle'
 import './Admin.scss'
 
+const currencyOptions = ['CNY', 'USD', 'EUR', 'GBP', 'TWD']
+
 function Settings() {
+  useTelegramBackButton()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     currency: 'CNY',
     timeout: '1800',
-    rate_adjust: '0',
-    fast_confirm: 'true',
+    rateAdjust: '',
+    fastConfirm: true,
   })
   const [bannerURL, setBannerURL] = useState('/media/banner')
   const fileRef = useRef(null)
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const { data } = await adminApi.settings()
-        setForm({
-          currency: data.currency || 'CNY',
-          timeout: data.timeout || '1800',
-          rate_adjust: data.rate_adjust || '0',
-          fast_confirm: data.fast_confirm || 'true',
-        })
-        setBannerURL(data.banner_url || '/media/banner')
-      } catch {
-        setBannerURL('/media/banner')
-      }
+  const loadConfig = async () => {
+    setLoading(true)
+    try {
+      const { data } = await adminApi.settings()
+      setForm({
+        currency: data.currency || 'CNY',
+        timeout: data.timeout || '1800',
+        rateAdjust: data.rate_adjust || '',
+        fastConfirm: data.fast_confirm !== 'false',
+      })
+      setBannerURL(data.banner_url || '/media/banner')
+    } catch {
+      setForm({
+        currency: 'CNY',
+        timeout: '1800',
+        rateAdjust: '',
+        fastConfirm: true,
+      })
+      setBannerURL('/media/banner')
+    } finally {
+      setLoading(false)
     }
-    void load()
+  }
+
+  useEffect(() => {
+    void loadConfig()
   }, [])
 
-  const save = async () => {
+  const saveConfig = async () => {
+    setSaving(true)
     try {
-      await adminApi.saveSettings(form)
-      showNotice('设置已保存')
+      await adminApi.saveSettings({
+        currency: form.currency,
+        timeout: form.timeout.trim() || '1800',
+        rate_adjust: form.rateAdjust.trim() || '0',
+        fast_confirm: form.fastConfirm ? 'true' : 'false',
+      })
+      showNotice('系统配置已保存')
     } catch {
-      showNotice('保存设置失败')
+      showNotice('保存系统配置失败')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -55,47 +79,112 @@ function Settings() {
   }
 
   return (
-    <AppPage title="系统设置" subtitle="这里只保留真正影响计价、超时和展示的关键设置。">
-      <AppGroup title="计价与过期">
-        <div className="form-grid">
-          <label className="form-field">
-            <span>基础货币</span>
-            <input value={form.currency} onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))} />
-          </label>
-          <label className="form-field">
-            <span>订单超时（秒）</span>
-            <input type="number" value={form.timeout} onChange={(e) => setForm((prev) => ({ ...prev, timeout: e.target.value }))} />
-          </label>
-          <label className="form-field">
-            <span>汇率微调</span>
-            <input value={form.rate_adjust} onChange={(e) => setForm((prev) => ({ ...prev, rate_adjust: e.target.value }))} />
-          </label>
-          <label className="form-field">
-            <span>快速确认</span>
-            <select value={form.fast_confirm} onChange={(e) => setForm((prev) => ({ ...prev, fast_confirm: e.target.value }))}>
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
-          </label>
-        </div>
-        <div className="row-actions">
-          <Button size="s" onClick={save}>保存配置</Button>
-        </div>
-      </AppGroup>
+    <div className="admin-page">
+      <PageTitle title="系统配置" subtitle="修改系统参数后立即生效。" />
 
-      <AppGroup title="Inline Banner" subtitle="只有 inline 订单占位需要横幅，普通管理消息不使用图片。">
-        <div className="banner-stage">
-          <img src={bannerURL} alt="Banner preview" />
-          <div className="row-actions">
-            <Button size="s" mode="outline" onClick={() => fileRef.current?.click()}>更换横幅</Button>
-          </div>
-          <input ref={fileRef} hidden type="file" accept="image/*" onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void upload(file)
-          }} />
+      <List>
+        <div className="admin-section">
+          <Section header="货币">
+            {loading ? (
+              <div className="loading-wrap">
+                <Spinner size="m" />
+              </div>
+            ) : (
+              <div className="form-wrap">
+                <div className="field-wrap">
+                  <Select
+                    header="基础货币"
+                    value={form.currency}
+                    onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
+                  >
+                    {currencyOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <Caption className="hint-line">在发起订单时的默认货币，以及用于统计数据的货币。</Caption>
+
+                <div className="field-wrap">
+                  <Input
+                    header="计价汇率微调"
+                    placeholder="微调计价汇率（可不填）"
+                    value={form.rateAdjust}
+                    onChange={(e) => setForm((prev) => ({ ...prev, rateAdjust: e.target.value }))}
+                  />
+                </div>
+                <Caption className="hint-line">实时价格与 C2C 汇率计算后可再微调，例如 +0.5 或 -1。</Caption>
+              </div>
+            )}
+          </Section>
         </div>
-      </AppGroup>
-    </AppPage>
+
+        <div className="admin-section">
+          <Section header="交易检测">
+            {loading ? (
+              <div className="loading-wrap">
+                <Spinner size="m" />
+              </div>
+            ) : (
+              <div className="form-wrap">
+                <div className="field-wrap">
+                  <Input
+                    header="订单超时（秒）"
+                    type="number"
+                    value={form.timeout}
+                    onChange={(e) => setForm((prev) => ({ ...prev, timeout: e.target.value }))}
+                  />
+                </div>
+                <div className="switch-line">
+                  <Text>快速确认</Text>
+                  <Switch
+                    checked={form.fastConfirm}
+                    onChange={(e) => setForm((prev) => ({ ...prev, fastConfirm: e.target.checked }))}
+                  />
+                </div>
+                <Caption className="hint-line">不等待目标链交易确认区块数达到安全值，提升交易确认速度。</Caption>
+              </div>
+            )}
+          </Section>
+        </div>
+
+        <div className="admin-section">
+          <Section header="Inline Banner">
+            <div className="card-list">
+              <div className="banner-stage">
+                <img src={bannerURL} alt="Banner preview" />
+              </div>
+            </div>
+            <div className="section-action">
+              <Button size="m" mode="outline" stretched onClick={() => fileRef.current?.click()}>
+                更换横幅
+              </Button>
+            </div>
+            <input
+              ref={fileRef}
+              hidden
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void upload(file)
+              }}
+            />
+          </Section>
+        </div>
+
+        <div className="admin-section">
+          <Section>
+            <div className="section-action">
+              <Button size="m" stretched onClick={saveConfig} disabled={saving || loading}>
+                {saving ? '保存中...' : '保存系统配置'}
+              </Button>
+            </div>
+          </Section>
+        </div>
+      </List>
+    </div>
   )
 }
 

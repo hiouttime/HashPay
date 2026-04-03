@@ -80,6 +80,7 @@ type Driver interface {
 	FormSchema() []Field
 	Quote(req QuoteRequest, fx Converter) ([]Quote, error)
 	Assign(req AssignRequest, fx Converter) (*Route, error)
+	Scanner(method Method, debug bool) Scanner
 }
 
 type Converter interface {
@@ -191,4 +192,19 @@ func requireField(fields map[string]string, key, label string) (string, error) {
 		return "", fmt.Errorf("%s 不能为空", label)
 	}
 	return value, nil
+}
+
+func networkField(fields map[string]string, fallback string) string {
+	if fields == nil {
+		return fallback
+	}
+	return firstNonEmpty(strings.ToLower(strings.TrimSpace(fields["network"])), fallback)
+}
+
+func toleranceField(fields map[string]string, key string, fallback float64) float64 {
+	return floatField(fields, key, fallback)
+}
+
+func defaultTitle(meta Meta, method Method) string {
+	return firstNonEmpty(method.Name, meta.Name)
 }

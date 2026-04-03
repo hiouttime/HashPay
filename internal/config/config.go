@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +45,30 @@ type MySQLConfig struct {
 
 const ConfigPath = "config.yaml"
 
+func LoadOrDefault() (*Config, error) {
+	if !Exists(ConfigPath) {
+		return Default(), nil
+	}
+
+	cfg, err := Load(ConfigPath)
+	if err != nil {
+		return Default(), nil
+	}
+	return cfg, nil
+}
+
+func Default() *Config {
+	return &Config{
+		Server: ServerConfig{Bind: ":8181"},
+		Database: DatabaseConfig{
+			Type: "sqlite",
+			SQLite: SQLiteConfig{
+				Path: "./data/hashpay.db",
+			},
+		},
+	}
+}
+
 // Load 从文件加载配置
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -84,33 +109,33 @@ func (c *Config) BindAddr() string {
 
 // HasDatabase 检查是否配置了数据库
 func (c *Config) HasDatabase() bool {
-	switch c.Database.Type {
-	case "sqlite":
-		return c.Database.SQLite.Path != ""
-	case "mysql":
+	if strings.TrimSpace(c.Database.MySQL.Host) != "" && strings.TrimSpace(c.Database.MySQL.Database) != "" {
 		return c.Database.MySQL.Host != "" && c.Database.MySQL.Database != ""
 	}
-	return false
+	return c.Database.SQLite.Path != ""
 }
 
 // DSN 返回数据库连接字符串
 func (c *Config) DSN() (driver, dsn string) {
-	switch c.Database.Type {
-	case "mysql":
+	if strings.TrimSpace(c.Database.MySQL.Host) != "" && strings.TrimSpace(c.Database.MySQL.Database) != "" {
 		driver = "mysql"
+		port := c.Database.MySQL.Port
+		if port == 0 {
+			port = 3306
+		}
 		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
 			c.Database.MySQL.Username,
 			c.Database.MySQL.Password,
 			c.Database.MySQL.Host,
-			c.Database.MySQL.Port,
+			port,
 			c.Database.MySQL.Database,
 		)
-	default:
-		driver = "sqlite3"
-		dsn = c.Database.SQLite.Path
-		if dsn == "" {
-			dsn = "./data/hashpay.db"
-		}
+		return
+	}
+	driver = "sqlite3"
+	dsn = c.Database.SQLite.Path
+	if dsn == "" {
+		dsn = "./data/hashpay.db"
 	}
 	return
 }

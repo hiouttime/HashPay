@@ -4,6 +4,7 @@ import { Button } from '@telegram-apps/telegram-ui'
 import { adminApi } from '../utils/api'
 import { AppGroup, AppPage } from '../components/AppPage'
 import { showNotice } from './AdminCommon'
+import useTelegramBackButton from '../utils/useTelegramBackButton'
 import './Admin.scss'
 
 function MerchantForm() {
@@ -11,6 +12,7 @@ function MerchantForm() {
   const { id } = useParams()
   const location = useLocation()
   const current = useMemo(() => location.state?.item || null, [location.state])
+  useTelegramBackButton()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: current?.name || '',
@@ -37,6 +39,7 @@ function MerchantForm() {
       title={id ? '编辑商户' : '新增商户'}
       subtitle="保留简洁字段，让管理员快速完成接入配置。"
       actions={<Button size="s" loading={saving} onClick={save}>保存</Button>}
+      hideNav
     >
       <AppGroup title="基础信息">
         <div className="form-grid">

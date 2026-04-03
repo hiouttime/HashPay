@@ -1,12 +1,18 @@
 package main
 
 import (
-	"hashpay/internal/bootstrap"
-	"hashpay/internal/pkg/log"
+	"errors"
+
+	"hashpay/internal/app"
+	"hashpay/internal/utils/log"
 )
 
 func main() {
-	if err := bootstrap.Run(); err != nil {
+	if err := app.Run(); err != nil {
+		if errors.Is(err, app.ErrInterrupted) {
+			log.Info("已取消，程序退出")
+			return
+		}
 		log.Fatal("Failed to start: %v", err)
 	}
 }

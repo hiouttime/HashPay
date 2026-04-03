@@ -23,6 +23,7 @@ build/
 
 # Data files
 data/
+runtime/
 *.db
 *.db-shm
 *.db-wal

@@ -1,84 +1,160 @@
 import React, { useEffect, useState } from 'react'
-import { Button } from '@telegram-apps/telegram-ui'
 import { useNavigate } from 'react-router-dom'
+import { Section, Text, Caption, List, Button, Placeholder, Spinner } from '@telegram-apps/telegram-ui'
 import { adminApi } from '../utils/api'
-import { AppGroup, AppMetric, AppPage } from '../components/AppPage'
 import { formatAmount, formatTime, shortText, statusText } from './AdminCommon'
+import PageTitle from '../components/PageTitle'
 import './Admin.scss'
 
 function Dashboard() {
   const navigate = useNavigate()
+  const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
 
-  const load = async () => {
+  const load = async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       const { data } = await adminApi.dashboard()
       setData(data)
     } catch {
-      setData(null)
+      if (!silent) {
+        setData(null)
+      }
+    } finally {
+      if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
   useEffect(() => {
     void load()
-    const timer = window.setInterval(() => void load(), 8000)
+    const timer = window.setInterval(() => void load(true), 8000)
     return () => window.clearInterval(timer)
   }, [])
 
   return (
-    <AppPage
-      title="运营面板"
-      subtitle="管理员最该关注的是今天收了多少、还有哪些单没完、哪个配置可能挡路。"
-      actions={<Button size="s" mode="outline" onClick={load}>刷新</Button>}
-    >
-      <AppGroup title="今日重点">
-        <div className="metric-grid">
-          <AppMetric label="今日入账" value={formatAmount(data?.today_amount)} tone="green" />
-          <AppMetric label="今日笔数" value={String(data?.today_count ?? 0)} />
-          <AppMetric label="待处理订单" value={String(data?.pending_count ?? 0)} tone="amber" />
-          <AppMetric label="通知失败" value={String(data?.failed_notify_count ?? 0)} tone="red" />
-        </div>
-      </AppGroup>
+    <div className="admin-page">
+      <PageTitle
+        title="HashPay 管理后台"
+        subtitle="运营概览、系统管理、近期订单。"
+        actions={(
+          <Button size="s" mode="outline" onClick={() => load(true)}>
+            更新数据
+          </Button>
+        )}
+      />
 
-      <AppGroup title="支付健康" subtitle="这里不做图表炫技，只展示会影响管理员下一步决策的状态。">
-        <div className="stack-list">
-          {(data?.health || []).map((item) => (
-            <div key={item.title} className="health-row">
-              <div>
-                <strong>{item.title}</strong>
-                <p>{item.details}</p>
+      <List>
+        <div className="admin-section">
+          <Section header="运营概览">
+            {loading && !data ? (
+              <div className="loading-wrap">
+                <Spinner size="m" />
               </div>
-              <span className={`health-pill tone-${item.status}`}>{item.status}</span>
-            </div>
-          ))}
-          {!data?.health?.length ? <div className="empty-state">还没有配置任何支付方式。</div> : null}
-        </div>
-      </AppGroup>
-
-      <AppGroup
-        title="最近订单"
-        footer={<button className="quiet-btn" onClick={() => navigate('/orders')}>查看全部</button>}
-      >
-        <div className="stack-list">
-          {(data?.recent_orders || []).map((order) => (
-            <button key={order.id} className="work-row clickable" onClick={() => navigate(`/orders/${order.id}`)}>
-              <div className="work-row-head">
-                <div>
-                  <strong>{shortText(order.id, 8, 6)}</strong>
-                  <p>{formatAmount(order.fiat_amount)} {order.fiat_currency}</p>
+            ) : (
+              <div className="overview-grid">
+                <div className="overview-card">
+                  <Caption className="overview-label">今日订单</Caption>
+                  <Text className="overview-value">{String(data?.today_count ?? 0)}</Text>
                 </div>
-                <span className={`status-chip status-${order.status}`}>{statusText(order.status)}</span>
+                <div className="overview-card">
+                  <Caption className="overview-label">今日收款金额</Caption>
+                  <Text className="overview-value">{formatAmount(data?.today_amount)}</Text>
+                </div>
+                <div className="overview-card">
+                  <Caption className="overview-label">待处理订单</Caption>
+                  <Text className="overview-value">{String(data?.pending_count ?? 0)}</Text>
+                </div>
+                <div className="overview-card">
+                  <Caption className="overview-label">通知失败</Caption>
+                  <Text className="overview-value">{String(data?.failed_notify_count ?? 0)}</Text>
+                </div>
               </div>
-              <div className="row-meta">
-                <span>{order.merchant_id}</span>
-                <span>{formatTime(order.created_at)}</span>
-              </div>
-            </button>
-          ))}
-          {!data?.recent_orders?.length ? <div className="empty-state">暂无订单。</div> : null}
+            )}
+            <div className="section-action">
+              <Button size="m" mode="outline" stretched onClick={() => navigate('/overview')}>
+                查看更多
+              </Button>
+            </div>
+          </Section>
         </div>
-      </AppGroup>
-    </AppPage>
+
+        <div className="admin-section">
+          <Section header="系统管理">
+            <div className="page-nav">
+              <Button size="m" mode="outline" onClick={() => navigate('/orders')}>
+                订单管理
+              </Button>
+              <Button size="m" mode="outline" onClick={() => navigate('/payments')}>
+                支付设置
+              </Button>
+              <Button size="m" mode="outline" onClick={() => navigate('/merchants')}>
+                商户管理
+              </Button>
+              <Button size="m" mode="outline" onClick={() => navigate('/settings')}>
+                系统配置
+              </Button>
+            </div>
+          </Section>
+        </div>
+
+        <div className="admin-section">
+          <Section header="支付健康">
+            {!data?.health?.length ? (
+              <Placeholder description="还没有配置任何支付方式" />
+            ) : (
+              <div className="card-list">
+                {data.health.map((item) => (
+                  <div className="line-card" key={item.title}>
+                    <div className="line-head">
+                      <Text className="line-title">{item.title}</Text>
+                      <span className={`status-pill status-${item.status === 'warn' ? 'pending' : item.status === 'off' ? 'expired' : 'paid'}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    <Caption className="line-desc">{item.details}</Caption>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+        </div>
+
+        <div className="admin-section">
+          <Section header="近期订单">
+            {loading && !data ? (
+              <div className="loading-wrap">
+                <Spinner size="m" />
+              </div>
+            ) : !(data?.recent_orders?.length) ? (
+              <Placeholder description="当前还没有最近订单记录。" />
+            ) : (
+              <div className="card-list">
+                {data.recent_orders.map((order) => (
+                  <div className="line-card" key={order.id}>
+                    <div className="line-head">
+                      <Text className="line-title">{shortText(order.id, 8, 6)}</Text>
+                      <span className={`status-pill status-${order.status}`}>{statusText(order.status)}</span>
+                    </div>
+                    <Caption className="line-desc">
+                      {order.merchant_id} · {formatAmount(order.fiat_amount)} {order.fiat_currency} · {formatTime(order.created_at)}
+                    </Caption>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="section-action">
+              <Button size="m" stretched onClick={() => navigate('/orders')}>
+                订单管理
+              </Button>
+            </div>
+          </Section>
+        </div>
+      </List>
+    </div>
   )
 }
 

@@ -3,11 +3,13 @@ import { useParams } from 'react-router-dom'
 import { adminApi } from '../utils/api'
 import { AppGroup, AppPage } from '../components/AppPage'
 import { formatAmount, formatTime, statusText } from './AdminCommon'
+import useTelegramBackButton from '../utils/useTelegramBackButton'
 import './Admin.scss'
 
 function OrderDetail() {
   const { id } = useParams()
   const [item, setItem] = useState(null)
+  useTelegramBackButton()
 
   useEffect(() => {
     const load = async () => {
@@ -22,7 +24,7 @@ function OrderDetail() {
   }, [id])
 
   return (
-    <AppPage title="订单详情" subtitle="这里应该能让管理员快速判断订单在什么阶段卡住。">
+    <AppPage title="订单详情" subtitle="这里应该能让管理员快速判断订单在什么阶段卡住。" hideNav>
       <AppGroup title="状态快照">
         {item ? (
           <div className="detail-grid">

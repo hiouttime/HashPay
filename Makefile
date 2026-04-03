@@ -1,16 +1,19 @@
 .PHONY: build run test test-init clean sqlc migrate dev frontend-build web-build web-dev miniapp-build miniapp-dev
 
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X hashpay/internal/app.version=$(VERSION)
+
 # 构建项目
 build: frontend-build
-	go build -o hashpay .
+	go build -ldflags "$(LDFLAGS)" -o hashpay .
 
 # 运行项目
 run: frontend-build
-	go run .
+	go run -ldflags "$(LDFLAGS)" .
 
 # 开发模式
 dev: frontend-build
-	go run .
+	go run -ldflags "$(LDFLAGS)" .
 
 # 运行测试
 test:
@@ -58,14 +61,14 @@ frontend-build: web-build miniapp-build
 
 # 跨平台编译
 build-linux:
-	GOOS=linux GOARCH=amd64 go build -o hashpay-linux-amd64 .
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o hashpay-linux-amd64 .
 
 build-mac:
-	GOOS=darwin GOARCH=amd64 go build -o hashpay-darwin-amd64 .
-	GOOS=darwin GOARCH=arm64 go build -o hashpay-darwin-arm64 .
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o hashpay-darwin-amd64 .
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o hashpay-darwin-arm64 .
 
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -o hashpay-windows-amd64.exe .
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o hashpay-windows-amd64.exe .
 
 build-all: build-linux build-mac build-windows
 

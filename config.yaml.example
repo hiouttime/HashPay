@@ -6,7 +6,7 @@ bot:
   token: "YOUR_BOT_TOKEN"
 
 database:
-  type: sqlite  # sqlite | mysql
+  type: sqlite
   sqlite:
     path: ./data/hashpay.db
   mysql:
@@ -15,9 +15,3 @@ database:
     database: hashpay
     username: root
     password: ""
-
-system:
-  currency: CNY           # 基础货币: CNY, USD, EUR, GBP, TWD
-  timeout: 1800          # 订单超时时间(秒)
-  fast_confirm: true     # 快速确认(减少区块确认数)
-  rate_adjust: 0.00      # 汇率微调(-0.05 ~ 0.05)

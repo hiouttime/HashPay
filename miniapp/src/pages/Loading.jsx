@@ -5,7 +5,7 @@ function Loading() {
   return (
     <div className="screen-loading">
       <div className="pulse-dot" />
-      <p>HashPay 正在整理管理面板…</p>
+      <p>HashPay 正在加载…</p>
     </div>
   )
 }

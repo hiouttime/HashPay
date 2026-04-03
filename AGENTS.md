@@ -42,20 +42,22 @@
 
 当前后端按职责分层，后续改动不要再把职责揉回旧式大杂烩：
 
-1. `internal/bootstrap`
-   负责配置加载、依赖装配、运行时启停。
+1. `internal/app`
+   负责配置模型、首次启动引导、依赖装配、运行时启停。
 2. `internal/http`
    只负责 Web 服务、路由、中间件、HTTP DTO、静态资源挂载。
 3. `internal/bot`
    只负责 Telegram 协议交互、消息场景分发、inline 订单交互。
-4. `internal/store`
-   负责数据库、模型、仓储、迁移。
+4. `internal/models`
+   负责数据库、模型、按功能拆分的数据访问与迁移。
 5. `internal/payments`
-   负责支付驱动定义、驱动注册、表单 schema、报价、支付分配。
-6. `internal/usecase`
+   负责支付驱动定义、驱动注册、表单 schema、报价、支付分配、扫描扩展。
+6. `internal/service`
    负责领域用例与跨模块业务编排。
 7. `internal/jobs`
    负责过期、扫描、通知等后台任务。
+8. `internal/utils`
+   只保留真正通用的工具代码。
 
 禁止继续把业务逻辑横散到 handler、bot、scanner 里彼此直接拼接。
 

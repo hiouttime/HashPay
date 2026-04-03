@@ -4,6 +4,7 @@ import { Button } from '@telegram-apps/telegram-ui'
 import { adminApi } from '../utils/api'
 import { AppGroup, AppPage } from '../components/AppPage'
 import { showNotice } from './AdminCommon'
+import useTelegramBackButton from '../utils/useTelegramBackButton'
 import './Admin.scss'
 
 function PaymentForm() {
@@ -11,6 +12,7 @@ function PaymentForm() {
   const navigate = useNavigate()
   const location = useLocation()
   const current = location.state?.item || null
+  useTelegramBackButton()
   const [catalog, setCatalog] = useState([])
   const [schema, setSchema] = useState({})
   const [saving, setSaving] = useState(false)
@@ -69,6 +71,7 @@ function PaymentForm() {
       title={id ? '编辑支付方式' : '新增支付方式'}
       subtitle="按照后端驱动 schema 渲染，不在页面里硬编码 TRON、TON、交易所等独立表单。"
       actions={<Button size="s" loading={saving} onClick={save}>保存</Button>}
+      hideNav
     >
       <AppGroup title="驱动选择">
         <div className="form-grid">

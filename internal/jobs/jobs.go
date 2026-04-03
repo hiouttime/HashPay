@@ -1,44 +1,36 @@
 package jobs
 
 import (
-	"math"
-	"strings"
+	"sync"
 	"time"
 
-	"hashpay/internal/config"
-	"hashpay/internal/pkg/log"
-	"hashpay/internal/scanner"
-	"hashpay/internal/store"
-	"hashpay/internal/usecase"
+	"hashpay/internal/models"
+	"hashpay/internal/payments"
+	"hashpay/internal/service"
+	"hashpay/internal/utils/log"
 )
 
-type BotSync interface {
+type OrderNotifier interface {
 	NotifyPaid(orderID string)
 	NotifyExpired(orderID string)
 }
 
 type Runner struct {
-	store   *store.Store
-	app     *usecase.App
-	cfg     *config.Config
-	bot     BotSync
-	stopCh  chan struct{}
-	clients map[string]scanner.ChainAPI
+	models   *models.Models
+	app      *service.App
+	debug    bool
+	bot      OrderNotifier
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
-func New(store *store.Store, app *usecase.App, cfg *config.Config, bot BotSync) *Runner {
+func New(db *models.Models, app *service.App, debug bool, bot OrderNotifier) *Runner {
 	return &Runner{
-		store:  store,
+		models: db,
 		app:    app,
-		cfg:    cfg,
+		debug:  debug,
 		bot:    bot,
 		stopCh: make(chan struct{}),
-		clients: map[string]scanner.ChainAPI{
-			"chain/tron":   scanner.NewTronAPI(tronURL(cfg.Debug), ""),
-			"chain/evm":    scanner.NewEVMHubAPI(scanner.NewEVMAPIWithNetwork(scanner.ChainETH, ethURL(cfg.Debug), cfg.Debug), scanner.NewEVMAPIWithNetwork(scanner.ChainBSC, bscURL(cfg.Debug), cfg.Debug), scanner.NewEVMAPIWithNetwork(scanner.ChainPolygon, polygonURL(cfg.Debug), cfg.Debug)),
-			"chain/solana": scanner.NewSolanaAPI(solanaURL(cfg.Debug)),
-			"chain/ton":    scanner.NewTonAPI(tonURL(cfg.Debug)),
-		},
 	}
 }
 
@@ -49,7 +41,9 @@ func (r *Runner) Start() {
 }
 
 func (r *Runner) Stop() {
-	close(r.stopCh)
+	r.stopOnce.Do(func() {
+		close(r.stopCh)
+	})
 }
 
 func (r *Runner) loopExpiry() {
@@ -58,17 +52,18 @@ func (r *Runner) loopExpiry() {
 	for {
 		select {
 		case <-ticker.C:
-			count, err := r.store.ExpireOrders(time.Now())
+			count, err := r.models.ExpireOrders(time.Now())
 			if err != nil {
-				log.Error("ExpireJob 失败: %v", err)
+				log.Error("ExpiryJob 失败: %v", err)
 				continue
 			}
-			if count > 0 && r.bot != nil {
-				orders, _ := r.store.ListOrders(50, store.OrderExpired)
-				for _, item := range orders {
-					if time.Since(item.UpdatedAt) < 10*time.Second {
-						r.bot.NotifyExpired(item.ID)
-					}
+			if count == 0 || r.bot == nil {
+				continue
+			}
+			orders, _ := r.models.ListOrders(50, models.OrderExpired)
+			for _, item := range orders {
+				if time.Since(item.UpdatedAt) < 10*time.Second {
+					r.bot.NotifyExpired(item.ID)
 				}
 			}
 		case <-r.stopCh:
@@ -83,19 +78,19 @@ func (r *Runner) loopNotify() {
 	for {
 		select {
 		case <-ticker.C:
-			list, err := r.store.DueNotifications(20)
+			list, err := r.models.DueNotifications(20)
 			if err != nil {
 				log.Error("NotifyJob 读取失败: %v", err)
 				continue
 			}
 			for _, item := range list {
 				if err := r.app.PostCallback(item); err != nil {
-					_ = r.store.UpdateOrderNotify(item.OrderID, store.NotifyRetry, err.Error())
-					_ = r.store.MarkNotificationRetry(item.ID, item.Attempts+1, err.Error(), time.Now().Add(time.Duration(item.Attempts+1)*time.Minute))
+					_ = r.models.UpdateOrderNotify(item.OrderID, models.NotifyRetry, err.Error())
+					_ = r.models.MarkNotificationRetry(item.ID, item.Attempts+1, err.Error(), time.Now().Add(time.Duration(item.Attempts+1)*time.Minute))
 					continue
 				}
-				_ = r.store.UpdateOrderNotify(item.OrderID, store.NotifyDone, "")
-				_ = r.store.MarkNotificationDone(item.ID)
+				_ = r.models.UpdateOrderNotify(item.OrderID, models.NotifyDone, "")
+				_ = r.models.MarkNotificationDone(item.ID)
 			}
 		case <-r.stopCh:
 			return
@@ -117,7 +112,7 @@ func (r *Runner) loopScan() {
 }
 
 func (r *Runner) scanOnce() {
-	items, err := r.store.ListPendingRoutes()
+	items, err := r.models.ListPendingRoutes()
 	if err != nil {
 		log.Error("ScanJob 读取订单失败: %v", err)
 		return
@@ -126,18 +121,48 @@ func (r *Runner) scanOnce() {
 		if order.Route == nil {
 			continue
 		}
-		client := r.clients[order.Route.Driver]
-		if client == nil {
+		method, err := r.models.GetPaymentMethod(order.Route.MethodID)
+		if err != nil {
 			continue
 		}
-		cursorKey := "scan:" + order.Route.Driver + ":" + strings.ToLower(order.Route.Address)
-		from := r.store.Cursor(cursorKey)
+		driver, ok := r.app.Registry.Driver(order.Route.Driver)
+		if !ok {
+			continue
+		}
+		methodView := payments.Method{
+			ID:      method.ID,
+			Name:    method.Name,
+			Driver:  method.Driver,
+			Kind:    method.Kind,
+			Fields:  method.Fields,
+			Enabled: method.Enabled,
+		}
+		scan := driver.Scanner(methodView, r.debug)
+		if scan == nil {
+			continue
+		}
+
+		cursorKey := scanCursorKey(order.Route)
+		from := r.models.Cursor(cursorKey)
 		if from == 0 {
 			from = order.CreatedAt.Unix()
 		}
-		txs, err := client.GetTransactions(order.Route.Address, from)
+		route := payments.Route{
+			MethodID:     order.Route.MethodID,
+			Driver:       order.Route.Driver,
+			Kind:         order.Route.Kind,
+			Network:      order.Route.Network,
+			Currency:     order.Route.Currency,
+			Amount:       order.Route.Amount,
+			Address:      order.Route.Address,
+			AccountName:  order.Route.AccountName,
+			Memo:         order.Route.Memo,
+			QRValue:      order.Route.QRValue,
+			Instructions: order.Route.Instructions,
+		}
+		txs, err := scan.Scan(route, from)
 		if err != nil {
-			log.Error("ScanJob 获取交易失败: driver=%s err=%v", order.Route.Driver, err)
+			log.Error("ScanJob 获取交易失败: method=%d driver=%s err=%v", method.ID, method.Driver, err)
 			continue
 		}
 		latest := from
@@ -145,39 +170,31 @@ func (r *Runner) scanOnce() {
 			if tx.Timestamp > latest {
 				latest = tx.Timestamp
 			}
-			r.match(order, tx)
+			if scan.Match(methodView, route, tx) {
+				r.markPaid(order, tx)
+			}
 		}
 		if latest > from {
-			_ = r.store.SetCursor(cursorKey, latest)
+			_ = r.models.SetCursor(cursorKey, latest)
 		}
 	}
 }
 
-func (r *Runner) match(order store.Order, tx scanner.Transaction) {
-	if order.Route == nil || strings.TrimSpace(tx.Hash) == "" {
+func (r *Runner) markPaid(order models.Order, tx payments.Transaction) {
+	if order.Route == nil || tx.Hash == "" {
 		return
 	}
-	ok, err := r.store.HasTx(tx.Hash)
+	ok, err := r.models.HasTx(tx.Hash)
 	if err == nil && ok {
 		return
 	}
 	if tx.Timestamp > 0 && (tx.Timestamp < order.CreatedAt.Unix() || tx.Timestamp > order.ExpireAt.Unix()) {
 		return
 	}
-	if tx.To != "" && !strings.EqualFold(strings.TrimSpace(tx.To), strings.TrimSpace(order.Route.Address)) && tx.To != order.Route.Address {
+	if err := r.models.MarkOrderPaid(order.ID, tx.Hash); err != nil {
 		return
 	}
-	if !strings.EqualFold(strings.TrimSpace(tx.Currency), strings.TrimSpace(order.Route.Currency)) {
-		return
-	}
-	if math.Abs(tx.Amount.InexactFloat64()-order.Route.Amount) > tolerance(order) {
-		return
-	}
-
-	if err := r.store.MarkOrderPaid(order.ID, tx.Hash); err != nil {
-		return
-	}
-	_ = r.store.SaveTx(&store.PaymentTx{
+	_ = r.models.SaveTx(&models.PaymentTx{
 		OrderID:   order.ID,
 		RouteID:   order.Route.ID,
 		MethodID:  order.Route.MethodID,
@@ -190,20 +207,17 @@ func (r *Runner) match(order store.Order, tx scanner.Transaction) {
 		Amount:    tx.Amount.InexactFloat64(),
 		CreatedAt: time.Unix(max(tx.Timestamp, time.Now().Unix()), 0),
 	})
-	_ = r.store.QueueNotification(order.ID)
+	_ = r.models.QueueNotification(order.ID)
 	if r.bot != nil {
 		r.bot.NotifyPaid(order.ID)
 	}
 }
 
-func tolerance(order store.Order) float64 {
-	if order.Route == nil {
-		return 0.000001
+func scanCursorKey(route *models.PaymentRoute) string {
+	if route == nil {
+		return ""
 	}
-	if order.Route.Kind == "exchange" {
-		return 0.01
-	}
-	return 0.000001
+	return "scan:" + route.Driver + ":" + route.ID
 }
 
 func max(a, b int64) int64 {
@@ -211,46 +225,4 @@ func max(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-func tronURL(debug bool) string {
-	if debug {
-		return "https://nile.trongrid.io"
-	}
-	return "https://api.trongrid.io"
-}
-
-func ethURL(debug bool) string {
-	if debug {
-		return "https://rpc.sepolia.org"
-	}
-	return "https://cloudflare-eth.com"
-}
-
-func bscURL(debug bool) string {
-	if debug {
-		return "https://data-seed-prebsc-1-s1.binance.org:8545"
-	}
-	return "https://bsc-dataseed.binance.org"
-}
-
-func polygonURL(debug bool) string {
-	if debug {
-		return "https://rpc-amoy.polygon.technology"
-	}
-	return "https://polygon-rpc.com"
-}
-
-func solanaURL(debug bool) string {
-	if debug {
-		return "https://api.devnet.solana.com"
-	}
-	return "https://api.mainnet-beta.solana.com"
-}
-
-func tonURL(debug bool) string {
-	if debug {
-		return "https://testnet.toncenter.com/api/v2"
-	}
-	return "https://toncenter.com/api/v2"
 }

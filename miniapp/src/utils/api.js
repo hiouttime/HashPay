@@ -38,12 +38,9 @@ api.interceptors.response.use(
 
 export default api
 
-export const setupApi = {
-  status: () => api.get('/api/setup/status'),
-  submit: (payload) => api.post('/api/setup/config', payload),
-}
-
 export const adminApi = {
+  install: () => api.get('/api/admin/install'),
+  submitInstall: (payload) => api.post('/api/admin/install', payload),
   dashboard: () => api.get('/api/admin/dashboard'),
   settings: () => api.get('/api/admin/settings'),
   saveSettings: (payload) => api.put('/api/admin/settings', payload),
