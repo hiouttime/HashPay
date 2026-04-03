@@ -109,11 +109,15 @@ func (s *state) bootApp() error {
 	s.app = service.New(s.db)
 	s.web.SetRuntime(&httpapi.Runtime{App: s.app})
 
-	rt, err := tgbot.NewBot(s.cfg, s.setAdmin)
+	rt, err := tgbot.NewBot(
+		s.cfg,
+		s.setAdmin,
+		func() int64 { return s.cfg.Bot.Admin },
+		func() *service.App { return s.app },
+	)
 	if err != nil {
 		return err
 	}
-	rt.SetApp(s.app)
 	s.bot = rt
 	go rt.Start()
 

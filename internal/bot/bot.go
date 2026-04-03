@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	cfgpkg "hashpay/internal/config"
 	"hashpay/internal/service"
@@ -12,10 +13,22 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+type Bot struct {
+	bot *tele.Bot
+	cfg *cfgpkg.Config
+	pin string
+
+	mu       sync.RWMutex
+	app      func() *service.App
+	orderMsg map[string]tele.StoredMessage
+	setAdmin func(userID int64) error
+	adminID  func() int64
+}
+
 // NewBot builds the Telegram bot adapter.
-func NewBot(cfg *cfgpkg.Config, onVerify func(userID int64) error) (*Bot, error) {
+func NewBot(cfg *cfgpkg.Config, setAdmin func(userID int64) error, adminID func() int64, app func() *service.App) (*Bot, error) {
 	tb, err := tele.NewBot(tele.Settings{
-		Token:  strings.TrimSpace(cfg.Bot.Token),
+		Token:  cfg.Bot.Token,
 		Poller: &tele.LongPoller{Timeout: 10},
 		OnError: func(err error, c tele.Context) {
 			log.Error("bot error: %v", err)
@@ -27,22 +40,22 @@ func NewBot(cfg *cfgpkg.Config, onVerify func(userID int64) error) (*Bot, error)
 	b := &Bot{
 		bot:      tb,
 		cfg:      cfg,
-		onVerify: onVerify,
+		app:      app,
+		setAdmin: setAdmin,
+		adminID:  adminID,
 		orderMsg: map[string]tele.StoredMessage{},
 	}
-	b.syncAdmin(onVerify)
+
+	if b.admin() <= 0 {
+		b.pin = fmt.Sprintf("%04d", 1000+os.Getpid()%9000)
+		log.Warn("接下来，请发送 %s 到机器人完成管理员绑定。", b.pin)
+	}
 	b.routes()
 	return b, nil
 }
 
-func (b *Bot) SetApp(app *service.App) {
-	b.mu.Lock()
-	b.app = app
-	b.mu.Unlock()
-}
-
 func (b *Bot) Start() {
-	log.Info("Telegram Bot 已启动: @%s", b.bot.Me.Username)
+	log.Success("Telegram Bot 已启动: @%s", b.bot.Me.Username)
 	b.bot.Start()
 }
 
@@ -56,7 +69,7 @@ func (b *Bot) routes() {
 	b.bot.Handle(tele.OnText, b.handleText)
 	b.bot.Handle(tele.OnQuery, b.handleInlineQuery)
 	b.bot.Handle(tele.OnInlineResult, b.handleInlineResult)
-	b.bot.Handle(&tele.Btn{Unique: "route_pick"}, b.handleRoutePick)
+	b.bot.Handle(&tele.Btn{Unique: "pay"}, b.handleRoutePick)
 }
 
 func (b *Bot) sendText(to tele.Recipient, text string, markup *tele.ReplyMarkup) error {
@@ -64,37 +77,40 @@ func (b *Bot) sendText(to tele.Recipient, text string, markup *tele.ReplyMarkup)
 	return err
 }
 
+func (b *Bot) adminMarkup() *tele.ReplyMarkup {
+	url := b.getPublicURL()
+	if url == "" {
+		return nil
+	}
+	keyboard := &tele.ReplyMarkup{}
+	keyboard.Inline(keyboard.Row(
+		keyboard.WebApp("🚀 打开管理后台", &tele.WebApp{URL: url + "/app"}),
+	))
+	return keyboard
+}
+
 func (b *Bot) isAdmin(userID int64) bool {
-	adminID := b.currentAdmin()
+	adminID := b.admin()
 	return adminID > 0 && userID == adminID
 }
 
-func (b *Bot) setupMode() bool {
-	return b.currentAdmin() == 0 && strings.TrimSpace(b.pin) != ""
-}
-
 func (b *Bot) getApp() *service.App {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.app
-}
-
-func (b *Bot) syncAdmin(onVerify func(userID int64) error) {
-	b.onVerify = onVerify
-	if b.currentAdmin() > 0 {
-		b.pin = ""
-		return
+	if b.app == nil {
+		return nil
 	}
-	if strings.TrimSpace(b.pin) == "" {
-		b.pin = fmt.Sprintf("%04d", 1000+os.Getpid()%9000)
-		log.Info("bot.admin 未配置，请向机器人发送 PIN 完成管理员绑定: %s", b.pin)
+	return b.app()
+}
+
+func (b *Bot) admin() int64 {
+	if b.adminID == nil {
+		return 0
 	}
+	return b.adminID()
 }
 
-func (b *Bot) currentAdmin() int64 {
-	return b.cfg.Bot.Admin
-}
-
-func (b *Bot) currentPublicURL() string {
+func (b *Bot) getPublicURL() string {
+	if b.cfg == nil {
+		return ""
+	}
 	return strings.TrimRight(strings.TrimSpace(b.cfg.Server.Public), "/")
 }

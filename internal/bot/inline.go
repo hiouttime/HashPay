@@ -1,14 +1,15 @@
 package bot
 
 import (
+	"bytes"
 	"fmt"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
 	"hashpay/internal/service"
 
+	"github.com/skip2/go-qrcode"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -28,13 +29,31 @@ func (b *Bot) handleInlineQuery(c tele.Context) error {
 			&tele.ArticleResult{Title: "输入金额创建订单", Description: "示例：20 / 20U / 20CNY", Text: "请输入金额，如 20、20U、20CNY"},
 		}})
 	}
+	app := b.getApp()
+	if app == nil {
+		return nil
+	}
+	methods, err := app.Methods()
+	if err != nil {
+		return nil
+	}
+	enabled := false
+	for _, item := range methods {
+		if item.Enabled {
+			enabled = true
+			break
+		}
+	}
+	if !enabled {
+		return nil
+	}
 	return c.Answer(&tele.QueryResponse{IsPersonal: true, CacheTime: 1, Results: tele.Results{
 		&tele.ArticleResult{
 			ResultBase:  tele.ResultBase{ID: fmt.Sprintf("%0.3f|%s", amount, currency)},
 			Title:       fmt.Sprintf("创建收款 %0.2f %s", amount, currency),
 			Description: "发送后选择收款方式",
 			Text:        "正在创建订单…",
-			ThumbURL:    b.currentPublicURL() + RelativeURL(),
+			ThumbURL:    b.getPublicURL() + RelativeURL(),
 		},
 	}})
 }
@@ -60,6 +79,9 @@ func (b *Bot) handleInlineResult(c tele.Context) error {
 	}
 	checkout, err := app.BuildCheckout(order.ID)
 	if err != nil {
+		return nil
+	}
+	if len(checkout.Routes) == 0 {
 		return nil
 	}
 	text, markup := b.inlineMenu(checkout)
@@ -105,8 +127,12 @@ func (b *Bot) handleRoutePick(c tele.Context) error {
 		return c.Respond()
 	}
 
+	png, err := qrcode.Encode(route.QRValue, qrcode.Medium, 360)
+	if err != nil {
+		return c.Respond()
+	}
 	photo := &tele.Photo{
-		File:    tele.FromURL("https://quickchart.io/qr?size=360&text=" + url.QueryEscape(route.QRValue)),
+		File:    tele.FromReader(bytes.NewReader(png)),
 		Caption: caption,
 	}
 	if cb.Message != nil {
@@ -139,7 +165,7 @@ func (b *Bot) inlineMenu(checkout *service.Checkout) (string, *tele.ReplyMarkup)
 		items := checkout.Routes[currency]
 		for _, item := range items {
 			rows = append(rows, keyboard.Row(
-				keyboard.Data(fmt.Sprintf("%s · %s", currency, item.Network), "route_pick", checkout.Order.ID, fmt.Sprintf("%d", item.MethodID), currency),
+				keyboard.Data(fmt.Sprintf("%s · %s", currency, item.Network), "pay", checkout.Order.ID, fmt.Sprintf("%d", item.MethodID), currency),
 			))
 		}
 	}
@@ -148,11 +174,11 @@ func (b *Bot) inlineMenu(checkout *service.Checkout) (string, *tele.ReplyMarkup)
 }
 
 func (b *Bot) editInline(target tele.Editable, text string, markup *tele.ReplyMarkup) error {
-	if b.currentPublicURL() == "" {
+	if b.getPublicURL() == "" {
 		_, err := b.bot.Edit(target, text, &tele.SendOptions{ReplyMarkup: markup})
 		return err
 	}
-	_, err := b.bot.Edit(target, &tele.Photo{File: tele.FromURL(b.currentPublicURL() + RelativeURL()), Caption: text}, &tele.SendOptions{ReplyMarkup: markup})
+	_, err := b.bot.Edit(target, &tele.Photo{File: tele.FromURL(b.getPublicURL() + RelativeURL()), Caption: text}, &tele.SendOptions{ReplyMarkup: markup})
 	return err
 }
 

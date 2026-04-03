@@ -228,9 +228,6 @@ func (s *state) SetDB(req httpapi.DBConfig) (string, error) {
 	s.db = repo
 	s.app = app
 	s.web.SetRuntime(&httpapi.Runtime{App: app})
-	if s.bot != nil {
-		s.bot.SetApp(app)
-	}
 	s.jobs = jobs.New(repo, app, cfg.Debug, s.bot)
 	s.jobs.Start()
 	if oldDB != nil {
