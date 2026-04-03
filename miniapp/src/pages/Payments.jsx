@@ -1,182 +1,70 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Section, Title, Text, Caption, List, Button, Placeholder, Spinner, Switch } from '@telegram-apps/telegram-ui'
-import api from '../utils/api'
-import { shortText, showNotice } from './AdminCommon'
-import tronIcon from '../assets/chains/tron.svg'
-import evmIcon from '../assets/chains/evm.svg'
-import solanaIcon from '../assets/chains/solana.svg'
-import tonIcon from '../assets/chains/ton.svg'
+import { Button } from '@telegram-apps/telegram-ui'
+import { adminApi } from '../utils/api'
+import { AppGroup, AppPage } from '../components/AppPage'
+import { showNotice } from './AdminCommon'
 import './Admin.scss'
-
-const platformNameMap = {
-  tron: 'TRON (TRC20)',
-  eth: 'Ethereum (ERC20)',
-  bsc: 'BNB Smart Chain (BEP20)',
-  polygon: 'Polygon',
-  solana: 'Solana',
-  ton: 'TON',
-}
-
-function normalizeCoins(coins) {
-  if (!Array.isArray(coins)) return []
-  return Array.from(new Set(coins.map((coin) => String(coin || '').trim().toUpperCase()).filter(Boolean)))
-}
-
-function iconTone(platform) {
-  switch (platform) {
-    case 'tron':
-      return 'tron'
-    case 'eth':
-      return 'eth'
-    case 'bsc':
-      return 'bsc'
-    case 'polygon':
-      return 'polygon'
-    case 'solana':
-      return 'solana'
-    case 'ton':
-      return 'ton'
-    default:
-      return 'default'
-  }
-}
-
-function PlatformIcon({ platform }) {
-  let src = ''
-  if (platform === 'tron') src = tronIcon
-  if (platform === 'solana') src = solanaIcon
-  if (platform === 'ton') src = tonIcon
-  if (platform === 'eth' || platform === 'bsc' || platform === 'polygon') src = evmIcon
-  if (!src) {
-    return <span className="pay-icon-dot" />
-  }
-  return <img src={src} alt={platform || 'chain'} />
-}
 
 function Payments() {
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(true)
-  const [payments, setPayments] = useState([])
+  const [items, setItems] = useState([])
 
-  const loadPayments = async (silent = false) => {
-    if (!silent) {
-      setLoading(true)
-    }
+  const load = async () => {
     try {
-      const { data } = await api.get('/api/admin/payments')
-      setPayments(Array.isArray(data) ? data : [])
+      const { data } = await adminApi.paymentMethods()
+      setItems(Array.isArray(data) ? data : [])
     } catch {
-      setPayments([])
-    } finally {
-      if (!silent) {
-        setLoading(false)
-      }
+      setItems([])
     }
   }
 
   useEffect(() => {
-    void loadPayments()
+    void load()
   }, [])
 
-  const togglePayment = async (id, enabled) => {
-    setPayments((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, enabled: !enabled } : item))
-    )
+  const remove = async (id) => {
+    if (!window.confirm('确认删除这个支付方式？')) return
     try {
-      await api.patch(`/api/admin/payments/${id}/toggle`, { enabled: !enabled })
-    } catch {
-      setPayments((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, enabled } : item))
-      )
-      showNotice('更新支付方式失败')
-    }
-  }
-
-  const deletePayment = async (id) => {
-    if (!window.confirm('确认删除该支付方式？')) return
-    try {
-      await api.delete(`/api/admin/payments/${id}`)
-      await loadPayments()
+      await adminApi.deletePaymentMethod(id)
+      await load()
     } catch {
       showNotice('删除支付方式失败')
     }
   }
 
   return (
-    <div className="admin-page">
-      <div className="admin-head">
-        <Title level="2">支付设置</Title>
-        <Text className="admin-subtitle">统一结构：name、platform、coins、address。</Text>
-        <div className="admin-toolbar">
-          <Button size="s" onClick={() => navigate('/payments/new')}>
-            添加支付方式
-          </Button>
-        </div>
-      </div>
-
-      <List>
-        <div className="admin-section">
-          <Section header="支付方式列表">
-            {loading ? (
-              <div className="loading-wrap">
-                <Spinner size="m" />
+    <AppPage
+      title="支付方式"
+      subtitle="支付配置不再按页面手写，而是按驱动 schema 管理实例。"
+      actions={<Button size="s" onClick={() => navigate('/payments/new')}>新增方式</Button>}
+    >
+      <AppGroup title="支付实例">
+        <div className="stack-list">
+          {items.map((item) => (
+            <div key={item.id} className="work-row">
+              <div className="work-row-head">
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>{item.driver} · {item.kind}</p>
+                </div>
+                <span className={`health-pill tone-${item.enabled ? 'ok' : 'off'}`}>{item.enabled ? 'enabled' : 'disabled'}</span>
               </div>
-            ) : payments.length === 0 ? (
-              <Placeholder description="暂无支付方式" />
-            ) : (
-              <div className="card-list">
-                {payments.map((item) => (
-                  <div className="line-card pay-card" key={item.id}>
-                    <div className="pay-head">
-                      <div className="pay-left">
-                        <span className={`pay-icon tone-${iconTone(item.platform)}`}>
-                          <PlatformIcon platform={item.platform} />
-                        </span>
-                        <div>
-                          <Text className="line-title">{item.name || platformNameMap[item.platform] || item.platform || '--'}</Text>
-                          <Caption className="pay-meta">
-                            #{item.id} · {platformNameMap[item.platform] || item.platform || '--'}
-                          </Caption>
-                        </div>
-                      </div>
-                      <Switch checked={!!item.enabled} onChange={() => togglePayment(item.id, item.enabled)} />
-                    </div>
-
-                    <div className="pay-coins">
-                      {normalizeCoins(item.coins).map((coin) => (
-                        <span className="coin-pill" key={`${item.id}-${coin}`}>
-                          {coin}
-                        </span>
-                      ))}
-                      {normalizeCoins(item.coins).length === 0 && <span className="coin-pill coin-empty">--</span>}
-                    </div>
-
-                    <div className="pay-address-wrap compact">
-                      <Caption className="pay-address-label">地址</Caption>
-                      <Text className="pay-address-value">{shortText(item.address, 14, 10)}</Text>
-                    </div>
-
-                    <div className="mini-action">
-                      <Button
-                        size="s"
-                        mode="outline"
-                        onClick={() => navigate(`/payments/${item.id}/edit`, { state: { item } })}
-                      >
-                        编辑
-                      </Button>
-                      <Button size="s" mode="outline" onClick={() => deletePayment(item.id)}>
-                        删除
-                      </Button>
-                    </div>
-                  </div>
+              <div className="detail-grid">
+                {Object.entries(item.fields || {}).slice(0, 4).map(([key, value]) => (
+                  <div key={key}><dt>{key}</dt><dd>{value || '--'}</dd></div>
                 ))}
               </div>
-            )}
-          </Section>
+              <div className="row-actions">
+                <button className="quiet-btn" onClick={() => navigate(`/payments/${item.id}/edit`, { state: { item } })}>编辑</button>
+                <button className="quiet-btn danger" onClick={() => remove(item.id)}>删除</button>
+              </div>
+            </div>
+          ))}
+          {items.length === 0 ? <div className="empty-state">还没有支付方式。先添加一个收款驱动。</div> : null}
         </div>
-      </List>
-    </div>
+      </AppGroup>
+    </AppPage>
   )
 }
 

@@ -8,6 +8,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/shopspring/decimal v1.4.0
+	golang.org/x/image v0.0.0-20190802002840-cff245a6509b
 	gopkg.in/telebot.v4 v4.0.0-beta.4
 	gopkg.in/yaml.v3 v3.0.1
 )

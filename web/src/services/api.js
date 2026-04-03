@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '',
   timeout: 30000,
 })
@@ -22,27 +22,8 @@ api.interceptors.response.use(
   }
 )
 
-// API 方法封装
 export const orderApi = {
-  getPaymentMethods: (orderId) => api.get(`/api/order/${orderId}/payment-methods`),
-  selectPayment: (orderId, methodId) => api.post(`/api/order/${orderId}/select-payment`, { method_id: methodId }),
-  checkStatus: (orderId) => api.get(`/api/order/${orderId}/status`),
+  getCheckout: (orderId) => api.get(`/api/checkout/${orderId}`),
+  selectPayment: (orderId, methodId, currency) => api.post(`/api/checkout/${orderId}/route`, { method_id: methodId, currency }),
+  checkStatus: (orderId) => api.get(`/api/checkout/${orderId}/status`),
 }
-
-export const adminApi = {
-  getStats: () => api.get('/api/admin/stats'),
-  getConfig: () => api.get('/api/admin/config'),
-  updateConfig: (config) => api.put('/api/admin/config', config),
-  getPayments: () => api.get('/api/admin/payments'),
-  addPayment: (payment) => api.post('/api/admin/payments', payment),
-  updatePayment: (id, payment) => api.put(`/api/admin/payments/${id}`, payment),
-  deletePayment: (id) => api.delete(`/api/admin/payments/${id}`),
-  togglePayment: (id, enabled) => api.patch(`/api/admin/payments/${id}/toggle`, { enabled }),
-}
-
-export const initApi = {
-  getStatus: () => api.get('/api/status'),
-  submitConfig: (config) => api.post('/api/config', config),
-}
-
-export { api }

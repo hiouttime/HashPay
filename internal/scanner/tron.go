@@ -223,7 +223,7 @@ func (t *TronAPI) allowedTRC20Contracts(symbol string) []string {
 	if strings.Contains(strings.ToLower(strings.TrimSpace(t.baseURL)), "nile") {
 		switch coin {
 		case "USDT":
-			return []string{"TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"}
+			return []string{"TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"}
 		default:
 			return nil
 		}

@@ -11,7 +11,7 @@ type Config struct {
 	Bot      BotConfig      `yaml:"bot"`
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
-	Debug    bool           `yaml:"DEBUG"`
+	Debug    bool           `yaml:"debug"`
 }
 
 type BotConfig struct {

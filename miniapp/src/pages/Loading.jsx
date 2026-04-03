@@ -1,12 +1,11 @@
 import React from 'react'
-import { Spinner, Text } from '@telegram-apps/telegram-ui'
-import './Loading.scss'
+import './Admin.scss'
 
 function Loading() {
   return (
-    <div className="loading-page">
-      <Spinner size="m" />
-      <Text className="loading-text">正在加载...</Text>
+    <div className="screen-loading">
+      <div className="pulse-dot" />
+      <p>HashPay 正在整理管理面板…</p>
     </div>
   )
 }

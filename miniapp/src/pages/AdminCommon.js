@@ -1,6 +1,11 @@
 export function formatTime(ts) {
   if (!ts) return '--'
-  return new Date(ts * 1000).toLocaleString()
+  if (typeof ts === 'string' && Number.isNaN(Number(ts))) {
+    return new Date(ts).toLocaleString()
+  }
+  const raw = Number(ts)
+  const time = raw > 1000000000000 ? raw : raw * 1000
+  return new Date(time).toLocaleString()
 }
 
 export function formatAmount(value) {
@@ -16,8 +21,20 @@ export function shortText(value, head = 6, tail = 4) {
 export function statusText(status) {
   if (status === 'paid') return '已支付'
   if (status === 'expired') return '已过期'
-  if (status === 'failed') return '失败'
+  if (status === 'invalid') return '异常'
   return '待支付'
+}
+
+export function networkName(value) {
+  const key = String(value || '').trim().toLowerCase()
+  if (!key) return '--'
+  if (key === 'tron') return 'TRON (TRC20)'
+  if (key === 'eth') return 'Ethereum (ERC20)'
+  if (key === 'bsc') return 'BNB Smart Chain (BEP20)'
+  if (key === 'polygon') return 'Polygon'
+  if (key === 'solana') return 'Solana'
+  if (key === 'ton') return 'TON'
+  return value
 }
 
 let toastEl = null

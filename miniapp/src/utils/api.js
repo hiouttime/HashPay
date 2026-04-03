@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '',
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -37,3 +37,30 @@ api.interceptors.response.use(
 )
 
 export default api
+
+export const setupApi = {
+  status: () => api.get('/api/setup/status'),
+  submit: (payload) => api.post('/api/setup/config', payload),
+}
+
+export const adminApi = {
+  dashboard: () => api.get('/api/admin/dashboard'),
+  settings: () => api.get('/api/admin/settings'),
+  saveSettings: (payload) => api.put('/api/admin/settings', payload),
+  uploadBanner: (payload) => api.post('/api/admin/banner', payload, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  orders: (params = '') => api.get(`/api/admin/orders${params}`),
+  order: (id) => api.get(`/api/admin/orders/${id}`),
+  paymentCatalog: () => api.get('/api/admin/payments/catalog'),
+  paymentMethods: () => api.get('/api/admin/payments'),
+  savePaymentMethod: (id, payload) => id
+    ? api.put(`/api/admin/payments/${id}`, payload)
+    : api.post('/api/admin/payments', payload),
+  deletePaymentMethod: (id) => api.delete(`/api/admin/payments/${id}`),
+  merchants: () => api.get('/api/admin/merchants'),
+  saveMerchant: (id, payload) => id
+    ? api.put(`/api/admin/merchants/${id}`, payload)
+    : api.post('/api/admin/merchants', payload),
+  deleteMerchant: (id) => api.delete(`/api/admin/merchants/${id}`),
+}
