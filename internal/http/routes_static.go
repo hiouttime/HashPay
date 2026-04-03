@@ -10,7 +10,7 @@ import (
 
 func (s *Server) registerStaticRoutes() {
 	s.app.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		return ok(c, fiber.Map{"status": "ok"}, "")
 	})
 
 	s.app.Get("/media/banner", func(c fiber.Ctx) error {
@@ -30,11 +30,23 @@ func (s *Server) registerStaticRoutes() {
 		return c.SendFile("./miniapp/dist" + path)
 	})
 	s.app.Get("/app", func(c fiber.Ctx) error {
+		if !s.config.Installed() {
+			return c.Redirect().To("/app/setup")
+		}
+		if c.Path() == "/app" {
+			return c.Redirect().To("/app/dashboard")
+		}
 		return c.SendFile("./miniapp/dist/index.html")
 	})
 	s.app.Get("/app/*", func(c fiber.Ctx) error {
 		if strings.HasPrefix(c.Path(), "/app/assets") {
 			return c.Next()
+		}
+		if !s.config.Installed() && c.Path() != "/app/setup" {
+			return c.Redirect().To("/app/setup")
+		}
+		if s.config.Installed() && (c.Path() == "/app/setup" || c.Path() == "/app/setup/done") {
+			return c.Redirect().To("/app/dashboard")
 		}
 		return c.SendFile("./miniapp/dist/index.html")
 	})

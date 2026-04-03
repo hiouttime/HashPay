@@ -5,7 +5,7 @@ export function AppPage({ title, subtitle, actions, footer, className = '', chil
   return (
     <div className={`admin-page ${className}`.trim()}>
       {title ? <PageTitle title={title} subtitle={subtitle} actions={actions} /> : null}
-      {children}
+      <div className="admin-page-body">{children}</div>
       {footer ? <div className="admin-footer">{footer}</div> : null}
     </div>
   )

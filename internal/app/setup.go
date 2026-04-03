@@ -212,7 +212,7 @@ func (s *state) SetDB(req httpapi.DBConfig) (string, error) {
 	}
 	repo, err := openDB(&cfg)
 	if err != nil {
-		return "", fmt.Errorf("数据库连接或迁移失败")
+		return "", err
 	}
 	if err := saveConfig(&cfg); err != nil {
 		_ = repo.Close()

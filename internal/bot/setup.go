@@ -3,6 +3,8 @@ package bot
 import (
 	"strings"
 
+	"hashpay/internal/utils/log"
+
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -10,6 +12,7 @@ func (b *Bot) handleStart(c tele.Context) error {
 	if c.Sender() == nil {
 		return nil
 	}
+	log.Info("Bot /start %s", senderText(c.Sender()))
 	if b.admin() <= 0 {
 		return b.setup(c, "")
 	}
@@ -23,6 +26,7 @@ func (b *Bot) handleText(c tele.Context) error {
 	if c.Sender() == nil {
 		return nil
 	}
+	log.Info("Bot text %s text=%q", senderText(c.Sender()), strings.TrimSpace(c.Text()))
 	if b.admin() == 0 && strings.TrimSpace(b.pin) != "" {
 		return b.setup(c, c.Text())
 	}

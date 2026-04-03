@@ -14,6 +14,7 @@ var (
 	warnColor    = color.New(color.FgYellow)
 	errorColor   = color.New(color.FgRed)
 	debugColor   = color.New(color.FgMagenta)
+	debugEnabled bool
 )
 
 func timestamp() string {
@@ -40,8 +41,12 @@ func Error(format string, args ...any) {
 	fmt.Printf(format+"\n", args...)
 }
 
+func SetDebug(enabled bool) {
+	debugEnabled = enabled
+}
+
 func Debug(format string, args ...any) {
-	if os.Getenv("DEBUG") != "" {
+	if debugEnabled {
 		debugColor.Printf("[%s] DEBUG ", timestamp())
 		fmt.Printf(format+"\n", args...)
 	}

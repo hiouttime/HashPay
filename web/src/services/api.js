@@ -15,15 +15,23 @@ api.interceptors.request.use((config) => {
 
 // 响应拦截器
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const envelope = response.data || {}
+    response.info = envelope.info || ''
+    response.data = envelope.data
+    return response
+  },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message)
+    error.apiError = error.response?.data?.error || error.message
+    console.error('API Error:', error.response?.data || error.apiError)
     return Promise.reject(error)
   }
 )
 
+const wrapData = (payload) => ({ data: payload })
+
 export const orderApi = {
   getCheckout: (orderId) => api.get(`/api/checkout/${orderId}`),
-  selectPayment: (orderId, methodId, currency) => api.post(`/api/checkout/${orderId}/route`, { method_id: methodId, currency }),
+  selectPayment: (orderId, methodId, currency) => api.post(`/api/checkout/${orderId}/route`, wrapData({ method_id: methodId, currency })),
   checkStatus: (orderId) => api.get(`/api/checkout/${orderId}/status`),
 }

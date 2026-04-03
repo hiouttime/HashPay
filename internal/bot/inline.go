@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"hashpay/internal/service"
+	"hashpay/internal/utils/log"
 
 	"github.com/skip2/go-qrcode"
 	tele "gopkg.in/telebot.v4"
@@ -18,6 +19,7 @@ func (b *Bot) handleInlineQuery(c tele.Context) error {
 	if query == nil || query.Sender == nil {
 		return nil
 	}
+	log.Info("Bot inline query %s query=%q", senderText(query.Sender), strings.TrimSpace(query.Text))
 	if !b.isAdmin(query.Sender.ID) {
 		return c.Answer(&tele.QueryResponse{IsPersonal: true, Results: tele.Results{
 			&tele.ArticleResult{Title: "仅管理员可用", Description: "当前账号无权创建订单", Text: "当前账号无权创建订单"},
@@ -63,6 +65,7 @@ func (b *Bot) handleInlineResult(c tele.Context) error {
 	if result == nil || result.Sender == nil {
 		return nil
 	}
+	log.Info("Bot inline result %s result=%q msg=%s", senderText(result.Sender), result.ResultID, result.MessageID)
 	app := b.getApp()
 	if app == nil {
 		return nil
@@ -96,6 +99,7 @@ func (b *Bot) handleRoutePick(c tele.Context) error {
 	if cb == nil || cb.Sender == nil {
 		return nil
 	}
+	log.Info("Bot callback %s data=%q", senderText(cb.Sender), cb.Data)
 	app := b.getApp()
 	if app == nil {
 		return nil

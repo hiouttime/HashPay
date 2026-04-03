@@ -14,7 +14,7 @@ func (s *Server) checkout(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "订单不存在")
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) selectRoute(c fiber.Ctx) error {
@@ -22,14 +22,14 @@ func (s *Server) selectRoute(c fiber.Ctx) error {
 		MethodID int64  `json:"method_id"`
 		Currency string `json:"currency"`
 	}
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	data, err := s.Runtime().App.SelectRoute(c.Params("id"), req.MethodID, req.Currency)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) checkoutStatus(c fiber.Ctx) error {
@@ -37,5 +37,5 @@ func (s *Server) checkoutStatus(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "订单不存在")
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }

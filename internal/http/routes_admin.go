@@ -13,7 +13,6 @@ import (
 
 func (s *Server) registerAdminRoutes() {
 	group := s.app.Group("/api/admin")
-	group.Get("/install", s.install)
 	group.Post("/install", s.submitInstall)
 
 	auth := group.Group("", s.requireRuntime, s.telegramAuth())
@@ -34,27 +33,19 @@ func (s *Server) registerAdminRoutes() {
 	auth.Get("/orders/:id", s.order)
 }
 
-func (s *Server) install(c fiber.Ctx) error {
-	return c.JSON(fiber.Map{"installed": s.config.Installed()})
-}
-
 func (s *Server) submitInstall(c fiber.Ctx) error {
 	if s.config.SetDB == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "安装处理未就绪")
 	}
 	var req DBConfig
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	message, err := s.config.SetDB(req)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	return c.JSON(fiber.Map{
-		"status":  "ok",
-		"ready":   true,
-		"message": message,
-	})
+	return ok(c, fiber.Map{"ready": true}, message)
 }
 
 func (s *Server) dashboard(c fiber.Ctx) error {
@@ -62,7 +53,7 @@ func (s *Server) dashboard(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) settings(c fiber.Ctx) error {
@@ -71,18 +62,18 @@ func (s *Server) settings(c fiber.Ctx) error {
 		return err
 	}
 	data["banner_url"] = bot.RelativeURL()
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) updateSettings(c fiber.Ctx) error {
 	var req map[string]string
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	if err := s.Runtime().App.SaveSettings(req); err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"status": "ok"})
+	return ok(c, fiber.Map{}, "")
 }
 
 func (s *Server) uploadBanner(c fiber.Ctx) error {
@@ -103,14 +94,14 @@ func (s *Server) uploadBanner(c fiber.Ctx) error {
 	if err := bot.SaveBanner(body); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "仅支持 JPG、PNG、WebP 图片")
 	}
-	return c.JSON(fiber.Map{"status": "ok", "banner_url": bot.RelativeURL()})
+	return ok(c, fiber.Map{"banner_url": bot.RelativeURL()}, "")
 }
 
 func (s *Server) catalog(c fiber.Ctx) error {
-	return c.JSON(fiber.Map{
+	return ok(c, fiber.Map{
 		"drivers": s.Runtime().App.Registry.Catalog(),
 		"schema":  s.Runtime().App.Registry.Schemas(),
-	})
+	}, "")
 }
 
 func (s *Server) methods(c fiber.Ctx) error {
@@ -118,7 +109,7 @@ func (s *Server) methods(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) saveMethod(c fiber.Ctx) error {
@@ -129,7 +120,7 @@ func (s *Server) saveMethod(c fiber.Ctx) error {
 		Enabled bool              `json:"enabled"`
 		Fields  map[string]string `json:"fields"`
 	}
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	item := &models.PaymentMethod{
@@ -152,7 +143,7 @@ func (s *Server) saveMethod(c fiber.Ctx) error {
 	if err := s.Runtime().App.SaveMethod(item); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.JSON(item)
+	return ok(c, item, "")
 }
 
 func (s *Server) deleteMethod(c fiber.Ctx) error {
@@ -160,7 +151,7 @@ func (s *Server) deleteMethod(c fiber.Ctx) error {
 	if err := s.Runtime().App.DeleteMethod(id); err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"status": "ok"})
+	return ok(c, fiber.Map{}, "")
 }
 
 func (s *Server) merchants(c fiber.Ctx) error {
@@ -168,7 +159,7 @@ func (s *Server) merchants(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) saveMerchant(c fiber.Ctx) error {
@@ -179,7 +170,7 @@ func (s *Server) saveMerchant(c fiber.Ctx) error {
 		APIKey      string `json:"api_key"`
 		SecretKey   string `json:"secret_key"`
 	}
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	status := strings.TrimSpace(req.Status)
@@ -197,14 +188,14 @@ func (s *Server) saveMerchant(c fiber.Ctx) error {
 	if err := s.Runtime().App.SaveMerchant(item); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.JSON(item)
+	return ok(c, item, "")
 }
 
 func (s *Server) deleteMerchant(c fiber.Ctx) error {
 	if err := s.Runtime().App.DeleteMerchant(c.Params("id")); err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"status": "ok"})
+	return ok(c, fiber.Map{}, "")
 }
 
 func (s *Server) orders(c fiber.Ctx) error {
@@ -213,7 +204,7 @@ func (s *Server) orders(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }
 
 func (s *Server) order(c fiber.Ctx) error {
@@ -221,5 +212,5 @@ func (s *Server) order(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "订单不存在")
 	}
-	return c.JSON(data)
+	return ok(c, data, "")
 }

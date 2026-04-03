@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"sync"
+	"time"
 
 	"hashpay/internal/service"
+	"hashpay/internal/utils/log"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -33,6 +35,7 @@ type Config struct {
 	BotToken  func() string
 	AdminID   func() int64
 	SetDB     func(req DBConfig) (string, error)
+	Debug     bool
 }
 
 type Server struct {
@@ -44,8 +47,29 @@ type Server struct {
 
 func New(config Config) *Server {
 	s := &Server{
-		app:    fiber.New(),
+		app: fiber.New(fiber.Config{
+			ErrorHandler: func(c fiber.Ctx, err error) error {
+				if ferr, ok := err.(*fiber.Error); ok {
+					if ferr.Code >= fiber.StatusInternalServerError {
+						log.Error("HTTP %s %s -> %d %s", c.Method(), c.Path(), ferr.Code, ferr.Message)
+					} else if config.Debug {
+						log.Warn("HTTP %s %s -> %d %s", c.Method(), c.Path(), ferr.Code, ferr.Message)
+					}
+					return fail(c, ferr.Code, ferr.Message)
+				}
+				log.Error("HTTP %s %s -> %d %v", c.Method(), c.Path(), fiber.StatusInternalServerError, err)
+				return fail(c, fiber.StatusInternalServerError, err.Error())
+			},
+		}),
 		config: config,
+	}
+	if config.Debug {
+		s.app.Use(func(c fiber.Ctx) error {
+			start := time.Now()
+			err := c.Next()
+			log.Debug("HTTP %s %s -> %d (%s)", c.Method(), c.Path(), c.Response().StatusCode(), time.Since(start).Round(time.Millisecond))
+			return err
+		})
 	}
 	s.registerAdminRoutes()
 	s.registerMerchantRoutes()

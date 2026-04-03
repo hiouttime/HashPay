@@ -16,14 +16,14 @@ func (s *Server) registerMerchantRoutes() {
 
 func (s *Server) merchantOrder(c fiber.Ctx) error {
 	var req service.MerchantOrderRequest
-	if err := c.Bind().JSON(&req); err != nil {
+	if err := bindEnvelope(c, &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "请求格式错误")
 	}
 	order, reused, err := s.Runtime().App.CreateMerchantOrder(strings.TrimSpace(c.Get("X-Api-Key")), req)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	return c.JSON(fiber.Map{
+	return ok(c, fiber.Map{
 		"order_id":   order.ID,
 		"status":     order.Status,
 		"reused":     reused,
@@ -33,7 +33,7 @@ func (s *Server) merchantOrder(c fiber.Ctx) error {
 		"currency":   order.FiatCurrency,
 		"redirect":   order.RedirectURL,
 		"created_at": order.CreatedAt.Unix(),
-	})
+	}, "")
 }
 
 func (s *Server) merchantGetOrder(c fiber.Ctx) error {
@@ -41,5 +41,5 @@ func (s *Server) merchantGetOrder(c fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "订单不存在")
 	}
-	return c.JSON(order)
+	return ok(c, order, "")
 }

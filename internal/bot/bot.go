@@ -114,3 +114,13 @@ func (b *Bot) getPublicURL() string {
 	}
 	return strings.TrimRight(strings.TrimSpace(b.cfg.Server.Public), "/")
 }
+
+func senderText(sender *tele.User) string {
+	if sender == nil {
+		return "user=unknown"
+	}
+	if username := strings.TrimSpace(sender.Username); username != "" {
+		return fmt.Sprintf("user=%d @%s", sender.ID, username)
+	}
+	return fmt.Sprintf("user=%d", sender.ID)
+}

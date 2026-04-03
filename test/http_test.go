@@ -33,7 +33,7 @@ func testServer(t *testing.T) *httpapi.Server {
 	return srv
 }
 
-func TestInstallRoute(t *testing.T) {
+func TestAppRedirectsToSetupWhenNotInstalled(t *testing.T) {
 	srv := httpapi.New(httpapi.Config{
 		Installed: func() bool { return false },
 		BotToken:  func() string { return "test-token" },
@@ -42,13 +42,16 @@ func TestInstallRoute(t *testing.T) {
 			return "ok", nil
 		},
 	})
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/install", nil)
+	req := httptest.NewRequest(http.MethodGet, "/app", nil)
 	resp, err := srv.App().Test(req)
 	if err != nil {
-		t.Fatalf("install request: %v", err)
+		t.Fatalf("app request: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("unexpected status: %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/app/setup" {
+		t.Fatalf("unexpected location: %s", got)
 	}
 }
 

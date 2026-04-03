@@ -31,6 +31,7 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	log.SetDebug(cfg.Debug)
 
 	state := &state{cfg: cfg}
 	state.web = httpapi.New(httpapi.Config{
@@ -44,6 +45,7 @@ func Run() error {
 		SetDB: func(req httpapi.DBConfig) (string, error) {
 			return state.SetDB(req)
 		},
+		Debug: state.cfg.Debug,
 	})
 
 	log.Info("Web 服务运行在 %s", cfg.BindAddr())
