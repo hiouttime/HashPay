@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { getConfigBlob } from "@/server/db";
 import { errorBody } from "@/server/http/api-error";
 import { apiEnvelope } from "@/server/http/api-response";
 import { createRequestId } from "@/server/http/request-id";
@@ -10,6 +9,8 @@ import { createAuthRoutes } from "@/server/http/routes/auth";
 import { createCheckoutRoutes } from "@/server/http/routes/checkout";
 import { createMerchantRoutes } from "@/server/http/routes/merchant";
 import { createStateRoutes } from "@/server/http/routes/state";
+import { ensureDefaultBanner } from "@/server/services/banner";
+import { orderQrPng } from "@/server/services/qr";
 import { handleTelegramWebhook } from "@/server/services/telegram/service";
 import type { AppEnv, AppVariables } from "@/shared/types/env";
 
@@ -30,10 +31,14 @@ export function createApp() {
   app.use("/api/*", apiEnvelope);
 
   app.get("/health", (c) => c.json({ ok: true, service: "hashpay", ts: new Date().toISOString() }));
-  app.get("/site/banner.png", async (c) => {
-    const banner = await getConfigBlob(c.env, "banner");
-    if (!banner) return new Response(null, { status: 404 });
-    return new Response(banner, { headers: { "cache-control": "public, max-age=300", "content-type": "image/png" } });
+  app.get("/site/banner.webp", async (c) => {
+    const banner = await ensureDefaultBanner(c.env, c.req.url);
+    return new Response(banner, { headers: { "cache-control": "public, max-age=300", "content-type": "image/webp" } });
+  });
+  app.get("/site/orders/:id/qr.png", async (c) => {
+    const png = await orderQrPng(c.env, c.req.param("id"));
+    if (!png) return new Response("QR is not available", { status: 404 });
+    return new Response(new Uint8Array(png), { headers: { "cache-control": "no-store", "content-type": "image/png" } });
   });
 
   app.route("/api/state", createStateRoutes());

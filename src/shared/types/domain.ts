@@ -10,7 +10,15 @@ export interface PaymentSnapshot {
   instructions?: string;
   memo?: string;
   network: string;
+  review?: PaymentReviewEvidence;
   tx?: PaymentTxEvidence;
+}
+
+export interface PaymentReviewEvidence {
+  answer: string;
+  image: string;
+  status: "pending";
+  submittedAt: number;
 }
 
 export interface PaymentTxEvidence {
@@ -18,7 +26,7 @@ export interface PaymentTxEvidence {
   confirmedBy: "frontend" | "cron" | "button" | "admin";
   currency: string;
   from?: string;
-  hash: string;
+  hash?: string;
   raw?: unknown;
   timestamp: number;
   to?: string;
@@ -39,7 +47,7 @@ export interface PaymentDriverMeta {
   currencies: string[];
   description: string;
   id: string;
-  kind: "chain" | "exchange";
+  kind: "chain" | "exchange" | "wallet";
   name: string;
   networks: string[];
 }

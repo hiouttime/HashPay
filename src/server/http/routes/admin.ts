@@ -1,17 +1,25 @@
 import { Hono } from "hono";
-import { getConfig, getConfigBlob, listConfigs, setConfig, setConfigs } from "@/server/db";
+import { db, getConfig, now, setConfig, setConfigs } from "@/server/db";
 import { jsonParseObject } from "@/server/db";
 import { AppError } from "@/server/http/api-error";
 import { requireAdmin, setSessionCookie, setSetupCookie, setupCookie, signSession } from "@/server/services/auth/session";
+import { ensureDefaultBanner, restoreDefaultBanner, saveBanner } from "@/server/services/banner";
 import { paymentDrivers, paymentSchemas } from "@/server/services/payments/drivers";
+import { normalizeSettingsPayload, settingsPreview, systemSettings } from "@/server/services/rates";
 import {
   checkOrderPayment,
+  createMerchantOrder,
   deleteMerchant,
+  deleteOrder,
   deletePayment,
+  getOrderDetail,
   listMerchants,
   listOrders,
+  listOrdersPage,
   listPayments,
   manualConfirmOrder,
+  resetMerchantKey,
+  resendOrderNotify,
   saveMerchant,
   savePayment,
 } from "@/server/services/orders/service";
@@ -46,6 +54,7 @@ export function createAdminRoutes() {
     setSessionCookie(c, await signSession(c.env, admin));
     await setConfig(c.env, "setup_token", "");
     await setConfig(c.env, "setup_expires_at", "0");
+    await ensureDefaultBanner(c.env, c.req.url);
     return c.json({ admin, bound: true });
   });
 
@@ -59,20 +68,41 @@ export function createAdminRoutes() {
     await next();
   });
 
-  app.get("/settings", async (c) => c.json(await listConfigs(c.env)));
+  app.get("/dashboard", async (c) => c.json(await dashboard(c.env)));
+  app.get("/settings", async (c) => c.json({
+    ...(await systemSettings(c.env)),
+    banner_url: "/site/banner.webp",
+    domain: await getConfig(c.env, "domain") || "",
+    rate_preview: await settingsPreview(c.env),
+  }));
+  app.get("/settings/preview", async (c) => c.json(await settingsPreview(c.env, c.req.query("currency"), c.req.query("rate_adjust"))));
   app.put("/settings", async (c) => {
-    await setConfigs(c.env, (await c.req.json()) as Record<string, string>);
-    return c.json(await listConfigs(c.env));
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const settings = normalizeSettingsPayload(body);
+    await setConfigs(c.env, {
+      ...settings,
+      domain: String(body.domain ?? "").trim(),
+    });
+    return c.json({
+      ...settings,
+      banner_url: "/site/banner.webp",
+      domain: await getConfig(c.env, "domain") || "",
+      rate_preview: await settingsPreview(c.env, settings.currency, settings.rate_adjust),
+    });
   });
   app.put("/banner", async (c) => {
     const contentType = c.req.header("content-type") ?? "";
-    if (!contentType.includes("image/png")) throw new AppError(400, "banner_type_invalid", "Only PNG banner is supported");
-    await setConfig(c.env, "banner", "png", await c.req.arrayBuffer());
-    return c.json({ url: "/site/banner.png" });
+    if (!contentType.includes("image/webp")) throw new AppError(400, "banner_type_invalid", "Only WebP banner is supported");
+    await saveBanner(c.env, await c.req.arrayBuffer());
+    return c.json({ url: "/site/banner.webp" });
+  });
+  app.post("/banner/default", async (c) => {
+    await restoreDefaultBanner(c.env, c.req.url);
+    return c.json({ url: "/site/banner.webp" });
   });
   app.get("/banner", async (c) => {
-    const blob = await getConfigBlob(c.env, "banner");
-    return c.json({ exists: Boolean(blob), url: "/site/banner.png" });
+    await ensureDefaultBanner(c.env, c.req.url);
+    return c.json({ exists: true, url: "/site/banner.webp" });
   });
 
   app.get("/payments/catalog", (c) => c.json({ drivers: paymentDrivers(), schema: paymentSchemas() }));
@@ -91,18 +121,197 @@ export function createAdminRoutes() {
   app.post("/merchants", async (c) => c.json(await saveMerchant(c.env, (await c.req.json()) as never)));
   app.put("/merchants/:id", async (c) => {
     const body = (await c.req.json()) as Record<string, unknown>;
-    return c.json(await saveMerchant(c.env, { ...(body as { callbackUrl?: string; name: string; status?: string }), id: c.req.param("id") }));
+    return c.json(await saveMerchant(c.env, { ...(body as { callback_url?: string; name: string; status?: string; type?: string }), id: c.req.param("id") }));
+  });
+  app.post("/merchants/:id/key", async (c) => {
+    return c.json(await resetMerchantKey(c.env, c.req.param("id")));
   });
   app.delete("/merchants/:id", async (c) => {
     await deleteMerchant(c.env, c.req.param("id"));
     return c.json({ ok: true });
   });
 
-  app.get("/orders", async (c) => c.json(await listOrders(c.env, c.req.query("status") ?? "all", Number(c.req.query("limit") ?? 100))));
-  app.post("/orders/:id/check", async (c) => c.json(await checkOrderPayment(c.env, c.req.param("id"), "admin")));
+  app.get("/orders", async (c) =>
+    c.json(
+      await listOrdersPage(c.env, {
+        page: Number(c.req.query("page") ?? 1),
+        pageSize: Number(c.req.query("pageSize") ?? c.req.query("page_size") ?? 20),
+        q: c.req.query("q") ?? "",
+        status: c.req.query("status") ?? "all",
+      }),
+    ),
+  );
+  app.post("/orders/test-checkout", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const merchants = await listMerchants(c.env);
+    const requestedMerchantId = String(body.merchant_id ?? "").trim();
+    const merchant = requestedMerchantId
+      ? merchants.find((item) => item.id === requestedMerchantId)
+      : merchants.find((item) => item.status === "active" && item.type === "website") ?? merchants.find((item) => item.status === "active");
+    if (!merchant) throw new AppError(400, "merchant_missing", "请先创建并启用一个商户");
+    if (merchant.status !== "active") throw new AppError(400, "merchant_disabled", "商户未启用");
+    const amount = Number(body.amount ?? 20);
+    const currency = String(body.currency ?? (await systemSettings(c.env)).currency).trim().toUpperCase();
+    const { order, reused } = await createMerchantOrder(c.env, merchant, {
+      amount,
+      currency,
+      customer_ref: "网页测试",
+      description: String(body.description ?? "网页收银台测试订单"),
+      merchant_order_no: `web-checkout-${now()}-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    const payUrl = new URL(`/pay/${order.id}`, c.req.url).toString();
+    return c.json({ merchant, order, pay_url: payUrl, reused });
+  });
+  app.get("/orders/:id", async (c) => c.json(await getOrderDetail(c.env, c.req.param("id"))));
+  app.post("/orders/:id/check", async (c) => c.json(await checkOrderPayment(c.env, c.req.param("id"), "button")));
   app.post("/orders/:id/confirm", async (c) => c.json(await manualConfirmOrder(c.env, c.req.param("id"), (await c.req.json()) as Record<string, unknown>)));
+  app.post("/orders/:id/notify", async (c) => c.json(await resendOrderNotify(c.env, c.req.param("id"))));
+  app.delete("/orders/:id", async (c) => c.json(await deleteOrder(c.env, c.req.param("id"))));
 
   return app;
+}
+
+async function dashboard(env: AppEnv) {
+  const startOfDay = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  const [orderStats, todayOrders, todayPaid, failedNotify, pendingNotify, paymentList, trends, recentOrders] = await Promise.all([
+    db(env)
+      .prepare("SELECT status, COUNT(*) AS count FROM orders GROUP BY status")
+      .all<{ status: string; count: number }>(),
+    db(env)
+      .prepare("SELECT COUNT(*) AS count FROM orders WHERE created_at >= ?")
+      .bind(startOfDay)
+      .first<{ count: number }>(),
+    db(env)
+      .prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount FROM orders WHERE status = 'paid' AND paid_at >= ?")
+      .bind(startOfDay)
+      .first<{ amount: number; count: number }>(),
+    db(env)
+      .prepare("SELECT COUNT(*) AS count FROM notify WHERE status = 'failed'")
+      .first<{ count: number }>(),
+    db(env)
+      .prepare("SELECT COUNT(*) AS count FROM notify WHERE status IN ('pending', 'retry')")
+      .first<{ count: number }>(),
+    listPayments(env),
+    dashboardTrends(env, startOfDay),
+    listOrders(env, { limit: 5, status: "all" }),
+  ]);
+  const counts = Object.fromEntries((orderStats.results ?? []).map((row) => [row.status, row.count]));
+  const paymentHealth = paymentList.map(paymentHealthState);
+  return {
+    failedNotifyCount: failedNotify?.count ?? 0,
+    now: now(),
+    notifyPendingCount: pendingNotify?.count ?? 0,
+    orderCounts: {
+      expired: counts.expired ?? 0,
+      invalid: counts.invalid ?? 0,
+      paid: counts.paid ?? 0,
+      pending: counts.pending ?? 0,
+      total: Object.values(counts).reduce((sum, value) => sum + Number(value), 0),
+    },
+    paymentHealth,
+    recentOrders,
+    todayOrderCount: todayOrders?.count ?? 0,
+    todayPaidAmount: todayPaid?.amount ?? 0,
+    todayPaidCount: todayPaid?.count ?? 0,
+    trends,
+  };
+}
+
+async function dashboardTrends(env: AppEnv, startOfDay: number) {
+  const day = 86400;
+  return {
+    "15d": await dailyTrend(env, startOfDay - 14 * day, 15),
+    "30d": await dailyTrend(env, startOfDay - 29 * day, 30),
+    "7d": await dailyTrend(env, startOfDay - 6 * day, 7),
+    today: await hourlyTrend(env, startOfDay),
+    yesterday: await hourlyTrend(env, startOfDay - day),
+  };
+}
+
+async function hourlyTrend(env: AppEnv, start: number) {
+  return trend(env, start, start + 86400, 3600, (timestamp) => `${String(new Date(timestamp * 1000).getHours()).padStart(2, "0")}:00`);
+}
+
+async function dailyTrend(env: AppEnv, start: number, days: number) {
+  return trend(env, start, start + days * 86400, 86400, (timestamp) => {
+    const date = new Date(timestamp * 1000);
+    return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+  });
+}
+
+async function trend(env: AppEnv, start: number, end: number, bucketSize: number, label: (timestamp: number) => string) {
+  const points = Array.from({ length: Math.ceil((end - start) / bucketSize) }, (_, bucket) => ({
+    label: label(start + bucket * bucketSize),
+    orderCount: 0,
+    paidAmount: 0,
+    paidCount: 0,
+    timestamp: start + bucket * bucketSize,
+  }));
+  const [orders, paid] = await Promise.all([
+    db(env)
+      .prepare("SELECT CAST((created_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY bucket")
+      .bind(start, bucketSize, start, end)
+      .all<{ bucket: number; count: number }>(),
+    db(env)
+      .prepare("SELECT CAST((paid_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount FROM orders WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? GROUP BY bucket")
+      .bind(start, bucketSize, start, end)
+      .all<{ amount: number; bucket: number; count: number }>(),
+  ]);
+  for (const row of orders.results ?? []) {
+    const point = points[Number(row.bucket)];
+    if (point) point.orderCount = Number(row.count) || 0;
+  }
+  for (const row of paid.results ?? []) {
+    const point = points[Number(row.bucket)];
+    if (point) {
+      point.paidAmount = Number(row.amount) || 0;
+      point.paidCount = Number(row.count) || 0;
+    }
+  }
+  return points;
+}
+
+function paymentHealthState(payment: { driver: string; enabled: boolean; fields?: Record<string, unknown>; id: number; name: string }) {
+  const fields = payment.fields ?? {};
+  const driver = paymentDrivers().find((item) => item.id === payment.driver);
+  if (!payment.enabled) {
+    return {
+      details: "未启用",
+      driver: payment.driver,
+      id: payment.id,
+      name: payment.name,
+      network: String(fields.network || driver?.networks?.[0] || payment.driver),
+      status: "off",
+    };
+  }
+  if (driver?.kind === "chain" && !String(fields.address || "").trim()) {
+    return {
+      details: "缺少收款地址",
+      driver: payment.driver,
+      id: payment.id,
+      name: payment.name,
+      network: String(fields.network || driver.networks?.[0] || payment.driver),
+      status: "warn",
+    };
+  }
+  if (driver && driver.kind !== "chain" && !String(fields.account || "").trim()) {
+    return {
+      details: "缺少收款账户",
+      driver: payment.driver,
+      id: payment.id,
+      name: payment.name,
+      network: String(fields.network || driver.networks?.[0] || payment.driver),
+      status: "warn",
+    };
+  }
+  return {
+    details: driver?.canAutoCheck ? "自动检查可用" : "人工确认",
+    driver: payment.driver,
+    id: payment.id,
+    name: payment.name,
+    network: String(fields.network || driver?.networks?.[0] || payment.driver),
+    status: "ok",
+  };
 }
 
 function normalizePublicDomain(value: unknown) {

@@ -1,6 +1,8 @@
 import { AppError } from "@/server/http/api-error";
 import type { PaymentSnapshot, PaymentTxEvidence } from "@/shared/types/domain";
 
+const tronGridBaseUrl = "https://nile.trongrid.io";
+
 interface TronGridTransfer {
   block_timestamp: number;
   from: string;
@@ -39,11 +41,12 @@ function tokenAllowed(symbol: string, currency: string) {
   return symbol.trim().toUpperCase() === currency.trim().toUpperCase();
 }
 
-export async function fetchTronCandidates(snapshot: PaymentSnapshot, fromTime: number) {
+export async function fetchTronCandidates(snapshot: PaymentSnapshot, fromTime: number, fastConfirm = false) {
   if (snapshot.network !== "tron" || !snapshot.address) return [];
   const minTimestamp = Math.max(0, fromTime) * 1000;
-  const transfersUrl = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(snapshot.address)}/transactions/trc20?limit=50&only_confirmed=true&min_timestamp=${minTimestamp}`;
-  const nativeUrl = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(snapshot.address)}/transactions?limit=50&only_to=true&only_confirmed=true&min_timestamp=${minTimestamp}`;
+  const onlyConfirmed = fastConfirm ? "false" : "true";
+  const transfersUrl = `${tronGridBaseUrl}/v1/accounts/${encodeURIComponent(snapshot.address)}/transactions/trc20?limit=50&only_confirmed=${onlyConfirmed}&min_timestamp=${minTimestamp}`;
+  const nativeUrl = `${tronGridBaseUrl}/v1/accounts/${encodeURIComponent(snapshot.address)}/transactions?limit=50&only_to=true&only_confirmed=${onlyConfirmed}&min_timestamp=${minTimestamp}`;
   const [tokens, native] = await Promise.all([
     fetch(transfersUrl).then((res) => res.json() as Promise<{ data?: TronGridTransfer[] }>),
     fetch(nativeUrl).then((res) => res.json() as Promise<{ data?: TronNativeTransfer[] }>),

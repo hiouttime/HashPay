@@ -26,5 +26,6 @@ describe("payment matching", () => {
     };
     expect(snapshotMatchesTx(snapshot, tx, 100, 200)).toBe(true);
     expect(snapshotMatchesTx(snapshot, { ...tx, timestamp: 90 }, 100, 200)).toBe(false);
+    expect(snapshotMatchesTx(snapshot, { ...tx, timestamp: 201 }, 100, 200)).toBe(false);
   });
 });

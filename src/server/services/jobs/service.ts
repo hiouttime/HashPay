@@ -1,8 +1,10 @@
 import { db, now } from "@/server/db";
 import { checkOrderPayment, expireOrders, pendingTronOrders } from "@/server/services/orders/service";
+import { syncMarketRates } from "@/server/services/rates";
 import type { AppEnv } from "@/shared/types/env";
 
 export async function runScheduledJobs(env: AppEnv) {
+  await syncMarketRates(env).catch(() => undefined);
   await expireOrders(env);
   const orders = await pendingTronOrders(env);
   for (const order of orders) {

@@ -5,6 +5,10 @@ export const router = createRouter({
   routes: [
     { component: () => import("@/frontend/pages/Setup.vue"), path: "/setup" },
     { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin" },
+    { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin/payments/new" },
+    { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin/payments/:id/edit" },
+    { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin/merchants/new" },
+    { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin/merchants/:id/edit" },
     { component: () => import("@/frontend/pages/Admin.vue"), path: "/admin/:tab" },
     { component: () => import("@/frontend/pages/Pay.vue"), path: "/pay/:id" },
     { component: () => import("@/frontend/pages/Home.vue"), path: "/" },

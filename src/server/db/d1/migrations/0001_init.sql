@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS configs (
 
 CREATE TABLE IF NOT EXISTS merchants (
   id TEXT PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'website',
   name TEXT NOT NULL,
-  api_key_hash TEXT NOT NULL UNIQUE,
-  api_key_prefix TEXT NOT NULL,
+  public_key TEXT NOT NULL DEFAULT '',
   callback_url TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   created_at INTEGER NOT NULL,
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
   merchant_id TEXT NOT NULL,
   merchant_order_no TEXT NOT NULL,
+  description TEXT,
   source TEXT NOT NULL,
   status TEXT NOT NULL,
   amount REAL NOT NULL,
@@ -58,7 +59,6 @@ CREATE TABLE IF NOT EXISTS notify (
   updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS merchants_api_key_hash_idx ON merchants(api_key_hash);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS orders_expire_at_idx ON orders(expire_at);
 CREATE INDEX IF NOT EXISTS orders_payway_idx ON orders(payway);

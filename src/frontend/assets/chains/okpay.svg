@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" fill="none">
+  <defs>
+    <linearGradient id="okpay-bg" x1="320" x2="320" y1="0" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#63BFE5"/>
+      <stop offset=".55" stop-color="#39A9EA"/>
+      <stop offset="1" stop-color="#078EF3"/>
+    </linearGradient>
+  </defs>
+  <circle cx="320" cy="320" r="320" fill="url(#okpay-bg)"/>
+  <path fill="#fff" d="M172 246c0-31 25-56 56-56h73l-98 56h206c30 0 54 24 54 54v110c0 30-24 55-54 55H228c-31 0-56-25-56-56V246Z"/>
+  <path fill="#fff" d="m337 178-94 55h157l-19-38c-8-18-28-25-44-17Zm71 13 39 18c17 8 27 25 25 44l-49-21-15-41Z"/>
+  <path fill="#fff" d="M199 215h101l-52 31h-49v-31Z"/>
+  <circle cx="432" cy="355" r="72" fill="#39A9EA"/>
+  <path fill="#fff" d="M477 308h61l-51 47 54 49h-62l-49-49 47-47Z"/>
+  <circle cx="432" cy="355" r="60" fill="#fff"/>
+  <circle cx="432" cy="355" r="31" fill="#39A9EA"/>
+</svg>
