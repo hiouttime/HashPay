@@ -13,3 +13,13 @@ declare module "*.svg" {
   const src: string;
   export default src;
 }
+
+declare module "*.webp?base64" {
+  const base64: string;
+  export default base64;
+}
+
+declare module "*.sql?raw" {
+  const sql: string;
+  export default sql;
+}

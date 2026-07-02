@@ -6,10 +6,10 @@ export interface PaymentSnapshot {
   address?: string;
   amount: number;
   currency: string;
+  currencyName: string;
   driver: string;
-  instructions?: string;
-  memo?: string;
   network: string;
+  networkName?: string;
   review?: PaymentReviewEvidence;
   tx?: PaymentTxEvidence;
 }
@@ -22,32 +22,7 @@ export interface PaymentReviewEvidence {
 }
 
 export interface PaymentTxEvidence {
-  amount: number;
-  confirmedBy: "frontend" | "cron" | "button" | "admin";
-  currency: string;
-  from?: string;
-  hash?: string;
-  raw?: unknown;
+  confirmedBy: "system" | "admin";
   timestamp: number;
-  to?: string;
-}
-
-export interface PaymentField {
-  help?: string;
-  key: string;
-  label: string;
-  options?: string[];
-  placeholder?: string;
-  required?: boolean;
-  type: "text" | "textarea" | "select";
-}
-
-export interface PaymentDriverMeta {
-  canAutoCheck: boolean;
-  currencies: string[];
-  description: string;
-  id: string;
-  kind: "chain" | "exchange" | "wallet";
-  name: string;
-  networks: string[];
+  txid?: string;
 }

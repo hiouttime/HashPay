@@ -1,5 +1,5 @@
-import { AppError } from "@/server/http/api-error";
-import { bytesToHex, timingSafeEqualString } from "@/server/services/crypto";
+import { AppError } from "@/server/http/api";
+import { bytesToHex, timingSafeEqualString } from "@/server/utils/crypto";
 import type { TelegramUser } from "@/shared/types/env";
 
 const encoder = new TextEncoder();

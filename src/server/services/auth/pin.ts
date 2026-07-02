@@ -1,6 +1,6 @@
 import { deleteConfig, getConfig, jsonParseObject, now, setConfig } from "@/server/db";
-import { AppError } from "@/server/http/api-error";
-import { timingSafeEqualString } from "@/server/services/crypto";
+import { AppError } from "@/server/http/api";
+import { timingSafeEqualString } from "@/server/utils/crypto";
 import type { AppEnv, TelegramUser } from "@/shared/types/env";
 
 const encoder = new TextEncoder();
@@ -9,12 +9,10 @@ const pinTtlSeconds = 2 * 60;
 
 interface LoginChallenge {
   expiresAt: number;
-  issuedAt: number;
   pin: string;
 }
 
 interface LoginPinRecord {
-  confirmedAt?: number;
   expiresAt?: number;
   pinHash?: string;
   user?: TelegramUser;
@@ -36,33 +34,30 @@ async function pinHash(env: AppEnv, pin: string) {
 }
 
 async function signChallenge(env: AppEnv, challenge: LoginChallenge) {
-  const body = `${challenge.pin}.${challenge.issuedAt}.${challenge.expiresAt}`;
+  const body = `${challenge.pin}.${challenge.expiresAt}`;
   const signature = (await hmacHex(env, `login-pin-challenge:${body}`)).slice(0, 32);
   return `${body}.${signature}`;
 }
 
 async function verifyChallenge(env: AppEnv, pin: string, token: string) {
   assertPin(pin);
-  const [tokenPin, issuedRaw, expiresRaw, signature] = token.split(".");
-  if (!tokenPin || !issuedRaw || !expiresRaw || !signature || tokenPin !== pin) {
+  const [tokenPin, expiresRaw, signature] = token.split(".");
+  if (!tokenPin || !expiresRaw || !signature || tokenPin !== pin) {
     throw new AppError(401, "login_challenge_invalid", "登录请求无效");
   }
-  const issuedAt = Number(issuedRaw);
   const expiresAt = Number(expiresRaw);
-  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || expiresAt < now()) {
+  if (!Number.isFinite(expiresAt) || expiresAt < now()) {
     throw new AppError(401, "login_challenge_expired", "登录 PIN 已过期");
   }
-  const expected = await signChallenge(env, { expiresAt, issuedAt, pin });
+  const expected = await signChallenge(env, { expiresAt, pin });
   if (!timingSafeEqualString(expected, token)) throw new AppError(401, "login_challenge_invalid", "登录请求无效");
-  return { expiresAt, issuedAt, pin };
 }
 
 export async function createLoginChallenge(env: AppEnv, pin: string) {
   assertPin(pin);
-  const issuedAt = now();
-  const expiresAt = issuedAt + pinTtlSeconds;
+  const expiresAt = now() + pinTtlSeconds;
   return {
-    challenge: await signChallenge(env, { expiresAt, issuedAt, pin }),
+    challenge: await signChallenge(env, { expiresAt, pin }),
     command: `/login ${pin}`,
     expiresAt,
   };
@@ -70,22 +65,19 @@ export async function createLoginChallenge(env: AppEnv, pin: string) {
 
 export async function confirmLoginPin(env: AppEnv, pin: string, user: TelegramUser) {
   assertPin(pin);
-  const confirmedAt = now();
   await setConfig(env, loginPinKey, JSON.stringify({
-    confirmedAt,
-    expiresAt: confirmedAt + pinTtlSeconds,
+    expiresAt: now() + pinTtlSeconds,
     pinHash: await pinHash(env, pin),
     user,
   }));
 }
 
 export async function consumeLoginPin(env: AppEnv, pin: string, challengeToken: string) {
-  const challenge = await verifyChallenge(env, pin, challengeToken);
+  await verifyChallenge(env, pin, challengeToken);
   const record = jsonParseObject<LoginPinRecord>(await getConfig(env, loginPinKey), {});
-  if (!record.pinHash || !record.confirmedAt || !record.expiresAt || !record.user?.id) return null;
+  if (!record.pinHash || !record.expiresAt || !record.user?.id) return null;
   if (record.expiresAt < now()) return null;
   if (!timingSafeEqualString(record.pinHash, await pinHash(env, pin))) return null;
-  if (record.confirmedAt < challenge.issuedAt || record.confirmedAt > challenge.expiresAt) return null;
   await deleteConfig(env, loginPinKey);
   return record.user;
 }

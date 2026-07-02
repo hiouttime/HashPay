@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS configs (
   key TEXT PRIMARY KEY,
   value TEXT,
-  blob_value BLOB,
+  blob BLOB,
   updated_at INTEGER NOT NULL
 );
 
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS merchants (
   type TEXT NOT NULL DEFAULT 'website',
   name TEXT NOT NULL,
   public_key TEXT NOT NULL DEFAULT '',
-  callback_url TEXT,
+  callback TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -20,31 +20,31 @@ CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   driver TEXT NOT NULL,
   name TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  fields_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'enabled',
+  address TEXT NOT NULL,
+  assets TEXT NOT NULL,
+  credentials TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
-  merchant_id TEXT NOT NULL,
-  merchant_order_no TEXT NOT NULL,
+  merchant TEXT NOT NULL,
+  merchant_no TEXT NOT NULL,
   description TEXT,
-  source TEXT NOT NULL,
   status TEXT NOT NULL,
   amount REAL NOT NULL,
   currency TEXT NOT NULL,
   payway INTEGER,
   payment TEXT NOT NULL DEFAULT '{}',
-  callback_url TEXT,
+  callback TEXT,
   redirect_url TEXT,
-  customer_ref TEXT,
   expire_at INTEGER NOT NULL,
   paid_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  UNIQUE(merchant_id, merchant_order_no)
+  UNIQUE(merchant, merchant_no)
 );
 
 CREATE TABLE IF NOT EXISTS notify (

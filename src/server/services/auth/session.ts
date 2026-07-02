@@ -1,20 +1,19 @@
 import { jwtVerify, SignJWT } from "jose";
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { AppError } from "@/server/http/api-error";
+import { AppError } from "@/server/http/api";
 import { getConfig } from "@/server/db";
-import type { AppEnv, AppVariables, TelegramUser } from "@/shared/types/env";
+import type { AppEnv, HonoEnv, TelegramUser } from "@/shared/types/env";
 
 const encoder = new TextEncoder();
 const adminCookieName = "hashpay_session";
-const setupCookieName = "hashpay_setup";
 
 function secret(env: AppEnv) {
   if (!env.APP_SECRET) throw new AppError(500, "app_secret_missing", "APP_SECRET is not configured");
   return encoder.encode(env.APP_SECRET);
 }
 
-export async function signToken(env: AppEnv, user: TelegramUser, expiresIn: string) {
+export async function signSession(env: AppEnv, user: TelegramUser) {
   return new SignJWT({
     firstName: user.firstName,
     lastName: user.lastName,
@@ -23,39 +22,22 @@ export async function signToken(env: AppEnv, user: TelegramUser, expiresIn: stri
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(user.id))
     .setIssuedAt()
-    .setExpirationTime(expiresIn)
+    .setExpirationTime("7d")
     .sign(secret(env));
 }
 
-export function signSession(env: AppEnv, user: TelegramUser) {
-  return signToken(env, user, "7d");
-}
-
-function setJwtCookie(c: Context, name: string, token: string, maxAge: number) {
-  setCookie(c, name, token, {
+export function setSessionCookie(c: Context, token: string) {
+  setCookie(c, adminCookieName, token, {
     httpOnly: true,
-    maxAge,
+    maxAge: 7 * 86400,
     path: "/",
     sameSite: "Lax",
     secure: new URL(c.req.url).protocol === "https:",
   });
 }
 
-export function setSessionCookie(c: Context, token: string) {
-  setJwtCookie(c, adminCookieName, token, 7 * 86400);
-}
-
-export function setSetupCookie(c: Context, token: string) {
-  setJwtCookie(c, setupCookieName, token, 10 * 60);
-}
-
-export function setupCookie(c: Context) {
-  return getCookie(c, setupCookieName);
-}
-
 export function clearSessionCookie(c: Context) {
   deleteCookie(c, adminCookieName, { path: "/" });
-  deleteCookie(c, setupCookieName, { path: "/" });
 }
 
 export async function verifySession(env: AppEnv, token: string): Promise<TelegramUser> {
@@ -70,7 +52,7 @@ export async function verifySession(env: AppEnv, token: string): Promise<Telegra
   };
 }
 
-export async function requireAdmin(c: Context<{ Bindings: AppEnv; Variables: AppVariables }>) {
+export async function requireAdmin(c: Context<HonoEnv>) {
   const token = getCookie(c, adminCookieName);
   if (!token) throw new AppError(401, "session_missing", "Please sign in");
   const user = await verifySession(c.env, token);

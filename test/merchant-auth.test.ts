@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateRsaKeyPair, verifyRsaSha256 } from "@/server/services/crypto";
+import { generateRsaKeyPair, verifyRsaSha256 } from "@/server/utils/crypto";
 
 function base64Lines(bytes: ArrayBuffer) {
   return Buffer.from(bytes).toString("base64").replace(/(.{64})/g, "$1\n").trim();
@@ -39,7 +39,7 @@ async function importPrivateKey(privateKeyPem: string) {
 describe("merchant RSA signature", () => {
   it("verifies request signing payload", async () => {
     const { privateKey, publicKeyPem } = await createKeyPair();
-    const payload = ["POST", "/api/merchant/orders", "1782000000", "{\"amount\":10}"].join("\n");
+    const payload = ["POST", "/api/merchant/new", "1782000000", "{\"amount\":10}"].join("\n");
     const signature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-v1_5" }, privateKey, new TextEncoder().encode(payload));
 
     await expect(verifyRsaSha256(publicKeyPem, base64(signature), payload)).resolves.toBe(true);
@@ -49,7 +49,7 @@ describe("merchant RSA signature", () => {
   it("generates a usable merchant key pair", async () => {
     const pair = await generateRsaKeyPair();
     const privateKey = await importPrivateKey(pair.privateKeyPem);
-    const payload = ["GET", "/api/merchant/orders/demo", "1782000000", ""].join("\n");
+    const payload = ["GET", "/api/order/demo", "1782000000", ""].join("\n");
     const signature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-v1_5" }, privateKey, new TextEncoder().encode(payload));
 
     expect(pair.privateKeyPem).toContain("-----BEGIN PRIVATE KEY-----");

@@ -15,6 +15,11 @@ export interface AppVariables {
   tgUser?: TelegramUser;
 }
 
+export interface HonoEnv {
+  Bindings: AppEnv;
+  Variables: AppVariables;
+}
+
 export interface TelegramUser {
   firstName?: string;
   id: number;

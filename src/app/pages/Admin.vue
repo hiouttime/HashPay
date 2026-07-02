@@ -1,0 +1,114 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import type { MenuOption } from "naive-ui";
+import { useRoute, useRouter } from "vue-router";
+import LoginPanel from "@/app/components/LoginPanel.vue";
+import PageSkeleton from "@/app/components/PageSkeleton.vue";
+import Merchants from "@/app/pages/Merchants.vue";
+import Orders from "@/app/pages/Orders.vue";
+import Overview from "@/app/pages/Overview.vue";
+import Payments from "@/app/pages/Payments.vue";
+import Settings from "@/app/pages/Settings.vue";
+import { api, type AppState, type TelegramUser } from "@/app/api";
+import { isTelegramMiniApp, loginWithTelegram, logoutSession, readSession } from "@/app/utils/session-login";
+
+const route = useRoute();
+const router = useRouter();
+const version = __GIT_SHORT_HASH__;
+const miniApp = isTelegramMiniApp();
+
+const pages = [
+  { component: Overview, key: "overview", label: "概览" },
+  { component: Orders, key: "orders", label: "订单" },
+  { component: Payments, key: "payments", label: "收款" },
+  { component: Merchants, key: "merchants", label: "商户" },
+  { component: Settings, key: "settings", label: "设置" },
+] as const;
+
+type PageKey = (typeof pages)[number]["key"];
+
+const menu = pages.map(({ key, label }) => ({ key, label })) satisfies MenuOption[];
+const pageKey = computed(() => route.path.split("/")[2] as PageKey);
+const page = computed(() => pages.find((item) => item.key === pageKey.value)!.component);
+
+const loading = ref(true);
+const navOpen = ref(false);
+const status = ref<AppState | null>(null);
+const user = ref<TelegramUser | null>(null);
+
+
+async function init() {
+  loading.value = true;
+  status.value = await api.state.get();
+  if (!status.value.installed) {
+    await router.replace("/setup");
+    return;
+  }
+
+  user.value = (await readSession()) ?? (await loginWithTelegram());
+  loading.value = false;
+}
+
+async function signOut() {
+  await logoutSession();
+  await init();
+}
+
+function openPage(key: string | number) {
+  navOpen.value = false;
+  void router.push(`/admin/${String(key)}`);
+}
+
+onMounted(init);
+</script>
+
+<template>
+  <n-layout class="shell">
+    <n-layout-header class="topbar">
+      <div class="topbar-brand">
+        <n-button v-if="user" circle quaternary size="small" class="mobile-menu-button" title="打开菜单" @click="navOpen = true">
+          <template #icon>
+            <span class="hamburger-icon" aria-hidden="true"></span>
+          </template>
+        </n-button>
+        <div class="brand">HashPay</div>
+      </div>
+      <div v-if="user && !miniApp" class="topbar-actions">
+        <n-button size="small" secondary @click="signOut">退出登录</n-button>
+      </div>
+    </n-layout-header>
+    <n-layout-content v-if="loading" class="page-layout" content-class="page">
+      <PageSkeleton :sections="3" :rows="3" />
+    </n-layout-content>
+    <n-layout-content v-else-if="!user" class="page-layout" content-class="page">
+      <LoginPanel :bot-username="status?.botUsername" @authenticated="init" />
+    </n-layout-content>
+    <n-layout-content v-else class="workspace-layout" content-class="workspace-page">
+      <n-drawer v-model:show="navOpen" placement="left" :width="260">
+        <n-drawer-content closable title="HashPay">
+          <div class="workspace-nav workspace-nav--drawer">
+            <n-menu :options="menu" :value="pageKey" @update:value="openPage" />
+            <div class="workspace-release">
+              <span>Version {{ version }}</span>
+              <span>Made with ❤️ by TGDash Team</span>
+            </div>
+          </div>
+        </n-drawer-content>
+      </n-drawer>
+      <n-layout has-sider class="workspace-frame">
+        <n-layout-sider bordered :width="210">
+          <div class="workspace-nav">
+            <n-menu :options="menu" :value="pageKey" @update:value="openPage" />
+            <div class="workspace-release">
+              <span>Version {{ version }}</span>
+              <span>Made with ❤️ by TGDash Team</span>
+            </div>
+          </div>
+        </n-layout-sider>
+        <n-layout-content class="workspace-content">
+          <component :is="page" />
+        </n-layout-content>
+      </n-layout>
+    </n-layout-content>
+  </n-layout>
+</template>
