@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { DashboardTrendKey, DashboardTrendPoint } from "@/app/api";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/amount-format";
+import { useI18n } from "@/app/i18n";
+import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 
 type TrendField = "amount" | "orders";
 
@@ -11,23 +12,23 @@ const props = defineProps<{
   trends?: Partial<Record<DashboardTrendKey, DashboardTrendPoint[]>> | null;
 }>();
 
-const ranges = [
-  { label: "今天", value: "td" },
-  { label: "昨天", value: "yd" },
-  { label: "近 7 天", value: "7d" },
-  { label: "近半个月", value: "15d" },
-  { label: "近一个月", value: "30d" },
-] as const;
-
 const charts = [
-  { field: "amount", label: "收款金额" },
-  { field: "orders", label: "订单数量" },
+  { field: "amount", label: "overview.paid_amount" },
+  { field: "orders", label: "overview.order_count" },
 ] as const;
 
+const { t } = useI18n();
 const range = ref<DashboardTrendKey>("td");
 const hover = ref<{ field: TrendField; index: number } | null>(null);
 
 const points = computed(() => props.trends?.[range.value] ?? []);
+const ranges = computed(() => [
+  { label: t("overview.range.today"), value: "td" },
+  { label: t("overview.range.yesterday"), value: "yd" },
+  { label: t("overview.range.7d"), value: "7d" },
+  { label: t("overview.range.15d"), value: "15d" },
+  { label: t("overview.range.30d"), value: "30d" },
+]);
 
 const summary = computed(() =>
   points.value.reduce(
@@ -58,7 +59,9 @@ const chartViews = computed(() =>
     }));
     const active = hover.value?.field === chart.field ? coords[hover.value.index] : null;
     const row = hover.value?.field === chart.field ? points.value[hover.value.index] : null;
-    const value = row && chart.field === "amount" ? [formatAmount(row.amount), props.currency].filter(Boolean).join(" ") : `${row?.orders ?? 0} 单`;
+    const value = row && chart.field === "amount"
+      ? [formatAmount(row.amount), props.currency].filter(Boolean).join(" ")
+      : t("overview.orders_value", { count: row?.orders ?? 0 });
     const line = coords.map((item) => `${item.x},${item.y}`).join(" ");
 
     return {
@@ -93,15 +96,15 @@ function clearHover() {
     </div>
     <div class="trend-summary">
       <div class="trend-summary-primary">
-        <span class="muted">收款金额</span>
+        <span class="muted">{{ t('overview.paid_amount') }}</span>
         <strong>{{ formatAmount(summary.amount) }} {{ currency }}</strong>
       </div>
       <div>
-        <span class="muted">订单数量</span>
+        <span class="muted">{{ t('overview.order_count') }}</span>
         <strong>{{ summary.orders }}</strong>
       </div>
       <div>
-        <span class="muted">待支付订单</span>
+        <span class="muted">{{ t('overview.pending_orders') }}</span>
         <strong>{{ pending }}</strong>
       </div>
     </div>
@@ -114,7 +117,7 @@ function clearHover() {
         @mousemove="setHover($event, chart.field)"
       >
         <div class="trend-chart-head">
-          <span>{{ chart.label }}</span>
+          <span>{{ t(chart.label) }}</span>
         </div>
         <div class="trend-plot">
           <svg viewBox="0 0 320 116" preserveAspectRatio="none" aria-hidden="true">

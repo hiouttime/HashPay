@@ -3,11 +3,12 @@ import { computed, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import * as pay from "@/app/payments";
 import { api } from "@/app/api";
+import { useI18n } from "@/app/i18n";
 import {
   ceilDisplayAmount,
   formatExactDisplayAmount as formatExactAmount,
   formatIntegerDisplayAmount as formatIntegerAmount,
-} from "@/app/utils/amount-format";
+} from "@/app/utils/format";
 
 const props = defineProps<{
   order: any;
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
+const { t } = useI18n();
 const answers = ref<Record<string, string>>({});
 const image = ref("");
 const imageName = ref("");
@@ -49,22 +51,22 @@ const questions = computed(() => {
       correct: networkCorrect,
       id: "network",
       options: options(networkCorrect, pay.reviewNetworkOptions()),
-      risk: `看起来你使用了错误的网络发送代币，你应使用 ${networkCorrect}。\n这种情况，你的付款可能存在丢失风险。`,
-      title: "你通过哪种网络完成付款？",
+      risk: t("review.network_risk", { network: networkCorrect }),
+      title: t("review.network_question"),
     },
     {
       correct: assetCorrect,
       id: "asset",
       options: options(assetCorrect, pay.reviewAssetOptions()),
-      risk: `看起来你支付了错误的币种，你应支付 ${assetCorrect}。\n这种情况，你的付款可能存在丢失风险。`,
-      title: "你支付了哪种币种？",
+      risk: t("review.asset_risk", { asset: assetCorrect }),
+      title: t("review.asset_question"),
     },
     {
       correct: amountCorrect,
       id: "amount",
       options: amountOptions(amount, assetCorrect, amountCorrect),
-      risk: "由于区块链的匿名性，系统仅能依靠金额区分订单，如果您没有按照系统的指示支付金额，则您的付款可能会确认到其他订单上。\n这种情况，您的付款很可能无效。",
-      title: "提现时，最终到账金额是多少？",
+      risk: t("review.amount_risk"),
+      title: t("review.amount_question"),
     },
   ];
 });
@@ -72,7 +74,7 @@ const question = computed(() => questions.value[step.value]);
 const credentialStep = computed(() => step.value >= questions.value.length);
 const finalRisk = computed(() => {
   const wrong = questions.value.find((item) => answers.value[item.id] && answers.value[item.id] !== item.correct);
-  return `${wrong?.risk ?? "这可能是交易网络存在一些问题导致无法确认，非常抱歉给您带来不便。"}\n\n不过，你可以上传付款信息来让我们帮你核实。`;
+  return `${wrong?.risk ?? t("review.network_issue")}\n\n${t("review.upload_help_suffix")}`;
 });
 const canNext = computed(() => Boolean(question.value && answers.value[question.value.id]));
 const canSubmit = computed(() => credentialStep.value && Boolean(txid.value.trim()) && Boolean(image.value));
@@ -97,7 +99,7 @@ function choose(questionId: string, answer: string) {
 function next() {
   const item = question.value;
   if (!item || !answers.value[item.id]) {
-    message.warning("请先选择一个答案");
+    message.warning(t("review.choose_answer"));
     return;
   }
   returnStep.value = step.value;
@@ -120,12 +122,12 @@ async function upload(options: { file: { file?: File | null }; onError?: () => v
   const file = options.file.file;
   if (!file) return;
   if (!file.type.startsWith("image/")) {
-    message.warning("请上传图片");
+    message.warning(t("review.upload_image_first"));
     options.onError?.();
     return;
   }
   if (file.size > 2_000_000) {
-    message.warning("图片不能超过 2MB");
+    message.warning(t("review.image_too_large"));
     options.onError?.();
     return;
   }
@@ -140,11 +142,11 @@ async function upload(options: { file: { file?: File | null }; onError?: () => v
 
 async function submit() {
   if (!txid.value.trim()) {
-    message.warning("请填写交易编号");
+    message.warning(t("review.tx_required"));
     return;
   }
   if (!image.value) {
-    message.warning("请上传付款截图");
+    message.warning(t("review.screenshot_required"));
     return;
   }
   loading.value = true;
@@ -155,7 +157,7 @@ async function submit() {
     });
     visible.value = false;
     emit("submitted");
-    message.success("已提交，等待管理员审核");
+    message.success(t("review.submitted"));
   } finally {
     loading.value = false;
   }
@@ -163,8 +165,8 @@ async function submit() {
 
 function answerText() {
   return [
-    ...questions.value.map((item) => `${item.title}\n${answers.value[item.id] || "未继续询问"}`),
-    `交易哈希/TXID/交易编号/转账ID\n${txid.value.trim()}`,
+    ...questions.value.map((item) => `${item.title}\n${answers.value[item.id] || t("review.not_asked")}`),
+    `${t("review.tx_label")}\n${txid.value.trim()}`,
   ].join("\n\n");
 }
 
@@ -215,7 +217,7 @@ function score(value: string) {
     <n-card
       closable
       class="checkout-review-modal"
-      title="检查付款信息"
+      :title="t('review.title')"
       role="dialog"
       aria-modal="true"
       @close="visible = false"
@@ -243,7 +245,7 @@ function score(value: string) {
           </div>
           <n-input
             v-model:value="txid"
-            placeholder="交易哈希/TXID/交易编号/转账ID"
+            :placeholder="t('review.tx_label')"
           />
           <n-upload
             accept="image/*"
@@ -254,8 +256,8 @@ function score(value: string) {
           >
             <n-upload-dragger>
               <div class="checkout-upload-dragger">
-                <strong>{{ imageName || '上传付款截图' }}</strong>
-                <span>请上传钱包/交易所或支付平台中的付款信息截图。</span>
+                <strong>{{ imageName || t('review.upload_screenshot') }}</strong>
+                <span>{{ t('review.screenshot_help') }}</span>
               </div>
             </n-upload-dragger>
           </n-upload>
@@ -263,10 +265,10 @@ function score(value: string) {
       </div>
       <template #footer>
         <div class="modal-actions">
-          <n-button v-if="step === 0" @click="visible = false">取消</n-button>
-          <n-button v-else @click="previous">上一步</n-button>
-          <n-button v-if="!credentialStep" :disabled="!canNext" type="primary" @click="next">下一步</n-button>
-          <n-button v-else :disabled="!canSubmit" :loading="loading" type="primary" @click="submit">提交审核</n-button>
+          <n-button v-if="step === 0" @click="visible = false">{{ t('common.cancel') }}</n-button>
+          <n-button v-else @click="previous">{{ t('review.previous') }}</n-button>
+          <n-button v-if="!credentialStep" :disabled="!canNext" type="primary" @click="next">{{ t('review.next') }}</n-button>
+          <n-button v-else :disabled="!canSubmit" :loading="loading" type="primary" @click="submit">{{ t('review.submit_review') }}</n-button>
         </div>
       </template>
     </n-card>

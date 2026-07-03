@@ -3,13 +3,13 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { AppError } from "@/server/http/api";
 import { getConfig } from "@/server/db";
-import type { AppEnv, HonoEnv, TelegramUser } from "@/shared/types/env";
+import type { AppEnv, HonoEnv, TelegramUser } from "@/server/types/env";
 
 const encoder = new TextEncoder();
 const adminCookieName = "hashpay_session";
 
 function secret(env: AppEnv) {
-  if (!env.APP_SECRET) throw new AppError(500, "app_secret_missing", "APP_SECRET is not configured");
+  if (!env.APP_SECRET) throw new AppError(500, "errors.app_secret_missing");
   return encoder.encode(env.APP_SECRET);
 }
 
@@ -43,7 +43,7 @@ export function clearSessionCookie(c: Context) {
 export async function verifySession(env: AppEnv, token: string): Promise<TelegramUser> {
   const result = await jwtVerify(token, secret(env));
   const id = Number(result.payload.sub);
-  if (!Number.isFinite(id)) throw new AppError(401, "session_invalid", "Session is invalid");
+  if (!Number.isFinite(id)) throw new AppError(401, "errors.session_invalid");
   return {
     firstName: typeof result.payload.firstName === "string" ? result.payload.firstName : undefined,
     id,
@@ -54,10 +54,10 @@ export async function verifySession(env: AppEnv, token: string): Promise<Telegra
 
 export async function requireAdmin(c: Context<HonoEnv>) {
   const token = getCookie(c, adminCookieName);
-  if (!token) throw new AppError(401, "session_missing", "Please sign in");
+  if (!token) throw new AppError(401, "errors.session_missing");
   const user = await verifySession(c.env, token);
   const adminId = Number(await getConfig(c.env, "admin_id"));
-  if (!adminId || user.id !== adminId) throw new AppError(403, "admin_forbidden", "Forbidden");
+  if (!adminId || user.id !== adminId) throw new AppError(403, "errors.admin_forbidden");
   c.set("tgUser", user);
   return user;
 }

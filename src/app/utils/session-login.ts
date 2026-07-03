@@ -1,10 +1,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { api } from "@/app/api";
+import { appT } from "@/app/i18n";
 import { copyText, type CopyMessage } from "@/app/utils/clipboard";
-
-export function botStartUrl(botUsername?: string | null) {
-  return botUsername ? `https://t.me/${botUsername}?start=hashpay` : "";
-}
 
 export function isTelegramMiniApp() {
   return Boolean(telegramInitData());
@@ -15,17 +12,17 @@ function telegramInitData() {
 }
 
 export async function readSession() {
-  return api.session.current({ silent: true }).catch(() => null);
+  return api.silent.session.current().catch(() => null);
 }
 
 export async function loginWithTelegram() {
   const initData = telegramInitData();
   if (!initData) return null;
-  return api.session.telegram(initData, { silent: true }).catch(() => null);
+  return api.silent.session.telegram(initData).catch(() => null);
 }
 
 export async function logoutSession() {
-  await api.session.logout({ silent: true }).catch(() => null);
+  await api.silent.session.logout().catch(() => null);
 }
 
 export function useSessionLogin(options: {
@@ -56,15 +53,15 @@ export function useSessionLogin(options: {
     stopPolling();
     try {
       code.value = createLoginCode();
-      const result = await api.session.createCode(code.value, { silent: true });
+      const result = await api.silent.session.createCode(code.value);
       challenge.value = result.challenge;
       command.value = result.command;
       expiresAt.value = result.expiresAt;
-      status.value = "等待确认，页面会自动跳转。";
+      status.value = appT("login.waiting");
       await checkCodeLogin();
       pollTimer = setInterval(() => void checkCodeLogin(), 2000);
     } catch (error) {
-      status.value = error instanceof Error ? error.message : "登录码创建失败";
+      status.value = error instanceof Error ? error.message : appT("login.pin_create_failed");
     }
   }
 
@@ -75,14 +72,14 @@ export function useSessionLogin(options: {
       return;
     }
     try {
-      const result = await api.session.checkCode(code.value, challenge.value, { silent: true });
+      const result = await api.silent.session.checkCode(code.value, challenge.value);
       if (!result.authenticated) return;
       stopPolling();
-      status.value = "登录成功";
+      status.value = appT("login.pin_success");
       options.onAuthenticated();
     } catch (error) {
       stopPolling();
-      status.value = error instanceof Error ? error.message : "登录检查失败";
+      status.value = error instanceof Error ? error.message : appT("login.pin_check_failed");
     }
   }
 
@@ -105,7 +102,6 @@ export function useSessionLogin(options: {
   onBeforeUnmount(stopPolling);
 
   return {
-    botStartUrl,
     command,
     commandWrap,
     copyCommand,

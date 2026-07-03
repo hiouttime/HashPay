@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, post, request, setApiMessage, upload } from "@/app/api";
+import { setLocale } from "@/app/i18n";
 
 describe("frontend api http client", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     setApiMessage(null);
+    setLocale("zh-CN");
   });
 
   it("returns data from api envelopes", async () => {
@@ -16,12 +18,10 @@ describe("frontend api http client", () => {
   it("throws ApiError and displays server error messages", async () => {
     const message = { error: vi.fn() };
     setApiMessage(message);
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({
-      error: { code: "bad_request", message: "请求无效" },
-    }, 400));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ error: { key: "errors.bad_request" } }, 400));
 
     await expect(request("/api/example")).rejects.toMatchObject({
-      code: "bad_request",
+      key: "errors.bad_request",
       message: "请求无效",
       status: 400,
     });
@@ -40,11 +40,9 @@ describe("frontend api http client", () => {
   it("does not display silent errors", async () => {
     const message = { error: vi.fn() };
     setApiMessage(message);
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({
-      error: { code: "poll_failed", message: "轮询失败" },
-    }, 500));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ error: { key: "errors.payment_check_failed" } }, 500));
 
-    await expect(request("/api/example", { silent: true })).rejects.toMatchObject({ code: "poll_failed" });
+    await expect(request("/api/example", { silent: true })).rejects.toMatchObject({ key: "errors.payment_check_failed" });
     expect(message.error).not.toHaveBeenCalled();
   });
 

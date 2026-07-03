@@ -1,3 +1,5 @@
+import type { OrderStatus, PaymentSnapshot } from "@/shared/types/domain";
+
 export interface TelegramUser {
   firstName?: string;
   id: number;
@@ -9,7 +11,7 @@ export interface AppState {
   adminBound: boolean;
   botReady: boolean;
   botStatus: "invalid" | "missing" | "ready";
-  botUsername: string | null;
+  username: string | null;
   db_error: string | null;
   db_ready: boolean;
   domain: string | null;
@@ -31,11 +33,11 @@ export interface OrderDto {
   merchantId: string;
   merchantNo: string;
   paidAt: number | null;
-  payment: Record<string, any>;
+  payment: Partial<PaymentSnapshot> & Record<string, unknown>;
   payway: number | null;
   paywayName?: string | null;
   returnUrl: string | null;
-  status: string;
+  status: OrderStatus;
   updatedAt: number;
 }
 
@@ -50,6 +52,8 @@ export interface CheckoutData {
   order: OrderDto;
 }
 
+export type PaymentMethodStatus = "disabled" | "enabled" | "error";
+
 export interface PaymentMethod {
   address: string;
   assets: string[];
@@ -58,7 +62,7 @@ export interface PaymentMethod {
   driver: string;
   id: number;
   name: string;
-  status: "enabled" | "disabled" | "error";
+  status: PaymentMethodStatus;
   updatedAt: number;
 }
 
@@ -68,8 +72,11 @@ export interface PaymentMethodInput {
   credentials?: Record<string, string>;
   driver: string;
   name: string;
-  status: "enabled" | "disabled";
+  status: Exclude<PaymentMethodStatus, "error">;
 }
+
+export type MerchantStatus = "active" | "paused";
+export type MerchantType = "telegram" | "website";
 
 export interface MerchantDto {
   callback: string | null;
@@ -77,16 +84,16 @@ export interface MerchantDto {
   id: string;
   name: string;
   publicKey: string;
-  status: string;
-  type: string;
+  status: MerchantStatus;
+  type: MerchantType;
   updatedAt: number;
 }
 
 export interface MerchantInput {
   callback?: string;
   name: string;
-  status?: string;
-  type?: string;
+  status?: MerchantStatus;
+  type?: MerchantType;
 }
 
 export interface MerchantSaveResult {
@@ -116,19 +123,36 @@ export interface DashboardDto {
   trends: Record<DashboardTrendKey, DashboardTrendPoint[]>;
 }
 
+export interface OrderNotifyDto {
+  attempts: number;
+  createdAt: number;
+  id: number;
+  lastError: string | null;
+  nextRunAt: number;
+  payload: Record<string, unknown>;
+  status: string;
+  updatedAt: number;
+}
+
 export interface OrderDetailDto {
-  merchant: Record<string, any> | null;
-  notify: Array<Record<string, any>>;
+  merchant: { id: string; name: string; type?: string } | null;
+  notify: OrderNotifyDto[];
   order: OrderDto;
-  payway: Record<string, any> | null;
-  rate: Record<string, any>;
+  payway: { driver: string; id: number; name: string; status: string } | null;
+  rate: {
+    originalAmount: number;
+    originalCurrency: string;
+    paymentAmount: number | null;
+    paymentCurrency: string | null;
+    rate: number | null;
+  };
 }
 
 export interface RatePreview {
   adjust_percent: number;
   base_currency: string;
   items: Array<{ currency: string; effective_rate: number; market_rate: number; usd_price: number }>;
-  message?: string;
+  message_key?: string;
   source: string;
   status: string;
   updated_at: number;
@@ -152,14 +176,12 @@ export interface SettingsInput {
   timeout: number;
 }
 
-declare global {
-  interface Window {
-    Telegram?: {
-      WebApp?: {
-        expand(): void;
-        initData?: string;
-        ready(): void;
-      };
-    };
-  }
+export interface TxCandidate {
+  amount: number;
+  currency: string;
+  from?: string;
+  hash: string;
+  raw: unknown;
+  timestamp: number;
+  to?: string;
 }

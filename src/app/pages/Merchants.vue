@@ -3,7 +3,9 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
 import { api, type MerchantDto, type MerchantInput } from "@/app/api";
+import { useI18n } from "@/app/i18n";
 import { copyText } from "@/app/utils/clipboard";
+import { formatTime } from "@/app/utils/format";
 
 type MerchantStatus = "active" | "paused";
 type MerchantType = "telegram" | "website";
@@ -18,24 +20,25 @@ interface MerchantForm {
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const { t } = useI18n();
 const merchants = ref<MerchantDto[]>([]);
 const credential = ref<{ merchantId: string; privateKey: string } | null>(null);
 const loading = ref(false);
 const form = reactive<MerchantForm>({ callback: "", name: "", status: "active", type: "website" });
 
-const typeOptions: Array<{ description: string; label: string; value: MerchantType }> = [
+const typeOptions = computed<Array<{ description: string; label: string; value: MerchantType }>>(() => [
   {
-    description: "通过 REST API 下单，以跳转收银台或直接返回二维码等形式完成付款。",
-    label: "网站",
+    description: t("merchant.type.website_desc"),
+    label: t("merchant.type.website"),
     value: "website",
   },
   {
-    description: "在 Telegram 内下单，跳转钱包机器人完成付款。",
-    label: "Telegram 机器人",
+    description: t("merchant.type.telegram_desc"),
+    label: t("merchant.type.telegram"),
     value: "telegram",
   },
-];
-const typeLabels: Record<string, string> = Object.fromEntries(typeOptions.map((item) => [item.value, item.label]));
+]);
+const typeLabels = computed<Record<string, string>>(() => Object.fromEntries(typeOptions.value.map((item) => [item.value, item.label])));
 
 const mode = computed<"" | "edit" | "new">(() => {
   if (route.path.endsWith("/new")) return "new";
@@ -44,7 +47,7 @@ const mode = computed<"" | "edit" | "new">(() => {
 const editingId = computed(() => (mode.value === "edit" ? String(route.params.id) : ""));
 const current = computed(() => merchants.value.find((item) => item.id === editingId.value) ?? null);
 const isEdit = computed(() => mode.value === "edit");
-const typeDescription = computed(() => typeOptions.find((item) => item.value === form.type)?.description ?? "");
+const typeDescription = computed(() => typeOptions.value.find((item) => item.value === form.type)?.description ?? "");
 const formOpen = computed({
   get: () => mode.value !== "",
   set: (show) => {
@@ -76,11 +79,11 @@ async function save() {
   const name = form.name.trim();
   const callback = form.callback.trim();
   if (!name) {
-    message.error("请填写商户名称");
+    message.error(t("merchant.validation.name_required"));
     return;
   }
   if (callback && !callback.startsWith("https://")) {
-    message.error("回调 URL 必须以 https:// 开头");
+    message.error(t("merchant.validation.callback_https"));
     return;
   }
 
@@ -91,7 +94,7 @@ async function save() {
     const result = editingId.value
       ? await api.merchants.update(editingId.value, input)
       : await api.merchants.create(input);
-    message.success(creating ? "商户已新增" : "商户已保存");
+    message.success(creating ? t("merchant.created") : t("merchant.saved"));
     await load();
     closeForm();
     if (creating && result.privateKey) {
@@ -103,7 +106,7 @@ async function save() {
 async function remove(id: string) {
   await run(async () => {
     await api.merchants.remove(id);
-    message.success("商户已删除");
+    message.success(t("merchant.deleted"));
     closeForm();
     await load();
   });
@@ -122,7 +125,7 @@ async function setStatus(item: MerchantDto, status: string) {
         type: item.type,
       });
       merchants.value = merchants.value.map((merchant) => (merchant.id === result.merchant.id ? result.merchant : merchant));
-      message.success(next === "active" ? "商户已启用" : "商户已停用");
+      message.success(next === "active" ? t("merchant.enabled") : t("merchant.disabled"));
     });
   } catch {
     item.status = previous;
@@ -133,7 +136,7 @@ async function resetKey() {
   if (!editingId.value) return;
   await run(async () => {
     const result = await api.merchants.rotateKey(editingId.value);
-    message.success("接入凭据已重置");
+    message.success(t("merchant.key_reset"));
     await load();
     closeForm();
     if (result.privateKey) {
@@ -161,14 +164,6 @@ function syncForm() {
   });
 }
 
-function formatTime(value: unknown) {
-  const ts = Number(value);
-  if (!Number.isFinite(ts) || ts <= 0) return "--";
-  const date = new Date(ts * 1000);
-  const pad = (number: number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
 watch(
   () => [mode.value, editingId.value, current.value] as const,
   syncForm,
@@ -182,13 +177,13 @@ onMounted(() => run(load));
   <div class="grid">
     <div class="section-title">
       <div>
-        <h2>商户列表</h2>
+        <h2>{{ t('merchant.list') }}</h2>
       </div>
-      <n-button type="primary" @click="router.push('/admin/merchants/new')">新增商户</n-button>
+      <n-button type="primary" @click="router.push('/admin/merchants/new')">{{ t('merchant.add') }}</n-button>
     </div>
 
     <section class="panel grid">
-      <n-empty v-if="!merchants.length" description="暂无商户" />
+      <n-empty v-if="!merchants.length" :description="t('merchant.empty')" />
       <div
         v-for="item in merchants"
         :key="item.id"
@@ -200,13 +195,13 @@ onMounted(() => run(load));
             <strong>{{ item.name }}</strong>
             <n-tag size="small">{{ typeLabels[item.type] || item.type }}</n-tag>
           </div>
-          <p>创建时间：{{ formatTime(item.createdAt) }}</p>
-          <p>回调 URL：{{ item.callback || '未配置' }}</p>
+          <p>{{ t('merchant.created_at') }}：{{ formatTime(item.createdAt) }}</p>
+          <p>{{ t('merchant.callback_url') }}：{{ item.callback || t('merchant.not_configured') }}</p>
         </div>
         <div class="merchant-card-actions" @click.stop>
-          <n-button size="small" quaternary @click="router.push(`/admin/merchants/${item.id}/edit`)">编辑</n-button>
+          <n-button size="small" quaternary @click="router.push(`/admin/merchants/${item.id}/edit`)">{{ t('common.edit') }}</n-button>
           <div class="merchant-status-control">
-            <span>{{ item.status === 'active' ? '启用' : '停用' }}</span>
+            <span>{{ item.status === 'active' ? t('common.enabled_short') : t('common.disabled_short') }}</span>
             <n-switch
               :disabled="loading"
               :value="item.status"
@@ -221,7 +216,7 @@ onMounted(() => run(load));
 
     <n-modal v-model:show="formOpen">
       <n-card
-        :title="isEdit ? '编辑商户' : '新增商户'"
+        :title="isEdit ? t('merchant.edit') : t('merchant.new')"
         closable
         class="payment-modal-card"
         role="dialog"
@@ -230,16 +225,16 @@ onMounted(() => run(load));
       >
         <div class="payment-modal-body grid">
           <div class="form-section grid">
-            <h3>商户名称</h3>
-            <n-input v-model:value="form.name" placeholder="用于标识商户" />
+            <h3>{{ t('merchant.name') }}</h3>
+            <n-input v-model:value="form.name" :placeholder="t('merchant.name_placeholder')" />
             <div v-if="isEdit" class="switch-line">
-              <span>是否启用</span>
+              <span>{{ t('payment.channel_enabled') }}</span>
               <n-switch v-model:value="form.status" checked-value="active" unchecked-value="paused" />
             </div>
           </div>
 
           <div class="form-section grid">
-            <h3>商户类型</h3>
+            <h3>{{ t('merchant.type') }}</h3>
             <n-radio-group v-model:value="form.type" size="small">
               <n-radio-button
                 v-for="item in typeOptions"
@@ -253,44 +248,44 @@ onMounted(() => run(load));
           </div>
 
           <div class="form-section grid">
-            <h3>回调 URL</h3>
+            <h3>{{ t('merchant.callback') }}</h3>
             <n-input v-model:value="form.callback" placeholder="https://merchant.example.com/callback" />
             <p class="muted merchant-doc-help">
-              <span>在订单状态更新时，将会向此地址进行异步通知。你可以稍后修改这个参数。</span>
-              <a class="text-link" href="/docs/merchant-api" target="_blank" rel="noreferrer">开发文档</a>
+              <span>{{ t('merchant.callback_help') }}</span>
+              <a class="text-link" href="/docs/merchant-api" target="_blank" rel="noreferrer">{{ t('merchant.docs') }}</a>
             </p>
           </div>
 
           <div class="form-section grid">
             <div class="credential-title-row">
-              <h3>接入凭据</h3>
+              <h3>{{ t('merchant.credentials') }}</h3>
               <n-popconfirm
                 v-if="isEdit"
-                negative-text="取消"
-                positive-text="重置"
+                :negative-text="t('common.cancel')"
+                :positive-text="t('common.reset')"
                 @positive-click="resetKey"
               >
                 <template #trigger>
-                  <n-button :loading="loading" secondary size="small" type="warning">重置</n-button>
+                  <n-button :loading="loading" secondary size="small" type="warning">{{ t('common.reset') }}</n-button>
                 </template>
-                重置后，旧私钥签名将无法通过验签。系统会生成新的私钥，请立即保存。
+                {{ t('merchant.reset_key_warning') }}
               </n-popconfirm>
             </div>
             <div class="credential-grid credential-grid-single">
               <div v-if="current" class="credential-field">
-                <span>商户 ID</span>
+                <span>{{ t('merchant.id') }}</span>
                 <div class="detail-copy-row">
                   <strong>{{ current.id }}</strong>
-                  <n-button secondary size="small" @click="copyText(current.id, { message })">复制</n-button>
+                  <n-button secondary size="small" @click="copyText(current.id, { message })">{{ t('common.copy') }}</n-button>
                 </div>
               </div>
               <div v-if="current" class="form-field-block">
-                <span class="field-label">公钥</span>
+                <span class="field-label">{{ t('merchant.public_key') }}</span>
                 <n-input
                   :value="current.publicKey || ''"
                   :input-props="{ style: { overflowWrap: 'normal', whiteSpace: 'pre' }, wrap: 'off' }"
                   readonly
-                  placeholder="暂无公钥"
+                  :placeholder="t('merchant.no_public_key')"
                   type="textarea"
                   :autosize="{ minRows: 5, maxRows: 10 }"
                 />
@@ -301,10 +296,10 @@ onMounted(() => run(load));
 
         <template #footer>
           <div class="modal-actions">
-            <n-button v-if="isEdit && current" secondary type="error" @click="remove(current.id)">删除商户</n-button>
+            <n-button v-if="isEdit && current" secondary type="error" @click="remove(current.id)">{{ t('merchant.delete') }}</n-button>
             <span class="modal-actions-spacer"></span>
-            <n-button secondary @click="formOpen = false">取消</n-button>
-            <n-button :loading="loading" type="primary" @click="save">{{ isEdit ? '保存' : '新增' }}</n-button>
+            <n-button secondary @click="formOpen = false">{{ t('common.cancel') }}</n-button>
+            <n-button :loading="loading" type="primary" @click="save">{{ isEdit ? t('common.save') : t('common.add') }}</n-button>
           </div>
         </template>
       </n-card>
@@ -312,7 +307,7 @@ onMounted(() => run(load));
 
     <n-modal v-model:show="credentialOpen">
       <n-card
-        title="接入凭据"
+        :title="t('merchant.credentials')"
         closable
         class="payment-modal-card"
         role="dialog"
@@ -321,12 +316,12 @@ onMounted(() => run(load));
       >
         <div class="payment-modal-body grid">
           <div class="credential-field">
-            <span>商户 ID</span>
+            <span>{{ t('merchant.id') }}</span>
             <strong>{{ credential?.merchantId }}</strong>
           </div>
           <div class="form-field-block">
             <div class="credential-title-row">
-              <span class="field-label">私钥</span>
+              <span class="field-label">{{ t('merchant.private_key') }}</span>
             </div>
             <n-input
               :value="credential?.privateKey || ''"
@@ -335,14 +330,14 @@ onMounted(() => run(load));
               type="textarea"
               :autosize="{ minRows: 8, maxRows: 14 }"
             />
-            <small class="field-help">私钥用于请求签名，仅显示一次，请妥善保存。</small>
+            <small class="field-help">{{ t('merchant.private_key_once') }}</small>
           </div>
         </div>
 
         <template #footer>
           <div class="modal-actions">
-            <n-button secondary @click="credentialOpen = false">关闭</n-button>
-            <n-button type="primary" @click="copyText(credential?.privateKey || '', { message })">复制私钥</n-button>
+            <n-button secondary @click="credentialOpen = false">{{ t('common.close') }}</n-button>
+            <n-button type="primary" @click="copyText(credential?.privateKey || '', { message })">{{ t('merchant.copy_private_key') }}</n-button>
           </div>
         </template>
       </n-card>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 describe("D1 migrations", () => {
   it("loads SQL migration files in filename order", async () => {

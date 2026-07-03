@@ -1,30 +1,31 @@
 import type { Context, Next } from "hono";
+import type { I18nParams, MessageKey } from "@/shared/i18n";
 
 export class AppError extends Error {
   constructor(
     public readonly status: number,
-    public readonly code: string,
-    message: string,
+    public readonly key: MessageKey | string,
+    public readonly params: I18nParams = {},
   ) {
-    super(message);
+    super(key);
   }
 }
 
 export function errorBody(error: unknown) {
   if (error instanceof AppError) {
     return {
-      body: { error: { code: error.code, message: error.message } },
+      body: { error: { key: error.key, params: error.params } },
       status: error.status,
     };
   }
   if (error instanceof Error) {
     return {
-      body: { error: { code: "internal_error", message: error.message } },
+      body: { error: { key: "errors.internal", params: {} } },
       status: 500,
     };
   }
   return {
-    body: { error: { code: "internal_error", message: "Internal error" } },
+    body: { error: { key: "errors.internal", params: {} } },
     status: 500,
   };
 }

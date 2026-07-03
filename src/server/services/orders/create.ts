@@ -5,13 +5,13 @@ import { systemSettings } from "@/server/services/app/settings";
 import { findExistingMerchantOrder, insertOrder, orderExpireAt } from "@/server/services/orders/repository";
 import type { Merchant } from "@/server/services/merchants";
 import type { Order } from "@/server/services/orders/repository";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export async function createMerchantOrder(env: AppEnv, merchant: Merchant, input: Record<string, unknown>) {
   const merchantNo = String(input.merchantNo ?? "").trim();
   const amount = Number(input.amount);
-  if (!merchantNo) throw new AppError(400, "merchant_no_missing", "merchantNo is required");
-  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(400, "amount_invalid", "Amount is invalid");
+  if (!merchantNo) throw new AppError(400, "errors.merchant_no_missing");
+  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(400, "errors.amount_invalid");
   const settings = await systemSettings(env);
   return createOrder(env, {
     amount,
@@ -27,7 +27,7 @@ export async function createMerchantOrder(env: AppEnv, merchant: Merchant, input
 
 export async function createTelegramOrder(env: AppEnv, input: { amount: number; currency?: string; description?: string; orderNo?: string }) {
   const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(400, "amount_invalid", "Amount is invalid");
+  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(400, "errors.amount_invalid");
   const settings = await systemSettings(env);
   return createOrder(env, {
     amount,

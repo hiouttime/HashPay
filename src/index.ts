@@ -1,6 +1,6 @@
 import { createApp } from "@/server/http/app";
 import { handleNotifyQueue, runScheduledJobs } from "@/server/services/app/jobs";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 const app = createApp();
 

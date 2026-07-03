@@ -1,4 +1,4 @@
-export * from "@/app/api/types";
+export * from "@/shared/types/api";
 export * from "@/app/api/http";
 
 import { del, get, post, put, upload, type ApiRequestOptions } from "@/app/api/http";
@@ -17,7 +17,7 @@ import type {
   SettingsInput,
   AppState,
   TelegramUser,
-} from "@/app/api/types";
+} from "@/shared/types/api";
 
 interface OrderListInput {
   page: number;
@@ -31,68 +31,79 @@ interface RateInput {
   rate_adjust: number | string;
 }
 
+function endpoints(options: ApiRequestOptions = {}) {
+  return {
+    state: {
+      get: () => get<AppState>("/api/state", options),
+    },
+    setup: {
+      submit: (domain: string) => post<{ domain: string }>("/api/admin/setup", { domain }, options),
+      session: () => get<{ admin: TelegramUser | null; bound: boolean }>("/api/admin/setup", options),
+    },
+    session: {
+      current: () => get<TelegramUser>("/api/admin/session", options),
+      logout: () => del<{ ok: boolean }>("/api/admin/session", options),
+      createCode: (pin: string) => post<{ challenge: string; command: string; expiresAt: number }>("/api/admin/session/pin", { pin }, options),
+      checkCode: (pin: string, challenge: string) =>
+        get<{ authenticated: boolean; user?: TelegramUser }>(`/api/admin/session/pin/${id(pin)}?challenge=${id(challenge)}`, options),
+      telegram: (initData: string) => post<TelegramUser & { setupRequired: boolean }>("/api/admin/session/telegram", { initData }, options),
+    },
+    checkout: {
+      order: (orderId: string) => get<CheckoutData>(`/api/checkout/${id(orderId)}`, options),
+      status: (orderId: string) => get<OrderDto>(`/api/checkout/${id(orderId)}/status`, options),
+      select: (orderId: string, input: { asset: string; network: string }) =>
+        put<Record<string, unknown>>(`/api/checkout/${id(orderId)}/payment`, input, options),
+      submitTx: (orderId: string, candidates: unknown[]) =>
+        post<Record<string, unknown>>(`/api/checkout/${id(orderId)}/check`, { candidates }, options),
+      review: (orderId: string, input: { answer: string; image: string }) =>
+        post<{ review: unknown }>(`/api/checkout/${id(orderId)}/review`, input, options),
+    },
+    dashboard: {
+      get: () => get<DashboardDto>("/api/admin/dashboard", options),
+    },
+    orders: {
+      list: (input: OrderListInput) =>
+        get<{ items: OrderDto[]; page: number; pageSize: number; total: number }>(`/api/admin/orders?${orderQuery(input)}`, options),
+      test: () => post<{ checkoutUrl: string; order: OrderDto }>("/api/admin/orders/test", undefined, options),
+      get: (orderId: string) => get<OrderDetailDto>(`/api/admin/orders/${id(orderId)}`, options),
+      remove: (orderId: string) => del<{ ok: boolean }>(`/api/admin/orders/${id(orderId)}`, options),
+      check: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/check`, undefined, options),
+      confirm: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/confirm`, undefined, options),
+      resend: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/notify`, undefined, options),
+    },
+    payments: {
+      list: () => get<PaymentMethod[]>("/api/admin/payment", options),
+      create: (input: PaymentMethodInput) => post<PaymentMethod>("/api/admin/payment", input, options),
+      update: (paymentId: number, input: PaymentMethodInput) => put<PaymentMethod>(`/api/admin/payment/${paymentId}`, input, options),
+      remove: (paymentId: number) => del<{ ok: boolean }>(`/api/admin/payment/${paymentId}`, options),
+    },
+    merchants: {
+      list: () => get<MerchantDto[]>("/api/admin/merchants", options),
+      create: (input: MerchantInput) => post<MerchantSaveResult>("/api/admin/merchants", input, options),
+      update: (merchantId: string, input: MerchantInput) => put<MerchantSaveResult>(`/api/admin/merchants/${id(merchantId)}`, input, options),
+      remove: (merchantId: string) => del<{ ok: boolean }>(`/api/admin/merchants/${id(merchantId)}`, options),
+      rotateKey: (merchantId: string) => post<MerchantSaveResult>(`/api/admin/merchants/${id(merchantId)}/rotate-key`, undefined, options),
+    },
+    settings: {
+      get: () => get<SettingsDto>("/api/admin/settings", options),
+      save: (input: SettingsInput) => put<SettingsDto>("/api/admin/settings", input, options),
+      rates: (input: RateInput) => get<RatePreview>(`/api/admin/rates/preview?${rateQuery(input)}`, options),
+    },
+    banner: {
+      upload: (body: ArrayBuffer) => upload<{ url: string }>("/api/admin/banner", body, "image/webp", options),
+      restore: () => post<{ url: string }>("/api/admin/banner/restore", undefined, options),
+    },
+  };
+}
+
 export const api = {
-  state: {
-    get: (options?: ApiRequestOptions) => get<AppState>("/api/state", options),
-  },
-  setup: {
-    submit: (domain: string, options?: ApiRequestOptions) => post<{ domain: string }>("/api/admin/setup", { domain }, options),
-    session: (options?: ApiRequestOptions) => get<{ admin: TelegramUser | null; bound: boolean }>("/api/admin/setup", options),
-  },
-  session: {
-    current: (options?: ApiRequestOptions) => get<TelegramUser>("/api/admin/session", options),
-    logout: (options?: ApiRequestOptions) => del<{ ok: boolean }>("/api/admin/session", options),
-    createCode: (pin: string, options?: ApiRequestOptions) => post<{ challenge: string; command: string; expiresAt: number }>("/api/admin/session/pin", { pin }, options),
-    checkCode: (pin: string, challenge: string, options?: ApiRequestOptions) =>
-      get<{ authenticated: boolean; user?: TelegramUser }>(`/api/admin/session/pin/${encodeURIComponent(pin)}?challenge=${encodeURIComponent(challenge)}`, options),
-    telegram: (initData: string, options?: ApiRequestOptions) => post<TelegramUser & { setupRequired: boolean }>("/api/admin/session/telegram", { initData }, options),
-  },
-  checkout: {
-    order: (id: string, options?: ApiRequestOptions) => get<CheckoutData>(`/api/checkout/${encodeURIComponent(id)}`, options),
-    status: (id: string, options?: ApiRequestOptions) => get<OrderDto>(`/api/checkout/${encodeURIComponent(id)}/status`, options),
-    select: (id: string, input: { asset: string; network: string }, options?: ApiRequestOptions) =>
-      put<Record<string, unknown>>(`/api/checkout/${encodeURIComponent(id)}/payment`, input, options),
-    submitTx: (id: string, candidates: unknown[], options?: ApiRequestOptions) =>
-      post<Record<string, unknown>>(`/api/checkout/${encodeURIComponent(id)}/check`, { candidates }, options),
-    review: (id: string, input: { answer: string; image: string }, options?: ApiRequestOptions) =>
-      post<{ review: unknown }>(`/api/checkout/${encodeURIComponent(id)}/review`, input, options),
-  },
-  dashboard: {
-    get: (options?: ApiRequestOptions) => get<DashboardDto>("/api/admin/dashboard", options),
-  },
-  orders: {
-    list: (input: OrderListInput, options?: ApiRequestOptions) =>
-      get<{ items: OrderDto[]; page: number; pageSize: number; total: number }>(`/api/admin/orders?${orderQuery(input)}`, options),
-    test: (options?: ApiRequestOptions) => post<{ checkoutUrl: string; order: OrderDto }>("/api/admin/orders/test", {}, options),
-    get: (id: string, options?: ApiRequestOptions) => get<OrderDetailDto>(`/api/admin/orders/${encodeURIComponent(id)}`, options),
-    remove: (id: string, options?: ApiRequestOptions) => del<{ ok: boolean }>(`/api/admin/orders/${encodeURIComponent(id)}`, options),
-    check: (id: string, options?: ApiRequestOptions) => post(`/api/admin/orders/${encodeURIComponent(id)}/check`, undefined, options),
-    confirm: (id: string, options?: ApiRequestOptions) => post(`/api/admin/orders/${encodeURIComponent(id)}/confirm`, {}, options),
-    resend: (id: string, options?: ApiRequestOptions) => post(`/api/admin/orders/${encodeURIComponent(id)}/notify`, undefined, options),
-  },
-  payments: {
-    list: (options?: ApiRequestOptions) => get<PaymentMethod[]>("/api/admin/payment", options),
-    create: (input: PaymentMethodInput, options?: ApiRequestOptions) => post<PaymentMethod>("/api/admin/payment", input, options),
-    update: (id: number, input: PaymentMethodInput, options?: ApiRequestOptions) => put<PaymentMethod>(`/api/admin/payment/${id}`, input, options),
-    remove: (id: number, options?: ApiRequestOptions) => del<{ ok: boolean }>(`/api/admin/payment/${id}`, options),
-  },
-  merchants: {
-    list: (options?: ApiRequestOptions) => get<MerchantDto[]>("/api/admin/merchants", options),
-    create: (input: MerchantInput, options?: ApiRequestOptions) => post<MerchantSaveResult>("/api/admin/merchants", input, options),
-    update: (id: string, input: MerchantInput, options?: ApiRequestOptions) => put<MerchantSaveResult>(`/api/admin/merchants/${encodeURIComponent(id)}`, input, options),
-    remove: (id: string, options?: ApiRequestOptions) => del<{ ok: boolean }>(`/api/admin/merchants/${encodeURIComponent(id)}`, options),
-    rotateKey: (id: string, options?: ApiRequestOptions) => post<MerchantSaveResult>(`/api/admin/merchants/${encodeURIComponent(id)}/rotate-key`, undefined, options),
-  },
-  settings: {
-    get: (options?: ApiRequestOptions) => get<SettingsDto>("/api/admin/settings", options),
-    save: (input: SettingsInput, options?: ApiRequestOptions) => put<SettingsDto>("/api/admin/settings", input, options),
-    rates: (input: RateInput, options?: ApiRequestOptions) => get<RatePreview>(`/api/admin/rates/preview?${rateQuery(input)}`, options),
-  },
-  banner: {
-    upload: (body: ArrayBuffer, options?: ApiRequestOptions) => upload<{ url: string }>("/api/admin/banner", body, "image/webp", options),
-    restore: (options?: ApiRequestOptions) => post<{ url: string }>("/api/admin/banner/restore", undefined, options),
-  },
+  ...endpoints(),
+  silent: endpoints({ silent: true }),
 };
+
+function id(value: string) {
+  return encodeURIComponent(value);
+}
 
 function orderQuery(input: OrderListInput) {
   const query = new URLSearchParams({

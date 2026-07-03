@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import auth from "@/server/http/routes/auth";
-import type { AppEnv, HonoEnv } from "@/shared/types/env";
+import type { AppEnv, HonoEnv } from "@/server/types/env";
 
 function base64Lines(bytes: ArrayBuffer) {
   return Buffer.from(bytes).toString("base64").replace(/(.{64})/g, "$1\n").trim();

@@ -2,7 +2,7 @@ import { migrateD1 } from "@/server/db/migrations";
 import { checkOrderPayment } from "@/server/services/orders/checkout";
 import { deliverNotify, dueNotifyIds, expireOrders, pendingTronOrders } from "@/server/services/orders/notifications";
 import { syncMarketRates } from "@/server/services/app/settings";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export async function runScheduledJobs(env: AppEnv) {
   await migrateD1(env);

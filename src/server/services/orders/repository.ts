@@ -2,7 +2,7 @@ import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import type { D1Param } from "@/server/db";
 import type { OrderStatus } from "@/shared/types/domain";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 interface OrderRow {
   amount: number;
@@ -76,13 +76,13 @@ export function orderExpireAt(createdAt: number, timeoutMinutes: number) {
 
 export async function getOrder(env: AppEnv, id: string) {
   const row = await one<OrderRow>(env, "SELECT * FROM orders WHERE id = ?", id);
-  if (!row) throw new AppError(404, "order_not_found", "Order is not found");
+  if (!row) throw new AppError(404, "errors.order_not_found");
   return order(row);
 }
 
 export async function getDetailedOrder(env: AppEnv, id: string) {
   const row = await one<DetailedOrderRow>(env, "SELECT orders.*, payments.name AS payway_name, payments.driver AS payway_driver, payments.status AS payway_status FROM orders LEFT JOIN payments ON payments.id = orders.payway WHERE orders.id = ?", id);
-  if (!row) throw new AppError(404, "order_not_found", "Order is not found");
+  if (!row) throw new AppError(404, "errors.order_not_found");
   return detailedOrder(row);
 }
 
@@ -95,7 +95,7 @@ export async function insertOrder(env: AppEnv, order: Order) {
   await run(env, "INSERT INTO orders(id, merchant, merchant_no, description, status, amount, currency, payment, callback, redirect_url, expire_at, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", order.id, order.merchant, order.merchantNo, order.description, order.status, order.amount, order.currency, order.payment, order.callback, order.redirectUrl, order.expireAt, order.createdAt, order.updatedAt);
 }
 
-function orderListWhere(input: { q?: string; status?: string }) {
+function orderWhere(input: { q?: string; status?: string }) {
   const status = String(input.status || "all");
   const q = String(input.q || "").trim();
   const clauses: string[] = [];
@@ -114,16 +114,16 @@ function orderListWhere(input: { q?: string; status?: string }) {
 }
 
 export async function listOrders(env: AppEnv, input: { limit?: number; q?: string; status?: string } = {}) {
-  const normalizedLimit = Math.min(Math.max(Number(input.limit) || 100, 1), 200);
-  const { params, where } = orderListWhere(input);
-  return (await all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS payway_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ?`, ...params, normalizedLimit)).map(order);
+  const limit = Math.min(Math.max(Number(input.limit) || 100, 1), 200);
+  const { params, where } = orderWhere(input);
+  return (await all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS payway_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ?`, ...params, limit)).map(order);
 }
 
 export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSize?: number; q?: string; status?: string } = {}) {
   const pageSize = Math.min(Math.max(Number(input.pageSize) || 20, 1), 100);
   const page = Math.max(Number(input.page) || 1, 1);
   const offset = (page - 1) * pageSize;
-  const { params, where } = orderListWhere(input);
+  const { params, where } = orderWhere(input);
   const [count, rows] = await Promise.all([
     one<{ count: number }>(env, `SELECT COUNT(*) AS count FROM orders LEFT JOIN payments ON payments.id = orders.payway${where}`, ...params),
     all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS payway_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ? OFFSET ?`, ...params, pageSize, offset),
@@ -139,12 +139,12 @@ export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
   )).map(order);
 }
 
-export async function setOrderPayment(env: AppEnv, orderId: string, paymentMethodId: number, payment: unknown, ts = now()) {
-  await run(env, "UPDATE orders SET payway = ?, payment = ?, updated_at = ? WHERE id = ?", paymentMethodId, JSON.stringify(payment), ts, orderId);
+export async function setOrderPayment(env: AppEnv, orderId: string, payway: number, payment: unknown, ts = now()) {
+  await run(env, "UPDATE orders SET payway = ?, payment = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderId);
 }
 
-export async function refreshOrderPaymentWindow(env: AppEnv, orderId: string, paymentMethodId: number, payment: unknown, timeoutMinutes: number, ts = now()) {
-  await run(env, "UPDATE orders SET status = 'pending', payway = ?, payment = ?, paid_at = NULL, created_at = ?, expire_at = ?, updated_at = ? WHERE id = ?", paymentMethodId, JSON.stringify(payment), ts, orderExpireAt(ts, timeoutMinutes), ts, orderId);
+export async function refreshOrderPaymentWindow(env: AppEnv, orderId: string, payway: number, payment: unknown, timeoutMinutes: number, ts = now()) {
+  await run(env, "UPDATE orders SET status = 'pending', payway = ?, payment = ?, paid_at = NULL, created_at = ?, expire_at = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderExpireAt(ts, timeoutMinutes), ts, orderId);
 }
 
 export function publicOrder(order: Order): PublicOrder {

@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useMessage } from "naive-ui";
 import AppIcon from "@/app/components/AppIcon.vue";
+import NSegmented from "@/app/components/NSegmented.vue";
+import { useI18n } from "@/app/i18n";
 import * as payment from "@/app/payments";
 import { api, type PaymentMethod, type PaymentMethodInput } from "@/app/api";
 
@@ -15,6 +17,7 @@ interface PaymentForm {
 }
 
 const message = useMessage();
+const { t } = useI18n();
 const saving = ref(false);
 const methods = ref<PaymentMethod[]>([]);
 const dialog = reactive({
@@ -39,6 +42,7 @@ const selectedAssets = computed(() => form.assets);
 const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
 const selectedNetworks = computed(() => Object.keys(selection.evm));
+const kindOptions = computed(() => payment.kinds.map((item) => ({ ...item, label: t(item.label) })));
 
 async function load() {
   methods.value = await api.payments.list();
@@ -56,7 +60,7 @@ async function save() {
     } else {
       await api.payments.create(payload(currentDriver.value.id, selectedNetwork.value, selectedAssets.value));
     }
-    message.success(isEdit.value ? "支付方式已保存" : "支付方式已新增");
+    message.success(t(isEdit.value ? "payment.save_updated" : "payment.save_created"));
     await load();
     closeDialog();
   } finally {
@@ -77,19 +81,19 @@ function payload(driverId: string, network: string, assets: string[]): PaymentMe
 
 async function remove(id: number) {
   await api.payments.remove(id);
-  message.success("支付方式已删除");
+  message.success(t("payment.deleted"));
   await load();
 }
 
 function validate() {
   if (!form.name.trim()) {
-    message.error("请填写通道名称");
+    message.error(t("payment.validation.name_required"));
     return false;
   }
 
   const missing = editableFields.value.find((field) => field.required && !form.address.trim());
   if (missing) {
-    message.error(`请填写 ${missing.label}`);
+    message.error(t("payment.validation.field_required", { field: missing.label }));
     return false;
   }
 
@@ -101,12 +105,12 @@ function validate() {
 
   if (!isEdit.value && payment.isEvm(currentDriver.value.id)) {
     if (!selectedNetworks.value.length) {
-      message.error("请至少选择一个 EVM 网络");
+      message.error(t("payment.validation.evm_network_required"));
       return false;
     }
     for (const network of selectedNetworks.value) {
       if (!selection.evm[network].length) {
-        message.error(`请至少选择 ${networkName(network)} 的一个币种`);
+        message.error(t("payment.validation.network_asset_required", { network: networkName(network) }));
         return false;
       }
     }
@@ -114,7 +118,7 @@ function validate() {
   }
 
   if (!selectedAssets.value.length) {
-    message.error("请至少选择一个币种");
+    message.error(t("payment.validation.asset_required"));
     return false;
   }
   return true;
@@ -170,6 +174,10 @@ function setKind(kind: payment.Kind) {
   if (driver) setDriver(driver.id);
 }
 
+function setKindValue(value: string | number | boolean) {
+  setKind(value as payment.Kind);
+}
+
 function setDriver(driverId: string) {
   const driver = drivers.value.find((item) => item.id === driverId)!;
   const network = payment.driverNetwork(driver);
@@ -182,7 +190,7 @@ function setDriver(driverId: string) {
 
 function toggleAsset(asset: string) {
   if (selectedAssets.value.includes(asset) && selectedAssets.value.length === 1) {
-    message.warning("至少需要一个币种");
+    message.warning(t("payment.validation.asset_required"));
     return;
   }
   form.assets = selectedAssets.value.includes(asset)
@@ -194,7 +202,7 @@ function toggleEvmNetwork(network: string) {
   const next = { ...selection.evm };
   if (next[network]) {
     if (Object.keys(next).length === 1) {
-      message.warning("至少需要一个 EVM 网络");
+      message.warning(t("payment.validation.evm_network_required"));
       return;
     }
     delete next[network];
@@ -207,7 +215,7 @@ function toggleEvmNetwork(network: string) {
 function toggleEvmAsset(network: string, asset: string) {
   const selected = selection.evm[network];
   if (selected.includes(asset) && selected.length === 1) {
-    message.warning(`至少需要一个${networkName(network)}币种`);
+    message.warning(t("payment.validation.network_asset_required", { network: networkName(network) }));
     return;
   }
   selection.evm = {
@@ -236,7 +244,7 @@ function methodDriver(method: PaymentMethod) {
 }
 
 function networkName(network: string) {
-  return driverByNetwork(network)?.name ?? network;
+  return payment.networkName(network);
 }
 
 function networkIcon(network: string) {
@@ -248,7 +256,7 @@ function driverIcon(driver: payment.DriverChoice, network = payment.driverNetwor
 }
 
 function driverIconLabel(driver: payment.DriverChoice, network = payment.driverNetwork(driver)) {
-  return payment.isEvm(driver) ? networkName(payment.evmIconNetwork) : driver.name || network;
+  return payment.isEvm(driver) ? networkName(payment.evmIconNetwork) : payment.networkName(network);
 }
 
 onMounted(load);
@@ -258,13 +266,13 @@ onMounted(load);
 <div class="grid">
   <div class="section-title">
     <div>
-      <h2>收款通道</h2>
+      <h2>{{ t("payment.channel") }}</h2>
     </div>
-    <n-button type="primary" :disabled="!payment.drivers.length" @click="add">添加收款通道</n-button>
+    <n-button type="primary" :disabled="!payment.drivers.length" @click="add">{{ t("payment.channel_add") }}</n-button>
   </div>
 
   <section class="panel grid">
-    <n-empty v-if="!methods.length" description="暂无收款通道" />
+    <n-empty v-if="!methods.length" :description="t('payment.channel_empty')" />
     <div
       v-for="item in methods"
       :key="item.id"
@@ -272,11 +280,11 @@ onMounted(load);
     >
       <div class="pay-card-main">
         <span v-if="methodDriver(item)?.icon" class="pay-icon">
-          <AppIcon :name="methodDriver(item)!.icon" :label="methodDriver(item)!.name" />
+          <AppIcon :name="methodDriver(item)!.icon" :label="payment.networkName(methodDriver(item)!.network)" />
         </span>
         <div>
           <strong>{{ item.name }} <span class="muted">#{{ item.id }}</span></strong>
-          <p>{{ methodDriver(item)?.name || item.driver }} / {{ item.status === 'disabled' ? '已禁用' : item.status === 'error' ? '检查异常' : '已启用' }}</p>
+          <p>{{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} / {{ item.status === 'disabled' ? t('common.disabled') : item.status === 'error' ? t('payment.channel_error') : t('common.enabled') }}</p>
           <div class="chip-row readonly">
             <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ payment.assetName(asset) }}</span>
           </div>
@@ -284,12 +292,12 @@ onMounted(load);
         </div>
       </div>
       <div class="form-actions">
-        <n-button size="small" @click="edit(item)">编辑</n-button>
+        <n-button size="small" @click="edit(item)">{{ t("common.edit") }}</n-button>
         <n-popconfirm @positive-click="remove(item.id)">
           <template #trigger>
-            <n-button size="small" tertiary type="error">删除</n-button>
+            <n-button size="small" tertiary type="error">{{ t("common.delete") }}</n-button>
           </template>
-          删除后，可能影响未付款的订单，并且历史订单可能会出现信息异常的问题。
+          {{ t("payment.delete_warning") }}
         </n-popconfirm>
       </div>
     </div>
@@ -297,7 +305,7 @@ onMounted(load);
 
   <n-modal :show="dialogOpen" @update:show="!$event && closeDialog()">
     <n-card
-      :title="isEdit ? '编辑收款通道' : '新增收款通道'"
+      :title="t(isEdit ? 'payment.channel_edit' : 'payment.channel_new')"
       closable
       class="payment-modal-card"
       role="dialog"
@@ -306,39 +314,35 @@ onMounted(load);
     >
       <div class="payment-modal-body grid">
         <div class="form-section grid">
-          <h3>通道名称</h3>
-          <n-input v-model:value="form.name" placeholder="用于识别此收款通道" />
+          <h3>{{ t("payment.channel_name") }}</h3>
+          <n-input v-model:value="form.name" :placeholder="t('payment.channel_name_placeholder')" />
           <div v-if="isEdit" class="switch-line">
-            <span>是否启用</span>
+            <span>{{ t("payment.channel_enabled") }}</span>
             <n-switch v-model:value="form.enabled" />
           </div>
         </div>
 
         <div v-if="isEdit" class="form-section">
-          <h3>通道</h3>
+          <h3>{{ t("payment.channel") }}</h3>
           <div class="readonly-channel">
             <span v-if="currentDriver.icon" class="pay-icon">
-              <AppIcon :name="currentDriver.icon" :label="currentDriver.name" />
+              <AppIcon :name="currentDriver.icon" :label="payment.networkName(selectedNetwork)" />
             </span>
             <div>
-              <strong>{{ currentDriver.name }}</strong>
-              <p>{{ payment.kinds.find((item) => item.value === selection.kind)!.label }}</p>
+              <strong>{{ payment.networkName(selectedNetwork) }}</strong>
+              <p>{{ t(payment.kinds.find((item) => item.value === selection.kind)!.label) }}</p>
             </div>
           </div>
         </div>
 
         <div v-if="!isEdit" class="form-section grid">
-          <h3>类型</h3>
-          <n-radio-group :value="selection.kind" size="small" @update:value="setKind">
-            <n-radio-button v-for="item in payment.kinds" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </n-radio-button>
-          </n-radio-group>
+          <h3>{{ t("common.type") }}</h3>
+          <NSegmented :value="selection.kind" :options="kindOptions" @update:value="setKindValue" />
         </div>
 
         <div v-if="!isEdit" class="form-section">
-          <h3>收款网络/平台</h3>
-          <n-empty v-if="!drivers.length" :description="selection.kind === 'wallet' ? '当前还没有第三方钱包驱动。' : '当前类型下没有可用驱动。'" />
+          <h3>{{ t("payment.channel_network") }}</h3>
+          <n-empty v-if="!drivers.length" :description="t(selection.kind === 'wallet' ? 'payment.network_empty_wallet' : 'payment.network_empty_kind')" />
           <div v-else class="network-choice-grid">
             <button
               v-for="driver in drivers"
@@ -354,7 +358,7 @@ onMounted(load);
                   :name="driverIcon(driver, payment.choiceNetwork(driver))"
                   :label="driverIconLabel(driver, payment.choiceNetwork(driver))"
                 />
-                <strong>{{ driver.name }}</strong>
+                <strong>{{ payment.networkName(payment.driverNetwork(driver)) }}</strong>
               </span>
             </button>
           </div>
@@ -371,15 +375,15 @@ onMounted(load);
                 {{ networkName(item) }}
               </button>
             </div>
-            <p class="muted">一个地址支持接收多个EVM网络的资产，如需单独指定地址，需单独新增。</p>
+            <p class="muted">{{ t("payment.evm_hint") }}</p>
           </div>
         </div>
 
         <div class="form-section grid">
-          <h3>币种</h3>
+          <h3>{{ t("payment.currency") }}</h3>
           <template v-if="!isEdit && payment.isEvm(currentDriver)">
             <div v-for="item in selectedNetworks" :key="item" class="form-field-block">
-              <strong>{{ networkName(item) }} 币种</strong>
+              <strong>{{ networkName(item) }} {{ t("payment.currency") }}</strong>
               <div class="chip-row">
                 <button
                   v-for="asset in payment.assetsFor(currentDriver, item)"
@@ -401,7 +405,7 @@ onMounted(load);
         </div>
 
         <div class="form-section grid">
-          <h3>收款信息</h3>
+          <h3>{{ t("payment.channel_info") }}</h3>
           <template v-for="field in editableFields" :key="field.key">
             <div class="form-field-block">
               <n-form-item :show-label="false" class="field-form-item">
@@ -415,8 +419,8 @@ onMounted(load);
 
       <template #footer>
         <div class="modal-actions">
-          <n-button secondary @click="closeDialog">取消</n-button>
-          <n-button type="primary" :loading="saving" @click="save">{{ isEdit ? '保存' : '新增' }}</n-button>
+          <n-button secondary @click="closeDialog">{{ t("common.cancel") }}</n-button>
+          <n-button type="primary" :loading="saving" @click="save">{{ t(isEdit ? "common.save" : "common.add") }}</n-button>
         </div>
       </template>
     </n-card>

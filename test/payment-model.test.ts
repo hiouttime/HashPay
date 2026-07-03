@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { paymentExplorerUrl, paymentOptions, payments, validatePaymentConfig } from "@/server/payments/driver";
+import { paymentExplorerUrl, paymentOptions, payments, validatePayment } from "@/server/payments/driver";
 import { assetLabel, networkLabel, normalizeNetworkKey, normalizePaymentAsset, paymentById } from "@/shared/payments";
 
 describe("payment model", () => {
   it("keeps TON as network and gram as the payment asset", () => {
-    expect(networkLabel("ton")).toBe("TON");
+    expect(networkLabel("ton")).toBe("network.ton");
     expect(assetLabel("gram")).toBe("GRAM (ex TON)");
     expect(normalizePaymentAsset("GRAM")).toBe("gram");
     expect(normalizePaymentAsset("TON")).toBe("ton");
@@ -27,14 +27,14 @@ describe("payment model", () => {
       updatedAt: 1,
     });
 
-    expect(options).toContainEqual({ asset: "gram", network: "ton", paymentMethodId: 7 });
-    expect(options).toContainEqual({ asset: "usdt", network: "ton", paymentMethodId: 7 });
-    expect(options).not.toContainEqual({ asset: "ton", network: "ton", paymentMethodId: 7 });
-    expect(() => validatePaymentConfig({
+    expect(options).toContainEqual({ asset: "gram", channelId: 7, network: "ton" });
+    expect(options).toContainEqual({ asset: "usdt", channelId: 7, network: "ton" });
+    expect(options).not.toContainEqual({ asset: "ton", channelId: 7, network: "ton" });
+    expect(() => validatePayment({
       address: "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       assets: ["ton"],
       driver: "ton",
-    })).toThrow("Payment asset is invalid");
+    })).toThrow("errors.payment_asset_invalid");
   });
 
   it("keeps EVM networks as real payment drivers with their own assets", () => {
@@ -50,22 +50,21 @@ describe("payment model", () => {
       updatedAt: 1,
     });
 
-    expect(options).toContainEqual({ asset: "usdt", network: "bep20", paymentMethodId: 9 });
-    expect(options).toContainEqual({ asset: "bnb", network: "bep20", paymentMethodId: 9 });
-    expect(options).not.toContainEqual({ asset: "eth", network: "bep20", paymentMethodId: 9 });
-    expect(() => validatePaymentConfig({
+    expect(options).toContainEqual({ asset: "usdt", channelId: 9, network: "bep20" });
+    expect(options).toContainEqual({ asset: "bnb", channelId: 9, network: "bep20" });
+    expect(options).not.toContainEqual({ asset: "eth", channelId: 9, network: "bep20" });
+    expect(() => validatePayment({
       address: "0x0000000000000000000000000000000000000001",
       assets: ["eth"],
       driver: "bep20",
-    })).toThrow("Payment asset is invalid");
+    })).toThrow("errors.payment_asset_invalid");
   });
 
   it("uses server payment definitions as the payment source", () => {
     expect(payments.map((item) => item.id)).toContain("trc20");
     expect(paymentById("trc20")).toMatchObject({
-      address: { name: "TRON 地址" },
+      address: { nameKey: "payment.address.tron" },
       icon: "icon-tron",
-      publicCheck: "trongrid",
     });
     expect(paymentExplorerUrl("trc20", "abc")).toBe("https://nile.tronscan.org/#/transaction/abc");
   });

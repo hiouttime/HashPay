@@ -1,10 +1,12 @@
 import { createDiscreteApi } from "naive-ui";
+import { appT } from "@/app/i18n";
+import type { I18nParams } from "@/shared/i18n";
 
 interface ApiEnvelope<T> {
   data?: T;
   error?: {
-    code?: string;
-    message?: string;
+    key?: string;
+    params?: I18nParams;
   };
 }
 
@@ -20,7 +22,8 @@ export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly code: string,
+    public readonly key: string,
+    public readonly params: I18nParams,
     message: string,
     public readonly payload: unknown,
   ) {
@@ -46,7 +49,7 @@ export async function request<T>(url: string, options: ApiRequestOptions = {}): 
   } catch (error) {
     const apiError = error instanceof ApiError
       ? error
-      : new ApiError(0, "network_error", error instanceof Error ? error.message : "Network request failed", null);
+      : new ApiError(0, "errors.network", {}, appT("errors.network"), null);
     showError(apiError, silent);
     throw apiError;
   }
@@ -99,10 +102,13 @@ function buildBody(body: unknown, headers: Headers): BodyInit | null | undefined
 
 function apiError(status: number, payload: ApiEnvelope<unknown> | null) {
   const error = payload?.error;
+  const key = error?.key || "errors.http";
+  const params = error?.params || { status };
   return new ApiError(
     status,
-    error?.code || "http_error",
-    error?.message || `HTTP ${status}`,
+    key,
+    params,
+    appT(key, params),
     payload,
   );
 }

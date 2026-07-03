@@ -1,13 +1,13 @@
 import { Hono } from "hono";
 import { migrateD1 } from "@/server/db/migrations";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
-import { checkoutData, selectOrderPaymentByAssetNetwork, submitPaymentReview, submitTxCandidates } from "@/server/services/orders/checkout";
+import { checkoutData, checkSubmittedPayment, selectCheckoutPayment, submitPaymentReview } from "@/server/services/orders/checkout";
 import { publicOrder } from "@/server/services/orders/repository";
 import { getOrder } from "@/server/services/orders/repository";
 import { orderQrPng } from "@/server/services/images/qr";
 import { handleTelegramWebhook } from "@/server/services/telegram/bot";
 import { appState } from "@/server/services/app";
-import type { HonoEnv } from "@/shared/types/env";
+import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
 
@@ -29,10 +29,10 @@ app.get("/api/checkout/:orderId", async (c) => c.json(await checkoutData(c.env, 
 app.get("/api/checkout/:orderId/status", async (c) => c.json(publicOrder(await getOrder(c.env, c.req.param("orderId")))));
 app.put("/api/checkout/:orderId/payment", async (c) => {
   const body = (await c.req.json()) as { asset?: string; network?: string };
-  return c.json(await selectOrderPaymentByAssetNetwork(c.env, c.req.param("orderId"), String(body.asset ?? ""), String(body.network ?? "")));
+  return c.json(await selectCheckoutPayment(c.env, c.req.param("orderId"), String(body.asset ?? ""), String(body.network ?? "")));
 });
 app.post("/api/checkout/:orderId/check", async (c) => {
-  return c.json(await submitTxCandidates(c.env, c.req.param("orderId"), await c.req.json()));
+  return c.json(await checkSubmittedPayment(c.env, c.req.param("orderId"), await c.req.json()));
 });
 app.post("/api/checkout/:orderId/review", async (c) => {
   return c.json(await submitPaymentReview(c.env, c.req.param("orderId"), (await c.req.json()) as Record<string, unknown>));

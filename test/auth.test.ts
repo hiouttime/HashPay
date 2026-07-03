@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { confirmLoginPin, consumeLoginPin, createLoginChallenge } from "@/server/services/auth/pin";
 import { signSession, verifySession } from "@/server/services/auth/session";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 function testEnv() {
   const configs = new Map<string, string | null>();

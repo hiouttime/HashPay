@@ -1,5 +1,5 @@
 import { AppError } from "@/server/http/api";
-import type { PaymentMethod } from "@/server/payments/channels";
+import type { PaymentChannel } from "@/server/payments/channels";
 import { check as checkTrc20 } from "@/server/payments/providers/trc20";
 import {
   defaultPayment,
@@ -20,7 +20,7 @@ export { defaultPayment, evmPayments, paymentAssetName, paymentExplorerUrl, paym
 export interface PaymentOption {
   asset: string;
   network: string;
-  paymentMethodId: number;
+  channelId: number;
 }
 
 export interface PaymentCheckInput {
@@ -38,74 +38,69 @@ export interface PaymentCheckResult {
   txid?: string;
 }
 
-type Receiver = { key: "account" | "address"; value: string };
 type Check = (input: PaymentCheckInput) => Promise<PaymentCheckResult>;
 
 const checkers: Partial<Record<string, Check>> = {
   trc20: checkTrc20,
 };
 
-export function validatePaymentConfig(input: { address?: string; assets?: string[]; driver: string }) {
-  const payment = paymentDefinition(input.driver);
-  receiver(payment, input.address ?? "");
+export function validatePayment(input: { address?: string; assets?: string[]; driver: string }) {
+  const payment = byId(input.driver);
+  address(payment, input.address ?? "");
   validateAssets(input.assets ?? [], payment.assets);
   return payment;
 }
 
-export function paymentOptions(method: PaymentMethod): PaymentOption[] {
-  const payment = paymentDefinition(method.driver);
-  return assetsFor(method.assets, payment.assets).map((asset) => ({
+export function paymentOptions(channel: PaymentChannel): PaymentOption[] {
+  const payment = byId(channel.driver);
+  return enabledAssets(channel.assets, payment.assets).map((asset) => ({
     asset,
+    channelId: channel.id,
     network: payment.network,
-    paymentMethodId: method.id,
   }));
 }
 
-export function assignPayment(method: PaymentMethod, amount: number, targetAsset: string): PaymentSnapshot {
-  const payment = paymentDefinition(method.driver);
-  const target = receiver(payment, method.address);
-  const snapshot: PaymentSnapshot = {
+export function assignPayment(channel: PaymentChannel, amount: number, targetAsset: string): PaymentSnapshot {
+  const payment = byId(channel.driver);
+  return {
+    address: address(payment, channel.address),
     amount: ceilAmount(amount),
     currency: normalizePaymentAsset(targetAsset),
     currencyName: paymentAssetName(targetAsset),
     driver: payment.id,
     network: payment.network,
-    networkName: payment.name,
+    networkName: payment.nameKey,
   };
-  snapshot[target.key] = target.value;
-  return snapshot;
 }
 
 export function checkPayment(input: PaymentCheckInput) {
-  paymentDefinition(input.snapshot.driver);
+  byId(input.snapshot.driver);
   return checkers[input.snapshot.driver]?.(input) ?? Promise.resolve({ status: "pending" });
 }
 
-function paymentDefinition(id: string) {
+function byId(id: string) {
   const payment = paymentById(id);
-  if (!payment) throw new AppError(400, "payment_driver_invalid", "Payment driver is invalid");
+  if (!payment) throw new AppError(400, "errors.payment_driver_invalid");
   return payment;
 }
 
-function receiver(payment: Payment, raw: string): Receiver {
-  const key: "address" | "account" = payment.address ? "address" : "account";
-  const label = payment.address?.name ?? payment.account?.name ?? "收款账户";
+function address(payment: Payment, raw: string) {
   const value = raw.trim();
-  if (!value) throw new AppError(400, "payment_field_missing", `${label} is required`);
-  if (payment.address && !payment.address.pattern.test(value)) {
-    throw new AppError(400, "payment_address_invalid", `${payment.address.name} is invalid`);
+  if (!value) throw new AppError(400, "errors.payment_field_missing");
+  if (payment.address.pattern && !payment.address.pattern.test(value)) {
+    throw new AppError(400, "errors.payment_address_invalid");
   }
-  return { key, value };
+  return value;
 }
 
 function validateAssets(raw: string[], supported: readonly string[]) {
   const assets = Array.from(new Set(raw.map(normalizePaymentAsset).filter(Boolean)));
-  if (!assets.length) throw new AppError(400, "payment_asset_invalid", "Payment asset is invalid");
+  if (!assets.length) throw new AppError(400, "errors.payment_asset_invalid");
   const invalid = assets.filter((asset) => !supported.includes(asset));
-  if (invalid.length) throw new AppError(400, "payment_asset_invalid", `Payment asset is invalid: ${invalid.join(",")}`);
+  if (invalid.length) throw new AppError(400, "errors.payment_asset_invalid");
 }
 
-function assetsFor(raw: unknown, supported: readonly string[]) {
+function enabledAssets(raw: unknown, supported: readonly string[]) {
   const allowed = new Set(supported);
   return (Array.isArray(raw) ? raw.map(normalizePaymentAsset) : normalizeAssetCsv(raw, supported)).filter((asset) => allowed.has(asset));
 }

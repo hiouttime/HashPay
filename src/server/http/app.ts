@@ -4,7 +4,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { apiEnvelope, errorBody } from "@/server/http/api";
 import routes from "@/server/http/routes";
 import { migrateD1 } from "@/server/db/migrations";
-import type { HonoEnv } from "@/shared/types/env";
+import type { HonoEnv } from "@/server/types/env";
 
 export function createApp() {
   const app = new Hono<HonoEnv>();

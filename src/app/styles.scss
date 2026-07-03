@@ -13,7 +13,7 @@ html,
 body,
 .n-layout-scroll-container,
 .payment-modal-body,
-.order-detail-body {
+.order-modal-body {
   scrollbar-color: rgb(17 24 39 / 0.28) transparent;
   scrollbar-width: thin;
 }
@@ -22,7 +22,7 @@ html::-webkit-scrollbar,
 body::-webkit-scrollbar,
 .n-layout-scroll-container::-webkit-scrollbar,
 .payment-modal-body::-webkit-scrollbar,
-.order-detail-body::-webkit-scrollbar {
+.order-modal-body::-webkit-scrollbar {
   height: 8px;
   width: 8px;
 }
@@ -31,7 +31,7 @@ html::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb,
 .n-layout-scroll-container::-webkit-scrollbar-thumb,
 .payment-modal-body::-webkit-scrollbar-thumb,
-.order-detail-body::-webkit-scrollbar-thumb {
+.order-modal-body::-webkit-scrollbar-thumb {
   background: rgb(17 24 39 / 0.28);
   border-radius: 999px;
 }
@@ -40,7 +40,7 @@ html::-webkit-scrollbar-thumb:hover,
 body::-webkit-scrollbar-thumb:hover,
 .n-layout-scroll-container::-webkit-scrollbar-thumb:hover,
 .payment-modal-body::-webkit-scrollbar-thumb:hover,
-.order-detail-body::-webkit-scrollbar-thumb:hover {
+.order-modal-body::-webkit-scrollbar-thumb:hover {
   background: rgb(17 24 39 / 0.42);
 }
 
@@ -48,7 +48,7 @@ html::-webkit-scrollbar-track,
 body::-webkit-scrollbar-track,
 .n-layout-scroll-container::-webkit-scrollbar-track,
 .payment-modal-body::-webkit-scrollbar-track,
-.order-detail-body::-webkit-scrollbar-track {
+.order-modal-body::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -685,7 +685,7 @@ a {
 }
 
 .n-modal .payment-modal-body,
-.n-modal .order-detail-body {
+.n-modal .order-modal-body {
   margin-right: 0;
   padding-right: 0;
 }
@@ -2133,36 +2133,36 @@ a {
   justify-content: space-between;
 }
 
-.order-detail-modal {
+.order-modal {
   width: min(46rem, calc(100vw - 2.5rem));
 }
 
-.order-detail-title {
+.order-modal-title {
   align-items: center;
   display: flex;
   gap: 10px;
 }
 
-.order-detail-body {
+.order-modal-body {
   display: grid;
   gap: 16px;
   max-height: min(44rem, calc(100vh - 10rem));
   overflow: auto;
 }
 
-.order-detail-section {
+.order-modal-section {
   display: grid;
   gap: 10px;
 }
 
-.order-detail-tools {
+.order-modal-tools {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.order-detail-tools .n-button {
+.order-modal-tools .n-button {
   height: 56px;
   min-width: 74px;
 }
@@ -2253,7 +2253,7 @@ a {
   transform: rotate(-45deg);
 }
 
-.order-detail-section h3 {
+.order-modal-section h3 {
   font-size: 15px;
   margin: 0;
 }

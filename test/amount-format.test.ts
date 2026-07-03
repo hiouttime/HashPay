@@ -4,7 +4,7 @@ import {
   formatDisplayAmount,
   formatExactDisplayAmount,
   formatIntegerDisplayAmount,
-} from "@/app/utils/amount-format";
+} from "@/app/utils/format";
 
 describe("amount formatting", () => {
   it("never exposes JavaScript negative zero", () => {

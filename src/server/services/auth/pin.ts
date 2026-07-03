@@ -1,7 +1,7 @@
 import { deleteConfig, getConfig, jsonParseObject, now, setConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { timingSafeEqualString } from "@/server/utils/crypto";
-import type { AppEnv, TelegramUser } from "@/shared/types/env";
+import type { AppEnv, TelegramUser } from "@/server/types/env";
 
 const encoder = new TextEncoder();
 const loginPinKey = "login_pin";
@@ -19,11 +19,11 @@ interface LoginPinRecord {
 }
 
 function assertPin(pin: string) {
-  if (!/^\d{6}$/.test(pin)) throw new AppError(400, "login_pin_invalid", "登录 PIN 必须是 6 位数字");
+  if (!/^\d{6}$/.test(pin)) throw new AppError(400, "errors.login_pin_invalid");
 }
 
 async function hmacHex(env: AppEnv, value: string) {
-  if (!env.APP_SECRET) throw new AppError(500, "app_secret_missing", "APP_SECRET is not configured");
+  if (!env.APP_SECRET) throw new AppError(500, "errors.app_secret_missing");
   const key = await crypto.subtle.importKey("raw", encoder.encode(env.APP_SECRET), { hash: "SHA-256", name: "HMAC" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
   return Array.from(new Uint8Array(signature)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -43,14 +43,14 @@ async function verifyChallenge(env: AppEnv, pin: string, token: string) {
   assertPin(pin);
   const [tokenPin, expiresRaw, signature] = token.split(".");
   if (!tokenPin || !expiresRaw || !signature || tokenPin !== pin) {
-    throw new AppError(401, "login_challenge_invalid", "登录请求无效");
+    throw new AppError(401, "errors.login_challenge_invalid");
   }
   const expiresAt = Number(expiresRaw);
   if (!Number.isFinite(expiresAt) || expiresAt < now()) {
-    throw new AppError(401, "login_challenge_expired", "登录 PIN 已过期");
+    throw new AppError(401, "errors.login_challenge_expired");
   }
   const expected = await signChallenge(env, { expiresAt, pin });
-  if (!timingSafeEqualString(expected, token)) throw new AppError(401, "login_challenge_invalid", "登录请求无效");
+  if (!timingSafeEqualString(expected, token)) throw new AppError(401, "errors.login_challenge_invalid");
 }
 
 export async function createLoginChallenge(env: AppEnv, pin: string) {
@@ -84,6 +84,6 @@ export async function consumeLoginPin(env: AppEnv, pin: string, challengeToken: 
 
 export async function requireInstalledAdmin(env: AppEnv) {
   const adminId = Number(await getConfig(env, "admin_id"));
-  if (!adminId) throw new AppError(409, "setup_required", "HashPay 尚未完成初始化");
+  if (!adminId) throw new AppError(409, "errors.setup_required");
   return adminId;
 }

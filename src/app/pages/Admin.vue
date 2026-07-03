@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import type { MenuOption } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
+import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import LoginPanel from "@/app/components/LoginPanel.vue";
 import PageSkeleton from "@/app/components/PageSkeleton.vue";
 import Merchants from "@/app/pages/Merchants.vue";
@@ -10,24 +11,26 @@ import Overview from "@/app/pages/Overview.vue";
 import Payments from "@/app/pages/Payments.vue";
 import Settings from "@/app/pages/Settings.vue";
 import { api, type AppState, type TelegramUser } from "@/app/api";
+import { useI18n } from "@/app/i18n";
 import { isTelegramMiniApp, loginWithTelegram, logoutSession, readSession } from "@/app/utils/session-login";
 
 const route = useRoute();
 const router = useRouter();
 const version = __GIT_SHORT_HASH__;
 const miniApp = isTelegramMiniApp();
+const { t } = useI18n();
 
 const pages = [
-  { component: Overview, key: "overview", label: "概览" },
-  { component: Orders, key: "orders", label: "订单" },
-  { component: Payments, key: "payments", label: "收款" },
-  { component: Merchants, key: "merchants", label: "商户" },
-  { component: Settings, key: "settings", label: "设置" },
+  { component: Overview, key: "overview", label: "nav.overview" },
+  { component: Orders, key: "orders", label: "nav.orders" },
+  { component: Payments, key: "payments", label: "nav.payment" },
+  { component: Merchants, key: "merchants", label: "nav.merchants" },
+  { component: Settings, key: "settings", label: "nav.settings" },
 ] as const;
 
 type PageKey = (typeof pages)[number]["key"];
 
-const menu = pages.map(({ key, label }) => ({ key, label })) satisfies MenuOption[];
+const menu = computed(() => pages.map(({ key, label }) => ({ key, label: t(label) })) satisfies MenuOption[]);
 const pageKey = computed(() => route.path.split("/")[2] as PageKey);
 const page = computed(() => pages.find((item) => item.key === pageKey.value)!.component);
 
@@ -35,6 +38,7 @@ const loading = ref(true);
 const navOpen = ref(false);
 const status = ref<AppState | null>(null);
 const user = ref<TelegramUser | null>(null);
+const username = computed(() => status.value!.username!);
 
 
 async function init() {
@@ -66,26 +70,27 @@ onMounted(init);
   <n-layout class="shell">
     <n-layout-header class="topbar">
       <div class="topbar-brand">
-        <n-button v-if="user" circle quaternary size="small" class="mobile-menu-button" title="打开菜单" @click="navOpen = true">
+        <n-button v-if="user" circle quaternary size="small" class="mobile-menu-button" :title="t('nav.open_menu')" @click="navOpen = true">
           <template #icon>
             <span class="hamburger-icon" aria-hidden="true"></span>
           </template>
         </n-button>
-        <div class="brand">HashPay</div>
+        <div class="brand">{{ t('app.name') }}</div>
       </div>
       <div v-if="user && !miniApp" class="topbar-actions">
-        <n-button size="small" secondary @click="signOut">退出登录</n-button>
+        <LocaleSwitch />
+        <n-button size="small" secondary @click="signOut">{{ t('nav.logout') }}</n-button>
       </div>
     </n-layout-header>
     <n-layout-content v-if="loading" class="page-layout" content-class="page">
       <PageSkeleton :sections="3" :rows="3" />
     </n-layout-content>
     <n-layout-content v-else-if="!user" class="page-layout" content-class="page">
-      <LoginPanel :bot-username="status?.botUsername" @authenticated="init" />
+      <LoginPanel :username="username" @authenticated="init" />
     </n-layout-content>
     <n-layout-content v-else class="workspace-layout" content-class="workspace-page">
       <n-drawer v-model:show="navOpen" placement="left" :width="260">
-        <n-drawer-content closable title="HashPay">
+        <n-drawer-content closable :title="t('app.name')">
           <div class="workspace-nav workspace-nav--drawer">
             <n-menu :options="menu" :value="pageKey" @update:value="openPage" />
             <div class="workspace-release">

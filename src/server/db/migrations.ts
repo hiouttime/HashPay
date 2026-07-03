@@ -1,5 +1,5 @@
 import { all, exec } from "@/server/db";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 const migrationSources = import.meta.glob("./d1/migrations/*.sql", {
   eager: true,

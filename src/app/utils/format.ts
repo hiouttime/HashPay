@@ -30,3 +30,11 @@ export function formatIntegerDisplayAmount(value: unknown) {
     maximumFractionDigits: 0,
   });
 }
+
+export function formatTime(value: unknown) {
+  const ts = Number(value);
+  if (!Number.isFinite(ts) || ts <= 0) return "--";
+  const date = new Date(ts * 1000);
+  const pad = (number: number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}

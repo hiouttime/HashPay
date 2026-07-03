@@ -23,7 +23,7 @@ defineEmits<{
   <n-radio-group
     class="n-segmented"
     :value="value"
-    :size="size ?? 'small'"
+    :size="size ?? 'medium'"
     @update:value="$emit('update:value', $event)"
   >
     <n-radio-button

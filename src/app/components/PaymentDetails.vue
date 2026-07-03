@@ -3,8 +3,9 @@ import { computed, ref } from "vue";
 import { useMessage } from "naive-ui";
 import AppIcon from "@/app/components/AppIcon.vue";
 import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/amount-format";
+import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
+import { useI18n } from "@/app/i18n";
 
 const props = defineProps<{
   payment: any;
@@ -18,8 +19,8 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const qrVisible = ref(false);
-const target = computed(() => props.payment.address || props.payment.account || "");
-const address = computed(() => splitAddress(target.value));
+const { t } = useI18n();
+const address = computed(() => splitAddress(props.payment.address));
 
 function splitAddress(value: unknown) {
   const text = String(value || "");
@@ -35,22 +36,21 @@ function splitAddress(value: unknown) {
 <template>
   <div class="checkout-pay-method">
     <div>
-      <span>收款网络</span>
+      <span>{{ t('common.network') }}</span>
       <strong class="checkout-network-title">
         <AppIcon v-if="pay.networkIcon(payment.network)" :name="pay.networkIcon(payment.network)" :label="pay.networkName(payment.network)" />
         <span>{{ payment.networkName || pay.networkName(payment.network) }}</span>
       </strong>
     </div>
-    <n-button size="small" text type="primary" @click="emit('change')">更换</n-button>
+    <n-button size="small" text type="primary" @click="emit('change')">{{ t('checkout.change') }}</n-button>
   </div>
 
-  <div v-if="target" class="checkout-copy-field" :class="{ 'checkout-copy-field--address': payment.address }">
-    <template v-if="payment.address">
+  <div v-if="payment.address" class="checkout-copy-field checkout-copy-field--address">
       <div class="checkout-copy-head">
-        <span>收款地址</span>
+        <span>{{ t('checkout.address') }}</span>
         <div class="checkout-copy-actions">
-          <n-button size="small" text type="primary" @click="copyText(target, { message })">复制</n-button>
-          <n-button class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">显示二维码</n-button>
+          <n-button size="small" text type="primary" @click="copyText(payment.address, { message })">{{ t('common.copy') }}</n-button>
+          <n-button class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">{{ t('checkout.show_qr') }}</n-button>
         </div>
       </div>
       <div class="checkout-address-qr-inline">
@@ -61,29 +61,23 @@ function splitAddress(value: unknown) {
       <code class="checkout-address-code">
         <strong>{{ address.prefix }}</strong><span>{{ address.middle }}</span><strong>{{ address.suffix }}</strong>
       </code>
-    </template>
-    <template v-else>
-      <span>收款账户</span>
-      <code>{{ target }}</code>
-      <n-button size="small" text type="primary" @click="copyText(target, { message })">复制</n-button>
-    </template>
   </div>
 
   <div class="checkout-due-amount">
     <div>
-      <span>应付金额</span>
+      <span>{{ t('checkout.amount_due') }}</span>
       <strong class="checkout-currency-title">
         <AppIcon v-if="pay.assetIcon(payment.currency)" :name="pay.assetIcon(payment.currency)" :label="pay.assetName(payment.currency)" />
         <span>{{ formatAmount(payment.amount) }} {{ payment.currencyName || pay.assetName(payment.currency) }}</span>
       </strong>
-      <small>请确保到账金额一致，部分平台可能存在手续费。</small>
+      <small>{{ t('checkout.amount_help') }}</small>
     </div>
-    <n-button size="small" secondary type="primary" @click="copyText(formatAmount(payment.amount), { message })">复制金额</n-button>
+    <n-button size="small" secondary type="primary" @click="copyText(formatAmount(payment.amount), { message })">{{ t('checkout.copy_amount') }}</n-button>
   </div>
 
   <div class="checkout-warning">
     <strong>{{ pay.paymentInstruction(payment) }}</strong>
-    <span>网络或币种不符将无法确认充值，且可能会丢失资金。</span>
+    <span>{{ t('checkout.network_warning') }}</span>
   </div>
 
   <n-button
@@ -93,14 +87,14 @@ function splitAddress(value: unknown) {
     type="warning"
     @click="emit('review')"
   >
-    已付款，仍未到账
+    {{ t('checkout.review_button') }}
   </n-button>
 
   <n-modal v-model:show="qrVisible">
     <n-card
       closable
       class="checkout-qr-modal"
-      title="收款二维码"
+      :title="t('checkout.qr')"
       role="dialog"
       aria-modal="true"
       @close="qrVisible = false"

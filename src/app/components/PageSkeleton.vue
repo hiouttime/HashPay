@@ -9,7 +9,7 @@ withDefaults(defineProps<{
 </script>
 
 <template>
-  <section class="panel page-skeleton" aria-busy="true" aria-label="页面加载中">
+  <section class="panel page-skeleton" aria-busy="true" aria-label="Loading">
     <n-space vertical :size="20">
       <div v-for="section in sections" :key="section" class="page-skeleton__section">
         <n-skeleton text :style="{ width: section % 2 ? '34%' : '26%' }" />

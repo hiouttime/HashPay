@@ -2,15 +2,17 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { api, type SettingsDto } from "@/app/api";
+import { useI18n } from "@/app/i18n";
 
 const message = useMessage();
-const currencies = [
-  { label: "CNY - 人民币", value: "CNY" },
-  { label: "USD - 美元", value: "USD" },
-  { label: "EUR - 欧元", value: "EUR" },
-  { label: "GBP - 英镑", value: "GBP" },
-  { label: "TWD - 新台币", value: "TWD" },
-];
+const { t } = useI18n();
+const currencies = computed(() => [
+  { label: t("currency.cny"), value: "CNY" },
+  { label: t("currency.usd"), value: "USD" },
+  { label: t("currency.eur"), value: "EUR" },
+  { label: t("currency.gbp"), value: "GBP" },
+  { label: t("currency.twd"), value: "TWD" },
+]);
 
 const bannerRules = {
   maxBytes: 10 * 1024 * 1024,
@@ -43,7 +45,7 @@ async function save() {
   });
   settings.value = saved;
   await refreshPreview();
-  message.success("设置已保存");
+  message.success(t("settings.saved"));
 }
 
 async function refreshPreview() {
@@ -69,7 +71,7 @@ async function uploadBanner(options: { file: { file?: File | null }; onError?: (
   try {
     image = await toWebp(file);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "Banner 上传失败");
+    message.error(error instanceof Error ? error.message : t("settings.banner_upload_failed"));
     options.onError?.();
     return;
   }
@@ -77,7 +79,7 @@ async function uploadBanner(options: { file: { file?: File | null }; onError?: (
   bannerUploading.value = true;
   try {
     await api.banner.upload(await image.arrayBuffer());
-    message.success("Banner 已保存");
+    message.success(t("settings.banner_saved"));
     bannerVersion.value = Date.now();
     options.onFinish?.();
   } catch {
@@ -92,7 +94,7 @@ async function restoreBanner() {
   try {
     await api.banner.restore();
     bannerVersion.value = Date.now();
-    message.success("已恢复默认 Banner");
+    message.success(t("settings.banner_restored"));
   } finally {
     bannerRestoring.value = false;
   }
@@ -105,22 +107,22 @@ async function toWebp(file: File) {
   const ratio = Math.max(width / height, height / width);
   if (width < bannerRules.minWidth || height < bannerRules.minHeight) {
     bitmap.close();
-    throw new Error(`Banner 最低尺寸为 ${bannerRules.minWidth} x ${bannerRules.minHeight}`);
+    throw new Error(t("settings.banner_min_size", { height: bannerRules.minHeight, width: bannerRules.minWidth }));
   }
   if (width + height > bannerRules.maxDimensionSum || ratio > bannerRules.maxRatio) {
     bitmap.close();
-    throw new Error("图片尺寸不符合 Telegram 发送要求");
+    throw new Error(t("settings.banner_invalid_size"));
   }
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法处理图片");
+  if (!context) throw new Error(t("settings.banner_process_failed"));
   context.drawImage(bitmap, 0, 0);
   bitmap.close();
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.9));
-  if (!blob) throw new Error("图片转换失败");
-  if (blob.size > bannerRules.maxBytes) throw new Error("Banner 文件大小不能超过 10 MB");
+  if (!blob) throw new Error(t("settings.banner_convert_failed"));
+  if (blob.size > bannerRules.maxBytes) throw new Error(t("settings.banner_too_large"));
   return blob;
 }
 
@@ -139,66 +141,66 @@ onMounted(load);
 
 <template>
   <div class="grid">
-    <div class="section-title"><h2>设置</h2></div>
+    <div class="section-title"><h2>{{ t('settings.title') }}</h2></div>
     <div class="panel grid">
-      <div class="section-title"><h2>站点</h2></div>
+      <div class="section-title"><h2>{{ t('settings.site') }}</h2></div>
       <div class="form-grid two">
         <label class="field-stack">
-          <span>站点地址</span>
+          <span>{{ t('settings.domain') }}</span>
           <n-input v-model:value="settings.domain" placeholder="https://example.com" />
         </label>
       </div>
     </div>
     <div class="panel grid">
-      <div class="section-title"><h2>货币</h2></div>
+      <div class="section-title"><h2>{{ t('settings.currency') }}</h2></div>
       <div class="form-grid two">
         <label class="field-stack">
-          <span>基础货币</span>
+          <span>{{ t('settings.base_currency') }}</span>
           <n-select v-model:value="settings.currency" :options="currencies" />
-          <small>系统基础货币，作为换算、统计及下单的默认货币</small>
+          <small>{{ t('settings.base_currency_help') }}</small>
         </label>
         <label class="field-stack">
-          <span>汇率微调</span>
-          <n-input-number v-model:value="settings.rate_adjust" :max="200" :min="-99" placeholder="如 1 或 -0.5" :step="0.1">
+          <span>{{ t('settings.rate_adjust') }}</span>
+          <n-input-number v-model:value="settings.rate_adjust" :max="200" :min="-99" :placeholder="t('settings.rate_adjust_placeholder')" :step="0.1">
             <template #suffix>%</template>
           </n-input-number>
-          <small>调整法币与目标币种的汇率。值越大，兑换比例越大。</small>
+          <small>{{ t('settings.rate_adjust_help') }}</small>
         </label>
       </div>
       <div class="rate-preview-box">
         <div>
-          <span class="muted">汇率预览</span>
+          <span class="muted">{{ t('settings.rate_preview') }}</span>
           <strong>{{ rateText(usdtRate?.effective_rate) }} {{ settings.currency || 'CNY' }} ≈ 1 USDT</strong>
         </div>
         <p v-if="Number(settings.rate_adjust)" class="muted">
-          原始汇率 {{ rateText(usdtRate?.market_rate) }} {{ settings.currency || 'CNY' }} ≈ 1 USDT
+          {{ t('settings.original_rate', { rate: rateText(usdtRate?.market_rate), currency: settings.currency || 'CNY' }) }}
         </p>
-        <p v-if="settings.rate_preview?.message" class="muted">{{ settings.rate_preview.message }}</p>
+        <p v-if="settings.rate_preview?.message_key" class="muted">{{ t(settings.rate_preview.message_key) }}</p>
       </div>
     </div>
     <div class="panel grid">
-      <div class="section-title"><h2>交易检测</h2></div>
+      <div class="section-title"><h2>{{ t('settings.monitor') }}</h2></div>
       <n-form class="settings-form" label-placement="top" :model="settings" :show-require-mark="false">
         <n-grid cols="1 m:2" responsive="screen" :x-gap="12" :y-gap="12">
-          <n-form-item-gi label="订单超时" path="timeout" :show-feedback="false">
+          <n-form-item-gi :label="t('settings.timeout')" path="timeout" :show-feedback="false">
             <div class="setting-form-control">
-              <n-input-number v-model:value="settings.timeout" :max="30" :min="1" placeholder="30">
-                <template #suffix>分钟</template>
+              <n-input-number v-model:value="settings.timeout" :max="30" :min="1" placeholder="5">
+                <template #suffix>{{ t('settings.minutes') }}</template>
               </n-input-number>
-              <small>有效范围 1 - 30 分钟。</small>
+              <small>{{ t('settings.timeout_help') }}</small>
             </div>
           </n-form-item-gi>
-          <n-form-item-gi label="快速确认" path="fast_confirm" :show-feedback="false">
+          <n-form-item-gi :label="t('settings.fast_confirm')" path="fast_confirm" :show-feedback="false">
             <div class="setting-form-control">
               <div class="setting-switch-control">
                 <n-switch v-model:value="settings.fast_confirm" />
               </div>
-              <small>不等待目标网络交易确认区块数达到安全值。可提升交易确认速度，风险性较低。</small>
+              <small>{{ t('settings.fast_confirm_help') }}</small>
             </div>
           </n-form-item-gi>
         </n-grid>
       </n-form>
-      <n-button type="primary" @click="save">保存设置</n-button>
+      <n-button type="primary" @click="save">{{ t('settings.save') }}</n-button>
     </div>
     <div class="panel grid">
       <div class="section-title"><h2>Banner</h2></div>
@@ -206,14 +208,14 @@ onMounted(load);
         <div class="banner-upload-frame">
           <img class="banner-preview" :src="bannerSrc" alt="HashPay banner" />
           <div class="banner-upload-overlay">
-            <n-button :loading="bannerUploading" type="primary">{{ bannerUploading ? '正在上传' : '上传图片' }}</n-button>
-            <span>点击或拖拽图片到这里</span>
+            <n-button :loading="bannerUploading" type="primary">{{ bannerUploading ? t('settings.banner_uploading') : t('common.upload') }}</n-button>
+            <span>{{ t('settings.banner_drop') }}</span>
           </div>
         </div>
       </n-upload>
-      <p class="banner-guideline">推荐比例 2:1，建议 1080 x 540，最低 600 x 300。图片会用于 Telegram 收款消息。</p>
+      <p class="banner-guideline">{{ t('settings.banner_guideline') }}</p>
       <div class="form-actions">
-        <n-button :loading="bannerRestoring" secondary @click="restoreBanner">恢复默认</n-button>
+        <n-button :loading="bannerRestoring" secondary @click="restoreBanner">{{ t('settings.banner_restore') }}</n-button>
       </div>
     </div>
   </div>

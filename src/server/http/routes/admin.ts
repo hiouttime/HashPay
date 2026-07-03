@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { deletePaymentMethod, listPaymentMethods, savePaymentMethod } from "@/server/payments/channels";
-import { consumePinLogin, createPinLogin, loginByTelegram, logout } from "@/server/services/auth/login";
+import { deletePayment, listPayments, savePayment } from "@/server/payments/channels";
+import { consumePin, createPin, endSession, telegramLogin } from "@/server/services/auth/login";
 import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
 import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "@/server/services/merchants";
-import { checkOrderPayment, createCheckoutTestOrder, deleteOrder, getOrderDetail, listOrdersPage, manualConfirmOrder, resendOrderNotify } from "@/server/services/orders/manage";
+import { checkOrderPayment, confirmOrder, createCheckoutTestOrder, deleteOrder, getOrderDetail, listOrdersPage, resendOrderNotify } from "@/server/services/orders/manage";
 import { dashboard } from "@/server/services/app";
 import { adminSettings, saveAdminSettings, settingsPreview } from "@/server/services/app/settings";
 import { setupSession, startSetup } from "@/server/services/app/setup";
-import type { HonoEnv } from "@/shared/types/env";
+import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
 const session = new Hono<HonoEnv>();
@@ -27,13 +27,13 @@ app.get("/setup", json((c) => setupSession(c)));
 app.post("/setup", json(async (c) => startSetup(c, await reqJson(c))));
 
 // Session
-session.delete("/", json((c) => logout(c)));
+session.delete("/", json((c) => endSession(c)));
 session.get("/", json((c) => requireAdmin(c)));
 
-session.post("/telegram", json(async (c) => loginByTelegram(c, await reqJson(c))));
+session.post("/telegram", json(async (c) => telegramLogin(c, await reqJson(c))));
 
-session.post("/pin", json(async (c) => createPinLogin(c, await reqJson(c))));
-session.get("/pin/:pin", json((c) => consumePinLogin(c, c.req.param("pin")!, c.req.query("challenge"))));
+session.post("/pin", json(async (c) => createPin(c, await reqJson(c))));
+session.get("/pin/:pin", json((c) => consumePin(c, c.req.param("pin")!, c.req.query("challenge"))));
 app.route("/session", session);
 
 // Admin guard
@@ -46,14 +46,14 @@ app.use("*", async (c, next) => {
 app.get("/dashboard", json((c) => dashboard(c.env)));
 
 // Payments
-app.get("/payment", json((c) => listPaymentMethods(c.env)));
-app.post("/payment", json(async (c) => savePaymentMethod(c.env, await reqJson(c) as never)));
+app.get("/payment", json((c) => listPayments(c.env)));
+app.post("/payment", json(async (c) => savePayment(c.env, await reqJson(c) as never)));
 app.put("/payment/:id", json(async (c) => {
   const body = await reqJson(c);
-  return savePaymentMethod(c.env, { ...(body as { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) });
+  return savePayment(c.env, { ...(body as { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) });
 }));
 app.delete("/payment/:id", json(async (c) => {
-  await deletePaymentMethod(c.env, Number(c.req.param("id")!));
+  await deletePayment(c.env, Number(c.req.param("id")!));
   return { ok: true };
 }));
 
@@ -83,7 +83,7 @@ app.post("/orders/test", json(async (c) => createCheckoutTestOrder(c.env, c.req.
 app.get("/orders/:id", json((c) => getOrderDetail(c.env, c.req.param("id")!)));
 app.delete("/orders/:id", json((c) => deleteOrder(c.env, c.req.param("id")!)));
 app.post("/orders/:id/check", json((c) => checkOrderPayment(c.env, c.req.param("id")!)));
-app.post("/orders/:id/confirm", json(async (c) => manualConfirmOrder(c.env, c.req.param("id")!, await reqJson(c))));
+app.post("/orders/:id/confirm", json(async (c) => confirmOrder(c.env, c.req.param("id")!, await reqJson(c))));
 app.post("/orders/:id/notify", json((c) => resendOrderNotify(c.env, c.req.param("id")!)));
 
 // Settings

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { checkPayment } from "@/server/payments/driver";
-import { selectOrderPaymentByAssetNetwork } from "@/server/services/orders/checkout";
-import type { AppEnv } from "@/shared/types/env";
+import { selectCheckoutPayment } from "@/server/services/orders/checkout";
+import type { AppEnv } from "@/server/types/env";
 import type { PaymentSnapshot } from "@/shared/types/domain";
-
-const nileUsdtContract = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
+import { trc20Assets } from "@/shared/payments";
 
 const snapshot: PaymentSnapshot = {
   address: "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
@@ -24,7 +23,7 @@ const input = {
       hash: "tx",
       raw: {
         token_info: {
-          address: nileUsdtContract,
+          address: trc20Assets.usdt.contract,
         },
       },
       timestamp: 120,
@@ -74,7 +73,7 @@ describe("TRC20 payment check", () => {
   it("bumps the payable amount when an active order already uses the same amount", async () => {
     const env = paymentSelectionEnv();
 
-    const snapshot = await selectOrderPaymentByAssetNetwork(env, "new-order", "usdt", "trc20");
+    const snapshot = await selectCheckoutPayment(env, "new-order", "usdt", "trc20");
 
     expect(snapshot.amount).toBe(10.01);
     expect(JSON.parse(String(env.updatedPayment)).amount).toBe(10.01);
@@ -95,7 +94,7 @@ describe("TRC20 payment check", () => {
       includeExisting: false,
     });
 
-    const next = await selectOrderPaymentByAssetNetwork(env, "new-order", "usdt", "trc20");
+    const next = await selectCheckoutPayment(env, "new-order", "usdt", "trc20");
     const saved = JSON.parse(String(env.updatedPayment));
 
     expect(next.amount).toBe(10);

@@ -1,5 +1,4 @@
 export type PaymentKind = "chain" | "exchange" | "wallet";
-export type PublicPaymentCheck = "trongrid";
 export type NetworkKey =
   | "binance"
   | "bep20"
@@ -20,17 +19,19 @@ export type PaymentAssetKey =
   | "usdc"
   | "usdt";
 
+export type Trc20Asset = {
+  contract: string;
+  symbol: string;
+};
+
 export interface PaymentAddress {
-  help: string;
-  name: string;
-  pattern: RegExp;
+  helpKey: string;
+  nameKey: string;
+  pattern?: RegExp;
 }
 
 export interface Payment {
-  account?: {
-    name: string;
-  };
-  address?: PaymentAddress;
+  address: PaymentAddress;
   assets: string[];
   evm?: boolean;
   explorer?: {
@@ -39,9 +40,8 @@ export interface Payment {
   icon: string;
   id: string;
   kind: PaymentKind;
-  name: string;
+  nameKey: string;
   network: string;
-  publicCheck?: PublicPaymentCheck;
 }
 
 export const paymentAssets: Record<PaymentAssetKey, { icon: string; name: string; symbol: string }> = {
@@ -52,6 +52,13 @@ export const paymentAssets: Record<PaymentAssetKey, { icon: string; name: string
   trx: { icon: "icon-tron", name: "TRX", symbol: "TRX" },
   usdc: { icon: "icon-usdc", name: "USDC", symbol: "USDC" },
   usdt: { icon: "icon-usdt", name: "USDT", symbol: "USDT" },
+};
+
+export const trc20Assets: Record<string, Trc20Asset> = {
+  usdt: {
+    contract: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+    symbol: "USDT",
+  },
 };
 
 export function normalizeNetworkKey(value: unknown) {
@@ -79,8 +86,8 @@ export function normalizeAssetCsv(raw: unknown, fallback: readonly string[] = []
 
 export const trc20: Payment = {
   address: {
-    help: "TRON 地址通常以 T 开头。",
-    name: "TRON 地址",
+    helpKey: "payment.help.tron",
+    nameKey: "payment.address.tron",
     pattern: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
   },
   assets: ["usdt", "trx"],
@@ -90,15 +97,14 @@ export const trc20: Payment = {
   icon: "icon-tron",
   id: "trc20",
   kind: "chain",
-  name: "TRC20 (TRON)",
+  nameKey: "network.trc20",
   network: "trc20",
-  publicCheck: "trongrid",
 };
 
 export const erc20: Payment = {
   address: {
-    help: "EVM 地址为 0x 开头的十六进制地址。",
-    name: "EVM 地址",
+    helpKey: "payment.help.evm",
+    nameKey: "payment.address.evm",
     pattern: /^0x[a-fA-F0-9]{40}$/,
   },
   assets: ["usdt", "usdc", "eth"],
@@ -106,14 +112,14 @@ export const erc20: Payment = {
   icon: "icon-ethereum",
   id: "erc20",
   kind: "chain",
-  name: "ERC20 (Ethereum)",
+  nameKey: "network.erc20",
   network: "erc20",
 };
 
 export const bep20: Payment = {
   address: {
-    help: "EVM 地址为 0x 开头的十六进制地址。",
-    name: "EVM 地址",
+    helpKey: "payment.help.evm",
+    nameKey: "payment.address.evm",
     pattern: /^0x[a-fA-F0-9]{40}$/,
   },
   assets: ["usdt", "usdc", "bnb"],
@@ -121,14 +127,14 @@ export const bep20: Payment = {
   icon: "icon-bnb",
   id: "bep20",
   kind: "chain",
-  name: "BEP20 (BNB Smart Chain)",
+  nameKey: "network.bep20",
   network: "bep20",
 };
 
 export const polygon: Payment = {
   address: {
-    help: "EVM 地址为 0x 开头的十六进制地址。",
-    name: "EVM 地址",
+    helpKey: "payment.help.evm",
+    nameKey: "payment.address.evm",
     pattern: /^0x[a-fA-F0-9]{40}$/,
   },
   assets: ["usdt", "usdc", "matic"],
@@ -136,61 +142,73 @@ export const polygon: Payment = {
   icon: "icon-polygon",
   id: "polygon",
   kind: "chain",
-  name: "Polygon",
+  nameKey: "network.polygon",
   network: "polygon",
 };
 
 export const ton: Payment = {
   address: {
-    help: "TON 地址一般为 EQ 或 UQ 开头。",
-    name: "TON 地址",
+    helpKey: "payment.help.ton",
+    nameKey: "payment.address.ton",
     pattern: /^(EQ|UQ)[A-Za-z0-9_-]{46}$/,
   },
   assets: ["usdt", "gram"],
   icon: "icon-ton",
   id: "ton",
   kind: "chain",
-  name: "TON",
+  nameKey: "network.ton",
   network: "ton",
 };
 
 export const binance: Payment = {
-  account: { name: "收款账户" },
+  address: {
+    helpKey: "payment.help.platform",
+    nameKey: "payment.address.default",
+  },
   assets: ["usdt", "usdc"],
   icon: "icon-binance",
   id: "binance",
   kind: "exchange",
-  name: "Binance 币安",
+  nameKey: "network.binance",
   network: "binance",
 };
 
 export const okx: Payment = {
-  account: { name: "收款账户" },
+  address: {
+    helpKey: "payment.help.platform",
+    nameKey: "payment.address.default",
+  },
   assets: ["usdt", "usdc"],
   icon: "icon-okx",
   id: "okx",
   kind: "exchange",
-  name: "OKX 欧易",
+  nameKey: "network.okx",
   network: "okx",
 };
 
 export const huobi: Payment = {
-  account: { name: "收款账户" },
+  address: {
+    helpKey: "payment.help.platform",
+    nameKey: "payment.address.default",
+  },
   assets: ["usdt", "usdc"],
   icon: "icon-huobi",
   id: "huobi",
   kind: "exchange",
-  name: "Huobi 火币",
+  nameKey: "network.huobi",
   network: "huobi",
 };
 
 export const okpay: Payment = {
-  account: { name: "钱包账号" },
+  address: {
+    helpKey: "payment.help.wallet",
+    nameKey: "payment.address.wallet",
+  },
   assets: ["usdt", "trx"],
   icon: "icon-okpay",
   id: "okpay",
   kind: "wallet",
-  name: "Okpay",
+  nameKey: "network.okpay",
   network: "okpay",
 };
 
@@ -222,7 +240,7 @@ export function paymentByNetwork(network: unknown) {
 
 export function networkLabel(network: unknown) {
   const raw = String(network ?? "").trim();
-  return paymentByNetwork(raw)?.name ?? raw.toUpperCase();
+  return paymentByNetwork(raw)?.nameKey ?? raw.toUpperCase();
 }
 
 export function paymentExplorerUrl(network: unknown, hash: unknown) {
@@ -238,4 +256,12 @@ export function paymentAssetName(asset: unknown) {
 export function paymentAssetIcon(asset: unknown) {
   const key = normalizePaymentAsset(asset) as PaymentAssetKey;
   return paymentAssets[key]?.icon ?? "";
+}
+
+export function paymentFieldLabelKey(payment: Payment) {
+  return payment.address.nameKey;
+}
+
+export function paymentFieldHelpKey(payment: Payment) {
+  return payment.address.helpKey;
 }

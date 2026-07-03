@@ -2,7 +2,8 @@
 import { computed, ref } from "vue";
 import AppIcon from "@/app/components/AppIcon.vue";
 import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/amount-format";
+import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { useI18n } from "@/app/i18n";
 
 const props = defineProps<{
   disabled: boolean;
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   select: [option: pay.CheckoutOption];
 }>();
 
+const { t } = useI18n();
 const asset = ref("");
 const assets = computed(() => {
   const map = new Map<string, pay.CheckoutOption[]>();
@@ -34,8 +36,8 @@ const selectedAsset = computed(() => assets.value.find((item) => item.asset === 
 <template>
   <div v-if="!asset" class="checkout-choice-stack">
     <div class="checkout-flow-head">
-      <span>选择币种</span>
-      <h1>你要发送哪种资产？</h1>
+      <span>{{ t('checkout.select_asset') }}</span>
+      <h1>{{ t('checkout.select_asset_title') }}</h1>
     </div>
     <div class="checkout-currency-list">
       <button
@@ -56,15 +58,15 @@ const selectedAsset = computed(() => assets.value.find((item) => item.asset === 
 
   <div v-else class="checkout-choice-stack">
     <div class="checkout-flow-head">
-      <span>选择网络</span>
-      <h1>使用哪个网络支付 {{ pay.assetName(asset) }}？</h1>
+      <span>{{ t('checkout.select_network') }}</span>
+      <h1>{{ t('checkout.use_network', { asset: pay.assetName(asset) }) }}</h1>
     </div>
     <div class="checkout-step-back">
       <span class="checkout-currency-text">
         <AppIcon v-if="pay.assetIcon(selectedAsset?.asset)" :name="pay.assetIcon(selectedAsset?.asset)" :label="pay.assetName(selectedAsset?.asset)" />
         <span>{{ formatAmount(selectedAsset?.amount) }} {{ pay.assetName(selectedAsset?.asset) }}</span>
       </span>
-      <n-button size="small" text type="primary" @click="asset = ''">更换币种</n-button>
+      <n-button size="small" text type="primary" @click="asset = ''">{{ t('checkout.change_asset') }}</n-button>
     </div>
     <div class="checkout-network-list">
       <button

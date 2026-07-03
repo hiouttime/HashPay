@@ -1,7 +1,8 @@
 import type { Context as GrammyContext } from "grammy";
 import { getConfig, setConfig } from "@/server/db";
 import { refreshBotInfo, setupWebhook } from "@/server/services/telegram/api";
-import type { AppEnv } from "@/shared/types/env";
+import { normalizeLocale, t } from "@/shared/i18n";
+import type { AppEnv } from "@/server/types/env";
 
 export async function startTelegramSetup(env: AppEnv, domain: string) {
   const secret = crypto.randomUUID().replaceAll("-", "");
@@ -24,7 +25,8 @@ export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
     lastName: user.last_name,
     username: user.username,
   }));
+  const locale = normalizeLocale(user.language_code);
   await ctx.reply("🎉");
-  await ctx.reply("管理员账户已绑定，请回到页面继续。");
+  await ctx.reply(t(locale, "setup.admin_bound"));
   return true;
 }

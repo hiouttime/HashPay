@@ -5,28 +5,20 @@ import { useMessage } from "naive-ui";
 import PaymentDetails from "@/app/components/PaymentDetails.vue";
 import PaymentSelector from "@/app/components/PaymentSelector.vue";
 import ReviewModal from "@/app/components/ReviewModal.vue";
-import {
-  isExpired,
-  isPaid,
-  isPending,
-  remainingPercentage,
-  remainingText,
-  returnUrl,
-  shouldAskPaymentReview,
-  statusText,
-  statusType,
-  timeText,
-  txUrl,
-  useCheckout,
-} from "@/app/pages/pay";
+import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
+import { useCheckout } from "@/app/utils/checkout";
+import type { OrderDto } from "@/app/api";
 import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/amount-format";
+import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
+import { formatTime } from "@/app/utils/format";
+import { useI18n } from "@/app/i18n";
 
 const route = useRoute();
 const message = useMessage();
 const orderId = String(route.params.id);
 const reviewVisible = ref(false);
+const { t } = useI18n();
 const {
   changePayment,
   changingPayment,
@@ -43,6 +35,47 @@ function shortText(value: unknown, start = 10, end = 8) {
   const text = String(value || "");
   return text.length > start + end + 3 ? `${text.slice(0, start)}...${text.slice(-end)}` : text;
 }
+
+function expired(order: OrderDto) {
+  return order.status === "expired" || Number(order.expireAt) * 1000 <= nowMs.value;
+}
+
+function statusText(order: OrderDto) {
+  return order.status === "pending" && expired(order) ? t("status.expired") : t(`status.${order.status}`);
+}
+
+function statusType(order: OrderDto) {
+  if (order.status === "paid") return "success";
+  if (expired(order)) return "warning";
+  return order.status === "invalid" ? "error" : "default";
+}
+
+function remainingText(order: OrderDto) {
+  const seconds = Math.max(0, Math.floor((Number(order.expireAt) * 1000 - nowMs.value) / 1000));
+  if (!seconds) return t("checkout.expired_title");
+  return t("checkout.remaining_value", {
+    minutes: Math.floor(seconds / 60),
+    seconds: String(seconds % 60).padStart(2, "0"),
+  });
+}
+
+function remainingPercentage(order: OrderDto) {
+  const createdAt = Number(order.createdAt) * 1000;
+  const expireAt = Number(order.expireAt) * 1000;
+  if (!createdAt || !expireAt || expireAt <= createdAt) return 0;
+  return Math.ceil((Math.max(0, expireAt - nowMs.value) / (expireAt - createdAt)) * 100);
+}
+
+function showPaymentReview(order: OrderDto) {
+  if (order.status !== "pending" || expired(order) || !order.payment?.driver) return false;
+  const createdAt = Number(order.createdAt) * 1000;
+  const expireAt = Number(order.expireAt) * 1000;
+  return Boolean(createdAt && expireAt > createdAt && nowMs.value - createdAt >= (expireAt - createdAt) / 2);
+}
+
+function hasReturnUrl(order: OrderDto) {
+  return Boolean(order.returnUrl?.trim());
+}
 </script>
 
 <template>
@@ -50,9 +83,10 @@ function shortText(value: unknown, start = 10, end = 8) {
     <n-layout-header class="checkout-topbar">
       <div class="checkout-topbar-inner">
         <div class="checkout-brand">
-          <strong>HashPay</strong>
-          <span>收银台</span>
+          <strong>{{ t('app.name') }}</strong>
+          <span>{{ t('checkout.cashier') }}</span>
         </div>
+        <LocaleSwitch />
       </div>
     </n-layout-header>
 
@@ -60,95 +94,95 @@ function shortText(value: unknown, start = 10, end = 8) {
       <section class="checkout-receipt">
         <div class="checkout-receipt-head">
           <div>
-            <span>商户</span>
-            <strong>{{ checkout.merchant.name || 'HashPay' }}</strong>
+            <span>{{ t('checkout.merchant') }}</span>
+            <strong>{{ checkout.merchant.name || t('app.name') }}</strong>
           </div>
-          <n-tag :type="statusType(checkout.order, nowMs)">{{ statusText(checkout.order, nowMs) }}</n-tag>
+          <n-tag :type="statusType(checkout.order)">{{ statusText(checkout.order) }}</n-tag>
         </div>
         <div class="checkout-amount-block">
-          <span>订单金额</span>
+          <span>{{ t('checkout.order_amount') }}</span>
           <strong>{{ formatAmount(checkout.order.amount) }} {{ pay.assetName(checkout.order.currency) }}</strong>
         </div>
-        <div v-if="isPending(checkout.order) && !isExpired(checkout.order, nowMs)" class="checkout-countdown">
+        <div v-if="checkout.order.status === 'pending' && !expired(checkout.order)" class="checkout-countdown">
           <n-progress
             type="circle"
-            :percentage="remainingPercentage(checkout.order, nowMs)"
+            :percentage="remainingPercentage(checkout.order)"
             :stroke-width="6"
             color="#16a34a"
             rail-color="#e5e7eb"
           >
             <div class="checkout-countdown-content">
-              <span>剩余付款时间</span>
-              <strong>{{ remainingText(checkout.order, nowMs) }}</strong>
+              <span>{{ t('checkout.remaining') }}</span>
+              <strong>{{ remainingText(checkout.order) }}</strong>
             </div>
           </n-progress>
         </div>
         <dl class="checkout-receipt-meta">
           <div>
-            <dt>订单号</dt>
+            <dt>{{ t('checkout.order_id') }}</dt>
             <dd>
               <code>{{ checkout.order.id }}</code>
-              <n-button size="tiny" text type="primary" @click="copyText(checkout.order.id, { message })">复制</n-button>
+              <n-button size="tiny" text type="primary" @click="copyText(checkout.order.id, { message })">{{ t('common.copy') }}</n-button>
             </dd>
           </div>
           <div>
-            <dt>订单信息</dt>
-            <dd>{{ checkout.order.description || '网页收银台订单' }}</dd>
+            <dt>{{ t('checkout.order_info') }}</dt>
+            <dd>{{ checkout.order.description || t('checkout.default_description') }}</dd>
           </div>
           <div>
-            <dt>最后付款时间</dt>
-            <dd>{{ timeText(checkout.order.expireAt) }}</dd>
+            <dt>{{ t('checkout.deadline') }}</dt>
+            <dd>{{ formatTime(checkout.order.expireAt) }}</dd>
           </div>
         </dl>
       </section>
 
-      <section class="checkout-flow" :class="{ 'checkout-flow--paid': isPaid(checkout.order) }">
-        <template v-if="isPaid(checkout.order)">
+      <section class="checkout-flow" :class="{ 'checkout-flow--paid': checkout.order.status === 'paid' }">
+        <template v-if="checkout.order.status === 'paid'">
           <div class="checkout-paid-state">
             <div class="checkout-paid-mark">✓</div>
             <div>
-              <strong>谢谢</strong>
-              <span>你的付款已被确认。</span>
+              <strong>{{ t('checkout.thanks') }}</strong>
+              <span>{{ t('checkout.paid_confirmed') }}</span>
             </div>
           </div>
           <dl class="checkout-paid-meta">
             <div>
-              <dt>收款方式</dt>
+              <dt>{{ t('orders.column.payment') }}</dt>
               <dd>{{ checkout.order.payment.networkName || pay.networkName(checkout.order.payment.network) }} / {{ checkout.order.payment.currencyName || pay.assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div>
-              <dt>到账金额</dt>
+              <dt>{{ t('checkout.amount_due') }}</dt>
               <dd>{{ formatAmount(checkout.order.payment.amount) }} {{ checkout.order.payment.currencyName || pay.assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div v-if="checkout.order.payment.tx?.txid">
-              <dt>交易记录</dt>
+              <dt>{{ t('order.tx_hash') }}</dt>
               <dd>
-                <a v-if="txUrl(checkout.order.payment)" :href="txUrl(checkout.order.payment)" target="_blank" rel="noreferrer">查看交易</a>
+                <a v-if="pay.txUrl(checkout.order.payment)" :href="pay.txUrl(checkout.order.payment)" target="_blank" rel="noreferrer">{{ t('telegram.tx_link') }}</a>
                 <span v-else>{{ shortText(checkout.order.payment.tx.txid, 10, 8) }}</span>
               </dd>
             </div>
           </dl>
-          <div v-if="returnUrl(checkout.order)" class="checkout-return-actions">
-            <n-button block type="primary" @click="returnToMerchant">返回商户</n-button>
-            <span>{{ paidReturnSeconds }} 秒后返回商户</span>
+          <div v-if="hasReturnUrl(checkout.order)" class="checkout-return-actions">
+            <n-button block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
+            <span>{{ t('checkout.return_countdown', { seconds: paidReturnSeconds }) }}</span>
           </div>
-          <p v-else class="checkout-return-hint">请返回商户页面继续</p>
+          <p v-else class="checkout-return-hint">{{ t('checkout.return_hint') }}</p>
         </template>
 
-        <template v-else-if="isExpired(checkout.order, nowMs)">
+        <template v-else-if="expired(checkout.order)">
           <div class="checkout-expired-state">
-            <strong>订单已过期</strong>
-            <span>请勿继续付款，继续付款可能会导致您的财产损失。</span>
-            <span>如您需要继续付款，请返回商户重新下单。</span>
+            <strong>{{ t('checkout.expired_title') }}</strong>
+            <span>{{ t('checkout.expired_warning') }}</span>
+            <span>{{ t('checkout.expired_return') }}</span>
           </div>
-          <n-button v-if="returnUrl(checkout.order)" block type="primary" @click="returnToMerchant">返回商户</n-button>
-          <n-button block secondary type="warning" @click="reviewVisible = true">已付款，仍未到账</n-button>
+          <n-button v-if="hasReturnUrl(checkout.order)" block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
+          <n-button block secondary type="warning" @click="reviewVisible = true">{{ t('checkout.review_button') }}</n-button>
         </template>
 
         <template v-else-if="checkout.order.payment.driver && !changingPayment">
           <PaymentDetails
             :payment="checkout.order.payment"
-            :show-review="shouldAskPaymentReview(checkout.order, nowMs)"
+            :show-review="showPaymentReview(checkout.order)"
             @change="changePayment"
             @review="reviewVisible = true"
           />
@@ -156,7 +190,7 @@ function shortText(value: unknown, start = 10, end = 8) {
 
         <template v-else>
           <PaymentSelector
-            :disabled="isExpired(checkout.order, nowMs)"
+            :disabled="expired(checkout.order)"
             :options="paymentOptions"
             @select="selectPayment"
           />

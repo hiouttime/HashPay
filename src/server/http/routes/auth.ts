@@ -4,7 +4,7 @@ import { requireSignedMerchant } from "@/server/services/merchants";
 import { createMerchantOrder } from "@/server/services/orders/create";
 import { merchantOrderSummary, publicOrder } from "@/server/services/orders/repository";
 import { getOrder } from "@/server/services/orders/repository";
-import type { HonoEnv } from "@/shared/types/env";
+import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
 
@@ -21,7 +21,7 @@ app.post("/merchant/new", async (c) => {
 app.get("/order/:orderId", async (c) => {
   const merchant = await requireSignedMerchant(c.env, c.req, "");
   const order = await getOrder(c.env, c.req.param("orderId"));
-  if (order.merchant !== merchant.id) throw new AppError(404, "order_not_found", "Order is not found");
+  if (order.merchant !== merchant.id) throw new AppError(404, "errors.order_not_found");
   return c.json(publicOrder(order));
 });
 

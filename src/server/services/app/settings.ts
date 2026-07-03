@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { getConfig, setConfig, setConfigs } from "@/server/db";
 import { ceilAmount } from "@/shared/amount";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 const defaultFiatPerUSD: Record<string, number> = {
   CNY: 7.2,
@@ -44,7 +44,7 @@ export interface SystemSettings {
 
 export interface MarketRates {
   fiatPerUSD: Record<string, number>;
-  message?: string;
+  messageKey?: string;
   source: string;
   status: "fallback" | "live" | "partial";
   syncedAt: number;
@@ -143,7 +143,7 @@ export async function settingsPreview(env: AppEnv, currency?: string | null, rat
         usd_price: snapshot.usdPrices[item] ?? 0,
       };
     }).filter((item) => item.market_rate > 0),
-    message: snapshot.message,
+    message_key: snapshot.messageKey,
     source: snapshot.source,
     status: snapshot.status,
     updated_at: snapshot.updatedAt,
@@ -164,21 +164,15 @@ function normalizeCurrency(value: string) {
   return ["CNY", "USD", "EUR", "GBP", "TWD"].includes(upper) ? upper : "CNY";
 }
 
-function normalizeNumberString(value: unknown, fallback: string) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? String(parsed) : fallback;
-}
-
 function normalizeRateAdjust(value: unknown) {
-  const parsed = Number(normalizeNumberString(value, "0"));
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
   return Math.min(Math.max(parsed, -99), 200);
 }
 
 function normalizeTimeoutMinutes(value: unknown) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 30;
+  if (!Number.isFinite(parsed)) return 5;
   return Math.min(Math.max(Math.round(parsed), 1), 30);
 }
 
@@ -206,19 +200,19 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
     out.updatedAt = fiat.value.updatedAt || out.updatedAt;
     source.push("ExchangeRate API");
   } else {
-    problems.push("法币汇率刷新失败");
+    problems.push("settings.rate_error_fiat");
   }
   if (prices.status === "fulfilled") {
     out.usdPrices = prices.value;
     source.push("CoinGecko");
   } else {
-    problems.push("币价刷新失败");
+    problems.push("settings.rate_error_price");
   }
   if (source.length) {
     out.source = source.join(" + ");
     out.status = problems.length ? "partial" : "live";
   }
-  if (problems.length) out.message = problems.length === 2 ? "实时汇率获取失败，当前使用系统默认值。" : problems.join("，");
+  if (problems.length) out.messageKey = problems.length === 2 ? "settings.rate_error_all" : problems[0];
   await setConfig(env, "market_rates", JSON.stringify(out));
   memoryRates = { expiresAt: Date.now() + 60_000, snapshot: out };
   return out;
@@ -242,7 +236,7 @@ function parseMarketRates(value: string | null) {
     if (!parsed || typeof parsed !== "object") return defaultMarketRates();
     return {
       fiatPerUSD: { ...defaultFiatPerUSD, ...(parsed.fiatPerUSD ?? {}) },
-      message: parsed.message,
+      messageKey: parsed.messageKey,
       source: parsed.source || "system-default",
       status: parsed.status === "live" || parsed.status === "partial" || parsed.status === "fallback" ? parsed.status : "fallback",
       syncedAt: Number(parsed.syncedAt) || Number(parsed.updatedAt) || nowSeconds(),

@@ -2,7 +2,6 @@ export type OrderStatus = "pending" | "paid" | "expired" | "invalid";
 export type NotifyStatus = "pending" | "done" | "retry" | "failed";
 
 export interface PaymentSnapshot {
-  account?: string;
   address?: string;
   amount: number;
   currency: string;

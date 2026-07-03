@@ -5,15 +5,17 @@ import { getConfig, now } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { confirmLoginPin } from "@/server/services/auth/pin";
 import { createTelegramOrder } from "@/server/services/orders/create";
-import { checkOrderPayment, checkoutData, selectTelegramOrderPaymentByNetwork } from "@/server/services/orders/checkout";
+import { checkOrderPayment, checkoutData, selectTelegramPayment } from "@/server/services/orders/checkout";
 import { getOrder } from "@/server/services/orders/repository";
 import { botToken } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
 import { assetLabel, networkLabel, normalizePaymentAsset } from "@/shared/payments";
 import { paymentExplorerUrl } from "@/server/payments/driver";
+import { normalizeLocale, t, type Locale } from "@/shared/i18n";
+import { ceilAmount } from "@/shared/amount";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import type { Order } from "@/server/services/orders/repository";
-import type { AppEnv, HonoEnv } from "@/shared/types/env";
+import type { AppEnv, HonoEnv } from "@/server/types/env";
 
 type TelegramPaymentOption = {
   amount: number;
@@ -33,16 +35,18 @@ export async function createBot(env: AppEnv) {
   });
 
   bot.command("start", async (ctx) => {
+    const locale = telegramLocale(ctx);
     const adminId = Number(await getConfig(env, "admin_id"));
     if (!adminId || ctx.from?.id !== adminId) return;
     const domain = await getConfig(env, "domain");
     if (!domain) return;
-    await ctx.reply("欢迎使用 HashPay。", {
-      reply_markup: new InlineKeyboard().webApp("访问小程序", `${domain.replace(/\/$/, "")}/admin`),
+    await ctx.reply(t(locale, "telegram.start"), {
+      reply_markup: new InlineKeyboard().webApp(t(locale, "telegram.open_app"), `${domain.replace(/\/$/, "")}/admin`),
     });
   });
 
   bot.command("login", async (ctx) => {
+    const locale = telegramLocale(ctx);
     const adminId = Number(await getConfig(env, "admin_id"));
     if (!adminId || ctx.from?.id !== adminId) return;
     const pin = typeof ctx.match === "string" ? ctx.match.trim() : "";
@@ -54,59 +58,64 @@ export async function createBot(env: AppEnv) {
         username: ctx.from.username,
       });
     } catch {
-      await ctx.reply("登录 PIN 无效或已过期。");
+      await ctx.reply(t(locale, "telegram.login_invalid"));
       return;
     }
-    await ctx.reply(`✅ ${new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}\n已确认你的登录，请返回浏览器继续。`);
+    await ctx.reply(t(locale, "telegram.login_confirmed", { time: formatInlineTime(Date.now() / 1000, locale) }));
   });
 
   bot.callbackQuery(/^check:(.+)$/, async (ctx) => {
+    const locale = telegramLocale(ctx);
     const orderId = ctx.match[1];
-    await answerCallback(ctx, "正在检查付款");
+    await answerCallback(ctx, t(locale, "telegram.checking"));
     try {
       const snapshot = await checkOrderPayment(env, orderId);
-      await editPaidPaymentMessage(ctx, env, renderPaidPaymentText(orderId, snapshot));
+      await editPaidPaymentMessage(ctx, env, renderPaidPaymentText(orderId, snapshot, locale));
     } catch (error) {
-      await refreshReviewKeyboardIfNeeded(ctx, env, orderId);
-      await answerCallback(ctx, { show_alert: true, text: "付款未被确认。请稍等" });
+      await refreshReviewKeyboardIfNeeded(ctx, env, orderId, locale);
+      await answerCallback(ctx, { show_alert: true, text: t(locale, "telegram.not_confirmed") });
     }
   });
 
   bot.callbackQuery(/^review:(.+)$/, async (ctx) => {
+    const locale = telegramLocale(ctx);
     await answerCallback(ctx, {
       show_alert: true,
-      text: "请打开订单页面，上传付款截图并填写说明，管理员会进行审核。",
+      text: t(locale, "telegram.review_hint"),
     });
   });
 
   bot.callbackQuery(/^payways:(.+)$/, async (ctx) => {
+    const locale = telegramLocale(ctx);
     const orderId = ctx.match[1];
     const checkout = await checkoutData(env, orderId);
     if (checkout.options.length === 0) {
-      await editPaymentMessage(ctx, "暂无可用收款通道，请先在后台启用收款通道。");
+      await editPaymentMessage(ctx, t(locale, "telegram.no_channels"));
       await answerCallback(ctx);
       return;
     }
-    await editMenuMessage(ctx, env, renderPaymentMenuText(checkout.order), renderAssetMenu(orderId, checkout.options));
+    await editMenuMessage(ctx, env, renderPaymentMenuText(checkout.order, locale), renderAssetMenu(orderId, checkout.options));
     await answerCallback(ctx);
   });
 
   bot.callbackQuery(/^payasset:([^:]+):([A-Za-z0-9_-]+)$/, async (ctx) => {
+    const locale = telegramLocale(ctx);
     const [, orderId, asset] = ctx.match;
     const checkout = await checkoutData(env, orderId);
-    await editMenuMessage(ctx, env, renderNetworkMenuText(checkout.order, checkout.options, asset), renderNetworkMenu(orderId, checkout.options, asset));
+    await editMenuMessage(ctx, env, renderNetworkMenuText(checkout.order, checkout.options, asset, locale), renderNetworkMenu(orderId, checkout.options, asset, locale));
     await answerCallback(ctx);
   });
 
   bot.callbackQuery(/^paynet:([^:]+):([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)$/, async (ctx) => {
+    const locale = telegramLocale(ctx);
     const [, orderId, asset, network] = ctx.match;
     try {
-      const snapshot = await selectTelegramOrderPaymentByNetwork(env, orderId, asset, network);
+      const snapshot = await selectTelegramPayment(env, orderId, asset, network);
       const order = await getOrder(env, orderId);
-      await editSelectedPaymentMessage(ctx, env, orderId, renderPaymentSnapshotText(order, snapshot), await renderSelectedPaymentKeyboard(env, order), snapshot);
-      await answerCallback(ctx, "已选择收款网络");
+      await editSelectedPaymentMessage(ctx, env, orderId, renderPaymentSnapshotText(order, snapshot, locale), await renderSelectedPaymentKeyboard(env, order, locale), snapshot);
+      await answerCallback(ctx, t(locale, "telegram.network_selected"));
     } catch (error) {
-      await answerCallback(ctx, { show_alert: true, text: telegramPaymentErrorText(error) });
+      await answerCallback(ctx, { show_alert: true, text: telegramPaymentErrorText(error, locale) });
     }
   });
 
@@ -115,14 +124,15 @@ export async function createBot(env: AppEnv) {
   });
 
   bot.on("inline_query", async (ctx) => {
+    const locale = normalizeLocale(ctx.inlineQuery.from.language_code);
     const adminId = Number(await getConfig(env, "admin_id"));
     const from = ctx.inlineQuery.from;
     console.log("telegram:inline_query", { from: from.id, query: ctx.inlineQuery.query });
     if (!adminId || from.id !== adminId) {
       await ctx.answerInlineQuery([{
         id: "forbidden",
-        input_message_content: { message_text: "当前账号无权创建 HashPay 收款。" },
-        title: "仅管理员可用",
+        input_message_content: { message_text: t(locale, "telegram.forbidden") },
+        title: t(locale, "telegram.admin_only"),
         type: "article",
       }], { cache_time: 1, is_personal: true });
       return;
@@ -130,22 +140,22 @@ export async function createBot(env: AppEnv) {
     const parsed = parseInlinePaymentQuery(ctx.inlineQuery.query);
     if (!parsed) {
       await ctx.answerInlineQuery([{
-        description: "例如：20 / 20 USDT / 20 CNY",
+        description: t(locale, "telegram.inline_help_desc"),
         id: "help",
-        input_message_content: { message_text: "请输入收款金额，例如：20、20 USDT、20 CNY。" },
-        title: "输入金额创建收款",
+        input_message_content: { message_text: t(locale, "telegram.inline_help_text") },
+        title: t(locale, "telegram.inline_help_title"),
         type: "article",
       }], { cache_time: 1, is_personal: true });
       return;
     }
     const resultId = `pay:${parsed.amount}:${parsed.currency}:${Date.now().toString(36)}`;
-    const title = `发起收款 ${formatInlineAmount(parsed.amount)} ${assetLabel(parsed.currency)}`;
-    const pendingText = `⏳ 正在创建收款订单：${formatInlineAmount(parsed.amount)} ${assetLabel(parsed.currency)}`;
+    const title = t(locale, "telegram.inline_title", { amount: formatInlineAmount(parsed.amount), asset: assetLabel(parsed.currency) });
+    const pendingText = t(locale, "telegram.inline_pending", { amount: formatInlineAmount(parsed.amount), asset: assetLabel(parsed.currency) });
     await ctx.answerInlineQuery([{
-      description: "发送后自动创建收款订单",
+      description: t(locale, "telegram.inline_desc"),
       id: resultId,
       input_message_content: { message_text: pendingText },
-      reply_markup: new InlineKeyboard().text("创建中…", "noop"),
+      reply_markup: new InlineKeyboard().text(t(locale, "telegram.creating"), "noop"),
       title,
       type: "article",
     }], { cache_time: 1, is_personal: true });
@@ -153,6 +163,7 @@ export async function createBot(env: AppEnv) {
 
   bot.on("chosen_inline_result", async (ctx) => {
     const result = ctx.chosenInlineResult;
+    const locale = normalizeLocale(result?.from.language_code);
     const adminId = Number(await getConfig(env, "admin_id"));
     console.log("telegram:chosen_inline_result", {
       from: result?.from.id,
@@ -165,36 +176,37 @@ export async function createBot(env: AppEnv) {
     const { order } = await createTelegramOrder(env, {
       amount: parsed.amount,
       currency: parsed.currency,
-      description: "Telegram 内收款",
+      description: t(locale, "telegram.inline_order_desc"),
       orderNo: `inline:${result.inline_message_id}`,
     });
     const checkout = await checkoutData(env, order.id);
     if (checkout.options.length === 0) {
-      await editInlinePaymentMessage(ctx, env, result.inline_message_id, "暂无可用收款通道，请先在后台启用收款通道。");
+      await editInlinePaymentMessage(ctx, env, result.inline_message_id, t(locale, "telegram.no_channels"));
       return;
     }
-    await editInlinePaymentMessage(ctx, env, result.inline_message_id, renderPaymentMenuText(order), renderAssetMenu(order.id, checkout.options));
+    await editInlinePaymentMessage(ctx, env, result.inline_message_id, renderPaymentMenuText(order, locale), renderAssetMenu(order.id, checkout.options));
   });
 
   bot.on("message:text", async (ctx) => {
+    const locale = telegramLocale(ctx);
     const text = ctx.message.text.trim();
     const match = /^\/pay\s+([0-9.]+)\s*([A-Za-z]*)/.exec(text);
     if (!match) {
-      await ctx.reply("发送 /pay 10 USDT 创建一笔 Telegram 收款。");
+      await ctx.reply(t(locale, "telegram.message_help"));
       return;
     }
     const { order } = await createTelegramOrder(env, {
       amount: Number(match[1]),
       currency: match[2] || "USDT",
-      description: "Telegram 机器人收款",
+      description: t(locale, "telegram.bot_order_desc"),
       orderNo: `message:${ctx.chat.id}:${ctx.message.message_id}`,
     });
     const checkout = await checkoutData(env, order.id);
     if (checkout.options.length === 0) {
-      await ctx.reply("暂无可用收款通道，请先在后台启用收款通道。");
+      await ctx.reply(t(locale, "telegram.no_channels"));
       return;
     }
-    await replyPaymentMessage(ctx, env, renderPaymentMenuText(order), renderAssetMenu(order.id, checkout.options));
+    await replyPaymentMessage(ctx, env, renderPaymentMenuText(order, locale), renderAssetMenu(order.id, checkout.options));
   });
 
   return bot;
@@ -223,15 +235,11 @@ function parseInlineResultId(resultId: string) {
 }
 
 function formatInlineAmount(amount: number) {
-  return ceilDisplayAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+  return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 }
 
-function ceilDisplayAmount(amount: number) {
-  return Math.ceil((amount - Number.EPSILON) * 100) / 100;
-}
-
-function renderPaymentMenuText(order: { amount: number; currency: string }) {
-  return `💰 向你收款 ${formatInlineAmount(order.amount)} ${assetLabel(order.currency)}\n\n你想通过什么资产进行支付？`;
+function renderPaymentMenuText(order: { amount: number; currency: string }, locale: Locale) {
+  return t(locale, "telegram.payment_menu", { amount: formatInlineAmount(order.amount), asset: assetLabel(order.currency) });
 }
 
 function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
@@ -242,13 +250,18 @@ function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
   return keyboard;
 }
 
-function renderNetworkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string) {
+function renderNetworkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale) {
   const targetAsset = normalizePaymentAsset(asset);
   const payAmount = options.find((option) => normalizePaymentAsset(option.asset) === targetAsset)?.amount ?? order.amount;
-  return `💰 向你收款 ${formatInlineAmount(order.amount)} ${assetLabel(order.currency)}\n\n将支付 ${formatInlineAmount(payAmount)} ${assetLabel(asset)}。\n你想通过什么网络进行支付？`;
+  return t(locale, "telegram.network_menu", {
+    amount: formatInlineAmount(order.amount),
+    asset: assetLabel(order.currency),
+    payAmount: formatInlineAmount(payAmount),
+    payAsset: assetLabel(asset),
+  });
 }
 
-function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], asset: string) {
+function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
   const keyboard = new InlineKeyboard();
   const targetAsset = normalizePaymentAsset(asset);
   const networks = [...new Set(
@@ -256,11 +269,11 @@ function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], as
       .filter((option) => normalizePaymentAsset(option.asset) === targetAsset)
       .map((option) => option.network.trim().toLowerCase())
       .filter(Boolean),
-  )].sort((a, b) => networkLabel(a).localeCompare(networkLabel(b)));
+  )].sort((a, b) => t(locale, networkLabel(a)).localeCompare(t(locale, networkLabel(b))));
   for (const network of networks) {
-    keyboard.text(networkLabel(network), `paynet:${orderId}:${targetAsset}:${network}`).row();
+    keyboard.text(t(locale, networkLabel(network)), `paynet:${orderId}:${targetAsset}:${network}`).row();
   }
-  keyboard.text("重新选择资产", `payways:${orderId}`);
+  keyboard.text(t(locale, "telegram.reselect_asset"), `payways:${orderId}`);
   return keyboard;
 }
 
@@ -268,25 +281,25 @@ function paymentAssets(options: TelegramPaymentOption[]) {
   return [...new Set(options.map((option) => normalizePaymentAsset(option.asset)).filter(Boolean))].sort();
 }
 
-async function renderSelectedPaymentKeyboard(env: AppEnv, order: Pick<Order, "createdAt" | "expireAt" | "id">) {
+async function renderSelectedPaymentKeyboard(env: AppEnv, order: Pick<Order, "createdAt" | "expireAt" | "id">, locale: Locale) {
   const keyboard = new InlineKeyboard()
-    .text("我已完成付款", `check:${order.id}`)
+    .text(t(locale, "telegram.done_button"), `check:${order.id}`)
     .row();
   if (shouldShowReviewButton(order)) {
-    keyboard.text("已付款，仍未到账", `review:${order.id}`).row();
+    keyboard.text(t(locale, "telegram.review_button"), `review:${order.id}`).row();
     const url = await checkoutUrl(env, order.id);
-    if (url) keyboard.url("检查付款信息", url).row();
+    if (url) keyboard.url(t(locale, "telegram.review_link"), url).row();
   }
-  return keyboard.text("更换资产", `payways:${order.id}`);
+  return keyboard.text(t(locale, "telegram.change_asset"), `payways:${order.id}`);
 }
 
-async function refreshReviewKeyboardIfNeeded(ctx: GrammyContext, env: AppEnv, orderId: string) {
+async function refreshReviewKeyboardIfNeeded(ctx: GrammyContext, env: AppEnv, orderId: string, locale: Locale) {
   try {
     const order = await getOrder(env, orderId);
     if (!shouldShowReviewButton(order)) return;
     const snapshot = orderPaymentSnapshot(order.payment);
     if (!snapshot.driver) return;
-    await editPaymentMessage(ctx, renderPaymentSnapshotText(order, snapshot), await renderSelectedPaymentKeyboard(env, order));
+    await editPaymentMessage(ctx, renderPaymentSnapshotText(order, snapshot, locale), await renderSelectedPaymentKeyboard(env, order, locale));
   } catch (error) {
     console.warn("telegram:review_keyboard_refresh_failed", error);
   }
@@ -312,52 +325,33 @@ function orderPaymentSnapshot(raw: string) {
   }
 }
 
-function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot) {
+function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, locale: Locale) {
   const tx = snapshot.tx!;
   const lines = [
-    "✅ 谢谢，已收到付款。",
+    t(locale, "telegram.paid"),
     "",
-    "订单号：",
+    t(locale, "telegram.order_id"),
     `<pre>${escapeHtml(orderId)}</pre>`,
   ];
   const url = paymentExplorerUrl(snapshot.network, tx.txid);
-  if (url) lines.push(`<a href="${escapeHtml(url)}">查看交易详细</a>`);
+  if (url) lines.push(`<a href="${escapeHtml(url)}">${escapeHtml(t(locale, "telegram.tx_link"))}</a>`);
   return lines.join("\n");
 }
 
-function renderPaymentSnapshotText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot) {
-  return snapshot.address ? renderChainPaymentText(order, snapshot) : renderAccountPaymentText(order, snapshot);
-}
-
-function renderChainPaymentText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot) {
+function renderPaymentSnapshotText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot, locale: Locale) {
   return [
-    `请通过 ${escapeHtml(networkLabel(snapshot.network))} 网络，发送 ${escapeHtml(assetLabel(snapshot.currency))}`,
-    "网络或资产不符将无法确认充值，且可能会丢失资金。",
+    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.network)), asset: assetLabel(snapshot.currency) })),
+    escapeHtml(t(locale, "telegram.network_warning")),
     "",
-    `收款地址，可使用 App 扫码：\n<pre>${escapeHtml(snapshot.address ?? "")}</pre>`,
-    `应到账金额；必须完全一致，请勿多付：\n<pre>${escapeHtml(formatInlineAmount(snapshot.amount))}</pre>`,
-    `遇到问题？您可提供此订单号：\n<pre>${escapeHtml(order.id)}</pre>`,
-    `在此时间前完成支付，超时请勿继续付款：\n<pre>${escapeHtml(formatInlineTime(order.expireAt))}</pre>`,
+    t(locale, "telegram.address", { address: escapeHtml(snapshot.address ?? "") }),
+    t(locale, "telegram.amount_due", { amount: escapeHtml(formatInlineAmount(snapshot.amount)) }),
+    t(locale, "telegram.problem_order", { orderId: escapeHtml(order.id) }),
+    t(locale, "telegram.deadline", { time: escapeHtml(formatInlineTime(order.expireAt, locale)) }),
   ].join("\n");
 }
 
-function renderAccountPaymentText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot) {
-  const lines = [
-    `请通过 ${escapeHtml(networkLabel(snapshot.network))} 转账 ${escapeHtml(assetLabel(snapshot.currency))}`,
-    "请核对收款账户和金额完全一致。",
-    "",
-  ];
-  if (snapshot.account) lines.push(`收款账户：\n<pre>${escapeHtml(snapshot.account)}</pre>`);
-  lines.push(
-    `应到账金额；必须完全一致，请勿多付：\n<pre>${escapeHtml(formatInlineAmount(snapshot.amount))}</pre>`,
-    `遇到问题？您可提供此订单号：\n<pre>${escapeHtml(order.id)}</pre>`,
-    `在此时间前完成支付，超时请勿继续付款：\n<pre>${escapeHtml(formatInlineTime(order.expireAt))}</pre>`,
-  );
-  return lines.join("\n");
-}
-
-function formatInlineTime(timestamp: number) {
-  return new Date(timestamp * 1000).toLocaleString("zh-CN", {
+function formatInlineTime(timestamp: number, locale: Locale) {
+  return new Date(timestamp * 1000).toLocaleString(locale, {
     day: "2-digit",
     hour: "2-digit",
     hour12: false,
@@ -377,12 +371,16 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-function telegramPaymentErrorText(error: unknown) {
-  if (error instanceof AppError && error.code === "order_paid") return "订单已支付";
-  if (error instanceof AppError && error.code === "order_unavailable") return "订单已失效";
-  if (error instanceof AppError && error.code === "payment_network_unavailable") return "当前网络不可用";
-  if (error instanceof AppError && error.code === "payment_disabled") return "当前收款通道不可用";
-  return "当前收款方式不可用";
+function telegramPaymentErrorText(error: unknown, locale: Locale) {
+  if (error instanceof AppError && error.key === "errors.order_paid") return t(locale, "telegram.error.order_paid");
+  if (error instanceof AppError && error.key === "errors.order_unavailable") return t(locale, "telegram.error.order_unavailable");
+  if (error instanceof AppError && error.key === "errors.payment_network_unavailable") return t(locale, "telegram.error.network_unavailable");
+  if (error instanceof AppError && error.key === "errors.payment_disabled") return t(locale, "telegram.error.payment_disabled");
+  return t(locale, "telegram.error.payment_unavailable");
+}
+
+function telegramLocale(ctx: GrammyContext) {
+  return normalizeLocale(ctx.from?.language_code);
 }
 
 async function answerCallback(ctx: GrammyContext, options?: string | { show_alert?: boolean; text?: string }) {
@@ -561,7 +559,7 @@ async function orderQrUrl(env: AppEnv, orderId: string, snapshot: PaymentSnapsho
 export async function handleTelegramWebhook(c: Context<HonoEnv>) {
   const secret = c.req.param("secret");
   const expected = await getConfig(c.env, "bot_secret");
-  if (!expected || secret !== expected) throw new AppError(404, "webhook_not_found", "Webhook is not found");
+  if (!expected || secret !== expected) throw new AppError(404, "errors.webhook_not_found");
   const bot = await createBot(c.env);
   return webhookCallback(bot, "hono")(c);
 }

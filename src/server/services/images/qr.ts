@@ -2,7 +2,7 @@ import QRCode from "qrcode";
 import { jsonParseObject } from "@/server/db";
 import { getOrder } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export async function orderQrPng(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);

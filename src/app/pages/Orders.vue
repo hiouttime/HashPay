@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, watch } from "vue";
 import { useMessage } from "naive-ui";
-import OrderDetailModal from "@/app/components/OrderDetailModal.vue";
+import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
 import TestOrderButton from "@/app/components/TestOrderButton.vue";
 import { api } from "@/app/api";
+import { useI18n } from "@/app/i18n";
 
 const message = useMessage();
+const { t } = useI18n();
 
 const view = reactive({
   detail: null as string | null,
@@ -20,13 +22,13 @@ const view = reactive({
   total: 0,
 });
 
-const statuses = [
-  { label: "全部", value: "all" },
-  { label: "待支付", value: "pending" },
-  { label: "已支付", value: "paid" },
-  { label: "已超时", value: "expired" },
-  { label: "异常", value: "invalid" },
-];
+const statuses = computed(() => [
+  { label: t("common.all"), value: "all" },
+  { label: t("status.pending"), value: "pending" },
+  { label: t("status.paid"), value: "paid" },
+  { label: t("status.expired"), value: "expired" },
+  { label: t("status.invalid"), value: "invalid" },
+]);
 
 const selection = computed(() => {
   const ids = view.items.map((order) => String(order.id));
@@ -72,8 +74,8 @@ async function checkPayments() {
   if (!ids.length) return;
 
   await load(async () => {
-    await Promise.all(ids.map((id) => api.orders.check(id, { silent: true }).catch(() => null)));
-    message.success("批量检查完成");
+    await Promise.all(ids.map((id) => api.silent.orders.check(id).catch(() => null)));
+    message.success(t("orders.batch_checked"));
   });
 }
 
@@ -82,8 +84,8 @@ async function deleteOrders() {
   if (!ids.length) return;
 
   await load(async () => {
-    await Promise.all(ids.map((id) => api.orders.remove(id, { silent: true }).catch(() => null)));
-    message.success("已删除所选订单");
+    await Promise.all(ids.map((id) => api.silent.orders.remove(id).catch(() => null)));
+    message.success(t("orders.batch_deleted"));
     view.selected = view.selected.filter((id) => !ids.includes(id));
   });
 }
@@ -133,28 +135,28 @@ onMounted(load);
 <template>
   <div class="orders-view grid">
     <div class="section-title">
-      <h2>订单</h2>
+      <h2>{{ t('orders.title') }}</h2>
       <div class="topbar-actions">
         <TestOrderButton v-model:loading="view.loading" />
-        <n-button :loading="view.loading" @click="load()">刷新</n-button>
+        <n-button :loading="view.loading" @click="load()">{{ t('common.refresh') }}</n-button>
       </div>
     </div>
     <section class="orders-workbench">
       <div class="orders-toolbar">
         <n-segmented v-model:value="view.status" :options="statuses" />
-        <n-input v-model:value="view.query" clearable placeholder="搜索订单号/付款地址/交易哈希" />
+        <n-input v-model:value="view.query" clearable :placeholder="t('orders.search')" />
       </div>
       <div class="orders-bulkbar">
-        <span>{{ view.selected.length ? `已选择 ${view.selected.length} 个订单` : `共 ${view.total} 个订单` }}</span>
+        <span>{{ view.selected.length ? t('orders.selected', { count: view.selected.length }) : t('orders.total', { count: view.total }) }}</span>
         <div v-if="view.selected.length" class="orders-bulk-actions">
-          <n-button :disabled="!selection.pending.length" :loading="view.loading" size="small" @click="checkPayments">检查付款</n-button>
+          <n-button :disabled="!selection.pending.length" :loading="view.loading" size="small" @click="checkPayments">{{ t('orders.check_payment') }}</n-button>
           <n-popconfirm @positive-click="deleteOrders">
             <template #trigger>
-              <n-button :loading="view.loading" size="small" tertiary type="error">删除所选</n-button>
+              <n-button :loading="view.loading" size="small" tertiary type="error">{{ t('orders.delete_selected') }}</n-button>
             </template>
-            删除后不可恢复，同时会删除相关回调记录。
+            {{ t('orders.delete_selected_warning') }}
           </n-popconfirm>
-          <n-button size="small" quaternary @click="view.selected = []">清空选择</n-button>
+          <n-button size="small" quaternary @click="view.selected = []">{{ t('orders.clear_selection') }}</n-button>
         </div>
       </div>
 
@@ -168,11 +170,11 @@ onMounted(load);
               @update:checked="select(selection.ids, $event)"
             />
           </span>
-          <span>订单</span>
-          <span>状态</span>
-          <span>金额</span>
-          <span>收款方式</span>
-          <span>创建时间</span>
+          <span>{{ t('orders.column.order') }}</span>
+          <span>{{ t('orders.column.status') }}</span>
+          <span>{{ t('orders.column.amount') }}</span>
+          <span>{{ t('orders.column.payment') }}</span>
+          <span>{{ t('orders.column.created_at') }}</span>
         </div>
         <template v-if="view.loading">
           <div v-for="item in 6" :key="item" class="order-row order-row--skeleton" aria-hidden="true">
@@ -200,7 +202,7 @@ onMounted(load);
           </div>
         </template>
         <div v-else-if="!view.items.length" class="orders-table-empty">
-          <n-empty description="暂无订单" />
+          <n-empty :description="t('orders.empty')" />
         </div>
         <template v-else>
           <OrderRow
@@ -215,7 +217,7 @@ onMounted(load);
         </template>
       </div>
       <div v-if="view.total" class="orders-pagination">
-        <span>共 {{ view.total }} 个订单</span>
+        <span>{{ t('orders.total', { count: view.total }) }}</span>
         <n-pagination
           v-model:page="view.page"
           v-model:page-size="view.pageSize"
@@ -226,7 +228,7 @@ onMounted(load);
       </div>
     </section>
 
-    <OrderDetailModal
+    <OrderModal
       v-model:show="detailOpen"
       :order-id="view.detail"
       @changed="load()"

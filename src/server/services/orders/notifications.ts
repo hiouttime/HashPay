@@ -1,7 +1,7 @@
 import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { getOrder, listPendingPaymentOrders } from "@/server/services/orders/repository";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export async function createNotify(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
@@ -22,8 +22,8 @@ export async function createNotify(env: AppEnv, orderId: string) {
 
 export async function resendOrderNotify(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
-  if (order.status !== "paid") throw new AppError(400, "order_not_paid", "Order is not paid");
-  if (!order.callback) throw new AppError(400, "callback_missing", "Callback is missing");
+  if (order.status !== "paid") throw new AppError(400, "errors.order_not_paid");
+  if (!order.callback) throw new AppError(400, "errors.callback_missing");
   return { notifyId: await createNotify(env, orderId) };
 }
 

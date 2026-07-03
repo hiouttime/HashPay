@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useMessage } from "naive-ui";
+import { useI18n } from "@/app/i18n";
 import { useSessionLogin } from "@/app/utils/session-login";
 
-defineProps<{
-  botUsername?: string | null;
+const props = defineProps<{
+  username: string;
 }>();
 
 const emit = defineEmits<{
@@ -11,7 +13,9 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
-const { botStartUrl, command, commandWrap, copyCommand, status } = useSessionLogin({
+const { t } = useI18n();
+const botUrl = computed(() => `https://t.me/${props.username}?start=hashpay`);
+const { command, copyCommand, status } = useSessionLogin({
   message,
   onAuthenticated: () => emit("authenticated"),
 });
@@ -19,26 +23,25 @@ const { botStartUrl, command, commandWrap, copyCommand, status } = useSessionLog
 
 <template>
   <section class="panel grid login-panel">
-    <div class="section-title"><h2>欢迎</h2></div>
+    <div class="section-title"><h2>{{ t('login.title') }}</h2></div>
     <div class="grid">
       <p class="muted">
-        在
-        <a v-if="botUsername" class="text-link" :href="botStartUrl(botUsername)" target="_blank" rel="noreferrer">@{{ botUsername }}</a>
-        <span v-else>Telegram 机器人</span>
-        中发送以下指令以完成登录。
+        {{ t('login.in_bot') }}
+        <a class="text-link" :href="botUrl" target="_blank" rel="noreferrer">@{{ username }}</a>
+        {{ t('login.send_command') }}
       </p>
       <div ref="commandWrap">
         <n-input-group>
           <n-input v-model:value="command" readonly />
-          <n-button :disabled="!command" type="primary" @click="copyCommand">复制</n-button>
+          <n-button :disabled="!command" type="primary" @click="copyCommand">{{ t('common.copy') }}</n-button>
         </n-input-group>
       </div>
       <p class="muted">{{ status }}</p>
-      <div v-if="botUsername" class="login-divider"><span>或</span></div>
-      <div v-if="botUsername" class="grid">
-        <p class="muted">使用管理员 Telegram 账号</p>
-        <a :href="botStartUrl(botUsername)" target="_blank" rel="noreferrer">
-          <n-button block secondary type="primary">访问小程序</n-button>
+      <div class="login-divider"><span>{{ t('login.or') }}</span></div>
+      <div class="grid">
+        <p class="muted">{{ t('login.use_admin') }}</p>
+        <a :href="botUrl" target="_blank" rel="noreferrer">
+          <n-button block secondary type="primary">{{ t('login.open_miniapp') }}</n-button>
         </a>
       </div>
     </div>

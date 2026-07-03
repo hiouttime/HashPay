@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appState } from "@/server/services/app";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,7 +57,7 @@ describe("app state", () => {
     const status = await appState(createEnv(configs), "https://hashpay.test/admin");
 
     expect(status.installed).toBe(true);
-    expect(status.botUsername).toBe("HashPayBot");
+    expect(status.username).toBe("HashPayBot");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -74,7 +74,7 @@ describe("app state", () => {
 
     const status = await appState(createEnv(configs), "https://hashpay.test/admin");
 
-    expect(status.botUsername).toBe("FreshHashPayBot");
+    expect(status.username).toBe("FreshHashPayBot");
     expect(configs.get("bot_username")).toBe("FreshHashPayBot");
     expect(fetch).toHaveBeenCalledTimes(1);
   });

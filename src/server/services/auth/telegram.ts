@@ -1,6 +1,6 @@
 import { AppError } from "@/server/http/api";
 import { bytesToHex, timingSafeEqualString } from "@/server/utils/crypto";
-import type { TelegramUser } from "@/shared/types/env";
+import type { TelegramUser } from "@/server/types/env";
 
 const encoder = new TextEncoder();
 
@@ -22,7 +22,7 @@ async function hmacSha256(key: ArrayBuffer | Uint8Array, value: string) {
 export async function validateWebAppInitData(initData: string, token: string): Promise<TelegramUser> {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) throw new AppError(401, "telegram_hash_missing", "Telegram hash is missing");
+  if (!hash) throw new AppError(401, "errors.telegram_hash_missing");
   params.delete("hash");
 
   const pairs = Array.from(params.entries())
@@ -31,18 +31,18 @@ export async function validateWebAppInitData(initData: string, token: string): P
   const secret = await hmacSha256(encoder.encode("WebAppData"), token);
   const expected = bytesToHex(await hmacSha256(secret, pairs.join("\n")));
   if (!timingSafeEqualString(expected, hash)) {
-    throw new AppError(401, "telegram_hash_invalid", "Telegram auth is invalid");
+    throw new AppError(401, "errors.telegram_hash_invalid");
   }
 
   const authDate = Number(params.get("auth_date") ?? "0");
   if (!Number.isFinite(authDate) || Date.now() / 1000 - authDate > 86400) {
-    throw new AppError(401, "telegram_auth_expired", "Telegram auth is expired");
+    throw new AppError(401, "errors.telegram_auth_expired");
   }
   const userRaw = params.get("user");
-  if (!userRaw) throw new AppError(401, "telegram_user_missing", "Telegram user is missing");
+  if (!userRaw) throw new AppError(401, "errors.telegram_user_missing");
   const user = JSON.parse(userRaw) as Record<string, unknown>;
   const id = Number(user.id);
-  if (!Number.isFinite(id)) throw new AppError(401, "telegram_user_invalid", "Telegram user is invalid");
+  if (!Number.isFinite(id)) throw new AppError(401, "errors.telegram_user_invalid");
   return {
     firstName: typeof user.first_name === "string" ? user.first_name : undefined,
     id,

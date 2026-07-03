@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import admin from "@/server/http/routes/admin";
 import auth from "@/server/http/routes/auth";
 import publicRoutes from "@/server/http/routes/public";
-import type { HonoEnv } from "@/shared/types/env";
+import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
 

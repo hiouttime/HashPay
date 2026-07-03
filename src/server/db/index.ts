@@ -1,4 +1,4 @@
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export type D1Param = string | number | boolean | null | ArrayBuffer;
 

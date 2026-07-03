@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as payment from "@/app/payments";
+import { canProbeInBrowser } from "@/app/payments/browser";
 
 describe("frontend payment module", () => {
   it("keeps asset display helpers frontend-only", () => {
@@ -33,7 +34,7 @@ describe("frontend payment module", () => {
   it("exposes per-network frontend abilities", () => {
     expect(payment.txUrl({ network: "trc20", tx: { txid: "abc" } })).toBe("https://nile.tronscan.org/#/transaction/abc");
     expect(payment.txUrl({ network: "ton", tx: { txid: "abc" } })).toBe("");
-    expect(payment.canProbeInBrowser({ address: "TAddress", network: "trc20" })).toBe(true);
-    expect(payment.canProbeInBrowser({ address: "EQAddress", network: "ton" })).toBe(false);
+    expect(canProbeInBrowser({ address: "TAddress", driver: "trc20" })).toBe(true);
+    expect(canProbeInBrowser({ address: "EQAddress", driver: "ton" })).toBe(false);
   });
 });

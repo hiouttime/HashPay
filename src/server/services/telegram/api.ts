@@ -1,9 +1,9 @@
 import { getConfig, setConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export function botToken(env: AppEnv) {
-  if (!env.TGBOT_TOKEN) throw new AppError(500, "bot_token_missing", "未配置环境变量 TGBOT_TOKEN");
+  if (!env.TGBOT_TOKEN) throw new AppError(500, "errors.bot_token_missing");
   return env.TGBOT_TOKEN;
 }
 
@@ -11,7 +11,7 @@ export async function getBotInfo(env: AppEnv) {
   const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/getMe`);
   const payload = (await response.json()) as { description?: string; ok: boolean; result?: { username?: string } };
   const username = payload.result?.username;
-  if (!payload.ok || !username) throw new AppError(500, "bot_token_invalid", "TGBOT_TOKEN 无效");
+  if (!payload.ok || !username) throw new AppError(500, "errors.bot_token_invalid");
   return { ...payload.result, username };
 }
 
@@ -29,19 +29,19 @@ export async function setupWebhook(env: AppEnv, domain: string, secret: string) 
     method: "POST",
   });
   const payload = (await response.json()) as { description?: string; ok: boolean };
-  if (!payload.ok) throw new AppError(400, "webhook_setup_failed", payload.description ?? "Webhook setup failed");
+  if (!payload.ok) throw new AppError(400, "errors.webhook_setup_failed");
   return url;
 }
 
 export async function configureBotMiniApp(env: AppEnv) {
   const domain = await getConfig(env, "domain");
-  if (!domain) throw new AppError(400, "domain_missing", "站点地址未配置");
+  if (!domain) throw new AppError(400, "errors.domain_missing");
   const secret = await getConfig(env, "bot_secret");
   const url = `${domain.replace(/\/$/, "")}/admin`;
   const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/setChatMenuButton`, {
     body: JSON.stringify({
       menu_button: {
-        text: "访问小程序",
+        text: "Open HashPay",
         type: "web_app",
         web_app: { url },
       },
@@ -50,6 +50,6 @@ export async function configureBotMiniApp(env: AppEnv) {
     method: "POST",
   });
   const payload = (await response.json()) as { description?: string; ok: boolean };
-  if (!payload.ok) throw new AppError(400, "miniapp_setup_failed", payload.description ?? "Mini App 配置失败");
+  if (!payload.ok) throw new AppError(400, "errors.miniapp_setup_failed");
   if (secret) await setupWebhook(env, domain, secret);
 }

@@ -1,0 +1,303 @@
+# AGENTS.md
+
+本文件帮助快速理解 HashPay 的项目结构、运行原理和开发约定。
+修改代码需严格遵守。
+
+## 项目概述
+
+HashPay 是一个运行在 Cloudflare Workers 环境上的加密货币收款系统，项目同时包含后端 Worker 服务和 Vue 管理/收银台前端。
+
+主要能力包括：
+
+- 管理员后台：配置商户、收款通道、订单、系统设置、Banner 和汇率微调。
+- 商户 API：通过 RSA 签名操作API，进行创建订单、查询订单。
+- 收银台：选择资产和网络、展示地址/二维码、浏览器侧辅助查账、超时和支付成功状态处理。
+- Telegram 支持：绑定管理员、Mini App 后台入口、PIN 登录、Bot 内创建收款订单、获得订单通知。
+- 支付检测：支持自动链上检查、API对接、人工确认。
+- 回调通知：订单支付成功后发送回调消息，利用队列系统确保投递稳定。
+
+## 技术栈
+
+- 语言：TypeScript，ESM，严格类型检查。
+- 前端：Vue 3 + Vue Router + Naive UI + Vite + SCSS。
+- 后端：Cloudflare Workers + Hono。
+- 数据库：Cloudflare D1，SQL 迁移文件位于 `src/server/db/d1/migrations/`。
+- Cloudflare：Workers Assets、D1、Queues、Cron Triggers。
+- Telegram：grammY + Telegram Bot API。
+- 测试：Vitest。
+
+## 常用命令
+
+```bash
+npm install
+npm run dev
+npm run dev:worker
+npm run check
+npm run test
+npm run build
+npm run deploy:dry
+npm run cf-typegen
+```
+
+- `npm run dev` 启动 Vite + Cloudflare Vite 插件，本地前端端口见 `vite.config.ts`。
+- `npm run dev:worker` / `npm start` 直接启动 `wrangler dev`，端口见 `wrangler.jsonc`。
+- 修改 Cloudflare bindings 后运行 `npm run cf-typegen`，并同步更新 `src/server/types/env.ts`。
+- 不要提交 `.dev.vars`、真实 Bot Token、APP_SECRET、商户私钥或其他密钥。
+
+## 目录结构
+
+```text
+HashPay/
+├── src/index.ts                         # Worker 入口：fetch、scheduled、queue
+├── src/server/http/                     # Hono 应用、中间件、API envelope、路由
+│   └── routes/                          # public、auth、admin 路由
+├── src/server/services/                 # 后端业务服务
+│   ├── app/                             # 系统状态、设置、汇率、定时任务
+│   ├── auth/                            # Session、Telegram initData、PIN 登录
+│   ├── images/                          # Banner 和订单二维码
+│   ├── merchants/                       # 商户、RSA 密钥、商户签名校验
+│   ├── orders/                          # 建单、收银台、订单管理、通知
+│   └── telegram/                        # Bot API、Webhook、初始化绑定
+├── src/server/payments/                 # 支付通道模型、快照生成、查账驱动
+│   └── providers/                       # 付款渠道的查询实现
+├── src/server/db/                       # D1 helper、配置 helper、迁移执行器
+├── src/server/types/                    # Worker 环境类型和 Hono 变量
+├── src/shared/                          # 前后端共享类型
+├── src/app/                             # Vue 前端应用
+│   ├── api/                             # 前端 API client，复用 shared/types/api.ts
+│   ├── components/                      # 前端组件
+│   ├── pages/                           # 前端页面
+│   ├── payments/                        # 前端支付展示和浏览器查账 helpers
+│   └── styles.scss                      # 全局样式
+├── test/                                # Vitest 单元测试
+├── wrangler.jsonc                       # Cloudflare Workers 配置
+├── vite.config.ts                       # Vite + Cloudflare 插件配置
+└── vitest.config.ts                     # Vitest 配置
+```
+
+## Worker 运行方式
+
+- `src/index.ts` 是唯一 Worker 入口，导出 `fetch`、`scheduled`、`queue`。
+- `fetch` 进入 `createApp()`，Hono 在 `src/server/http/app.ts` 装配中间件、路由和 Assets 回退。
+- API 响应由 `apiEnvelope` 包装为 `{ data: ... }`；错误统一走 `{ error: { code, message } }`。
+- `/api/*` 请求会先执行 `migrateD1(c.env)`，但 `/api/state` 例外；`appState()` 自行尝试迁移并把 DB 错误转成状态字段。
+- 未命中后端路由时回落到 `ASSETS.fetch()`，用于服务 SPA。
+- Cron 每分钟执行 `runScheduledJobs()`：迁移、同步汇率、过期订单、检查待支付 TRON 订单、把到期通知放入队列。
+- Queue 消费 `QUEUE_NOTIFY`，消息体需要包含 `notifyId`，失败时延迟重试。
+
+## Cloudflare 绑定
+
+当前 `wrangler.jsonc` 绑定：
+
+- `ASSETS`：Workers Assets，目录 `dist`，SPA fallback。
+- `DB`：D1 数据库，迁移目录 `src/server/db/d1/migrations`。
+- `QUEUE_NOTIFY`：通知投递队列。
+- Cron：`* * * * *`。
+
+环境变量：
+
+- `APP_SECRET`：JWT Session、PIN 登录挑战签名等服务端签名用途。
+- `TGBOT_TOKEN`：Telegram Bot API。
+
+改动绑定或环境变量时必须同步检查：
+
+- `wrangler.jsonc`
+- `src/server/types/env.ts`
+- 依赖这些字段的服务和测试
+- `npm run cf-typegen` 生成结果
+
+## 数据模型
+
+D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
+
+- `configs`：系统配置、Bot 状态、管理员、Banner blob、汇率缓存等。
+- `merchants`：商户、公钥、回调 URL、状态和类型。
+- `payments`：收款通道、driver、地址/账户、支持资产、凭据和状态。
+- `orders`：订单主体，`merchant_no` 是商户侧幂等单号，`payment` 是支付快照 JSON。
+- `notify`：商户回调任务、重试状态、payload 和错误信息。
+- `d1_migrations`：由迁移执行器自动创建，作为迁移是否已应用的事实来源。
+
+数据库字段使用 snake_case；服务和 API DTO 使用 camelCase。`orders.merchant_no` 对应公开字段 `merchantNo`，不要重新引入旧字段名或兼容分支，除非需求明确要求接入旧外部协议。
+
+## 核心链路
+
+### 初始化
+
+1. 前端 `/setup` 调用 `/api/state` 检查 DB、Queue、Bot。
+2. 环境就绪后，前端提交公网 HTTPS 域名到 `/api/admin/setup`。
+3. `startTelegramSetup()` 写入 domain、bot_secret，刷新 Bot 信息并设置 webhook。
+4. 管理员访问 Bot 并发送任意消息，`bindSetupAdmin()` 写入 `admin_id` 和 `admin_user`。
+5. `/api/admin/setup` 的 GET 在管理员已绑定后签发 Session Cookie，并配置默认 Banner 和 Mini App 菜单。
+
+初始化完成是内部状态变化，不要新增公开 finalize/status 流程，除非需求明确要求。
+
+### 登录
+
+- Telegram Mini App 登录走 `/api/admin/session/telegram`，使用 `validateWebAppInitData()` 校验 initData。
+- 浏览器 PIN 登录走 `/api/admin/session/pin` 创建 challenge，再由管理员在 Bot 中发送 `/login <pin>` 确认。
+- Session Cookie 名称为 `hashpay_session`，JWT 由 `APP_SECRET` 签名，有效期 7 天。
+- Admin 路由在 setup/session 之后统一 `requireAdmin()` 保护。
+
+### 商户 API 和建单
+
+1. 商户请求 `/api/merchant/new`，使用 `X-Merchant-Id`、`X-Signature`、`X-Timestamp`。
+2. 签名原文是 `METHOD\npathname+search\ntimestamp\nbody`。
+3. `requireSignedMerchant()` 校验时间窗口、公钥、商户状态和 RSA-SHA256 签名。
+4. `createMerchantOrder()` 读取 `merchantNo`、金额、币种、callback、return_url。
+5. `createOrder()` 以 `(merchant, merchantNo)` 做幂等，已有订单直接返回 `reused: true`。
+6. 响应包含 `checkoutUrl` 和 `order` 摘要。
+
+### 收银台支付
+
+1. `/api/checkout/:orderId` 读取订单、商户、启用的支付通道和当前汇率缓存。
+2. `checkoutData()` 用一次 `conversionContext()` 为所有通道生成候选金额。
+3. 用户选择资产/网络后，`selectOrderPaymentByAssetNetwork()` 随机选择可用通道，并写入 `orders.payment` 快照。
+4. 已写入的 `payment.amount` 是固定应付金额；除非用户重新选择网络/币种，不应随汇率变化。
+5. `nextPaymentAmount()` 会避开同一通道、同一地址、同一资产网络下其他未过期订单的相同金额。
+6. 前端 `Pay.vue` 展示订单状态、二维码/地址、倒计时、支付成功返回和人工审核入口。
+
+不要在打开收银台或生成候选项时重新请求外部汇率。汇率同步归 `syncMarketRates()`，收银台读取归 `currentMarketRates()` / `conversionContext()`。
+
+### 支付确认
+
+- 自动检查入口：`checkOrderPayment()`、`submitTxCandidates()`、Cron 扫描待支付 TRON 订单。
+- 浏览器辅助查账：`src/app/payments/index.ts` 只为带 `publicCheck` 的网络生成候选交易，再提交给服务端校验。
+- 服务端查账：`server/payments/driver.ts` 根据 `snapshot.driver` 派发 provider。
+- 当前 TRC20 provider 使用 Nile TronGrid，并要求时间窗口、币种、合约、金额、收款地址都匹配。
+- 确认支付统一调用 `markOrderPaid()`，写入 `payment.tx`，更新订单为 `paid`，并创建 notify。
+- 人工确认入口在后台订单详情，`confirmedBy` 为 `admin`。
+
+### 商户通知
+
+1. `markOrderPaid()` 调用 `createNotify()`。
+2. notify payload 包含订单号、商户单号、金额、币种、状态和 payment 快照。
+3. 如果订单没有 callback，则不创建通知。
+4. `deliverNotify()` POST JSON 到 callback；失败最多重试 8 次，`next_run_at` 按 attempts 分钟递增。
+5. 后台可对已支付订单手动重发通知。
+
+### Telegram 收款
+
+- Bot `/pay 10 USDT` 和 inline query 都通过 `createTelegramOrder()` 创建 `INLINE` 内部商户订单。
+- Telegram 内选择资产和网络复用 `checkoutData()` 与 `selectTelegramOrderPaymentByNetwork()`。
+- Telegram 订单重新选择网络时会刷新支付窗口；普通网页收银台不会自动刷新窗口。
+- Telegram 消息中的付款说明、检查付款按钮、审核入口和交易链接由 `server/services/telegram/bot.ts` 维护。
+
+## 模块职责
+
+- `src/server/http/app.ts`：只负责 Hono 装配、中间件、迁移触发、路由挂载和 Assets 回退。
+- `src/server/http/routes/*`：只做 HTTP 参数解析、鉴权边界和调用 service；复杂业务放到 services。
+- `src/server/db/index.ts`：D1 原语、配置读写和 JSON helper；不要把业务查询堆到这里。
+- `src/server/db/migrations.ts`：D1 SQL 文件加载和迁移状态；新增迁移必须放在 `d1/migrations/` 并保持文件名排序。
+- `src/server/services/app/*`：系统状态、设置、汇率缓存和后台统计。
+- `src/server/services/auth/*`：Session、PIN、Telegram initData 校验；不要在页面组件里复制认证逻辑。
+- `src/server/services/merchants/index.ts`：商户 CRUD、密钥生成、签名认证。
+- `src/server/services/orders/create.ts`：建单和删除订单。
+- `src/server/services/orders/repository.ts`：订单行和 DTO 映射、列表查询、支付快照写入。
+- `src/server/services/orders/checkout.ts`：收银台数据、支付选择、查账、人工确认、审核提交。
+- `src/server/services/orders/notifications.ts`：订单过期、待查订单筛选、notify 创建和投递。
+- `src/server/payments/driver.ts`：支付定义校验、候选项、支付快照、查账 provider 分派。
+- `src/server/payments/channels.ts`：收款通道 CRUD、通道健康和查账结果状态回写。
+- `src/shared/payments.ts`：支付网络、资产、展示名、图标、地址规则、explorer URL 的事实来源。
+- `src/shared/types/api.ts`：前后端共享 API DTO。
+- `src/shared/types/domain.ts`：领域状态和支付快照类型。
+- `src/app/api/*`：前端请求封装和 API 模块；不要在页面里拼重复 fetch 逻辑。
+- `src/app/pages/Admin.vue`：后台应用壳、会话初始化和导航。
+- `src/app/pages/Pay.vue` + `src/app/pages/pay.ts`：公开收银台 UI 和轮询/查账状态机。
+- `src/app/payments/index.ts`：前端支付展示、EVM 组合选择、浏览器可查账能力。
+
+## 支付通道扩展约定
+
+新增或调整支付网络/资产时，按这个顺序检查：
+
+1. `src/shared/payments.ts`：新增 Payment 定义、资产、图标 id、地址/账户规则、explorer 和 publicCheck。
+2. `src/server/payments/driver.ts`：确认 `validatePaymentConfig()`、`paymentOptions()`、`assignPayment()` 是否能覆盖。
+3. `src/server/payments/providers/`：如果要自动查账，新增 provider 并注册到 `checkers`。
+4. `src/app/payments/index.ts`：前端网络/资产选择、浏览器查账能力、EVM 聚合展示。
+5. `public/icons.svg`：需要展示的新图标。
+6. `test/payment-model.test.ts`、`test/app-payments.test.ts`、`test/payments.test.ts`：补充模型和查账行为。
+
+不要把网络名当资产别名。例：TON 是网络，GRAM 是资产；EVM 兼容网络在前端可以合并展示，但后端仍是具体 driver。
+
+## 汇率约定
+
+- `systemSettings()` 读取基础货币、超时时间、汇率微调和快速确认。
+- `syncMarketRates()` 是唯一会请求外部 ExchangeRate API / CoinGecko 的同步路径。
+- `currentMarketRates()` 只读取缓存或默认值，并带内存 60 秒缓存。
+- `conversionContext()` 将设置和汇率快照合并，供一次 checkout 计算复用。
+- `convertAmountWithContext()` 使用 Decimal 并向上保留两位，避免用户少付。
+
+收银台性能敏感。不要在每个支付选项、每次打开收银台或每次选择网络时重复外部汇率请求。
+
+## 前端约定
+
+- 路由集中在 `src/app/main.ts`。
+- 全局样式在 `src/app/styles.scss`，页面优先复用现有 panel、grid、section-title、orders-table 等样式。
+- UI 组件使用 Naive UI；支付/网络图标通过 `AppIcon` 和 `public/icons.svg`。
+- 后台页面由 `Admin.vue` 统一承载，页面组件在 `src/app/pages/`。
+- 公开收银台独立在 `Pay.vue`，不要把后台登录态、管理菜单或内部设置泄漏到收银台。
+- 前端接口类型从 `@/app/api` 导出，源头是 `src/shared/types/api.ts`。
+- 当前项目没有独立 i18n 层；新增大量可见文案前先确认是否需要抽出文案层，不要只在一个重复界面改文案。
+
+## API 和错误约定
+
+- 服务端业务错误使用 `AppError(status, code, message)`。
+- 前端 `request()` 会解包 `{ data }`，并把 `{ error.message }` 显示给用户。
+- 轮询、后台刷新、浏览器辅助查账等非阻塞请求使用 `{ silent: true }`。
+- Admin API 在 `src/server/http/routes/admin.ts`，公开收银台和状态接口在 `public.ts`，商户签名 API 在 `auth.ts`。
+- 新增 API 时同步更新 `src/shared/types/api.ts` 和 `src/app/api/index.ts`。
+
+## 测试约定
+
+当前测试覆盖重点：
+
+- `test/d1-migrations.test.ts`：迁移加载、迁移状态、并发迁移。
+- `test/merchant-auth.test.ts`、`test/merchant-api.test.ts`：RSA 签名和商户 API。
+- `test/payments.test.ts`、`test/payment-model.test.ts`、`test/app-payments.test.ts`：支付模型、查账和金额避让。
+- `test/auth.test.ts`：Session 和 PIN 登录。
+- `test/app-state.test.ts`：系统状态和 Bot 用户名缓存。
+- `test/api-http.test.ts`、`test/amount-format.test.ts`：前端 API client 和金额展示。
+
+涉及以下改动时优先补测试：
+
+- 建单、幂等、订单状态流转、通知投递。
+- 支付快照、查账、汇率、金额格式或金额避让。
+- 商户签名、Session、Telegram 登录或 PIN 登录。
+- D1 migration、Cloudflare bindings、Cron/Queue 行为。
+- 前后端共享 DTO 字段名。
+
+## 开发注意事项
+
+- 默认围绕用户明确目标做最小完整改动，不引入无关业务路径。
+- 不做补丁式兼容分支来保留旧结构；如果字段、函数或模块边界已经明确，应直接改到目标结构。
+- 修改前按输入、处理流程、状态变化、输出、上下游影响检查一遍。
+- 无法从代码或运行结果确认的内容，必须标注为假设，不要写成事实。
+- 不要回滚或覆盖未说明的工作区修改；这个项目经常存在正在进行的未提交重构。
+- 涉及数据库字段时同步检查 SQL migration、repository 映射、API DTO、前端展示和测试。
+- 涉及 Cloudflare 绑定时同步检查 `wrangler.jsonc`、`AppEnv`、Worker 入口和测试环境 mock。
+- 涉及支付金额时保持应付金额快照语义：选择后固定，重新选择才重新计算。
+- 涉及 setup/status 时保持内部完成流程，不额外公开 finalize/status 表面。
+- 涉及 Telegram Bot 时注意 webhook 入口会先迁移 D1，并且 Bot 初始化/菜单配置依赖公网 HTTPS domain。
+- 生产敏感数据只通过环境变量、Workers bindings、D1 配置或一次性响应流转，不写入源码、测试快照或文档示例。
+
+## 关键文件
+
+- `src/index.ts`：Worker 总入口。
+- `src/server/http/app.ts`：Hono 应用装配和中间件。
+- `src/server/http/routes/public.ts`：健康检查、收银台、状态、Telegram webhook。
+- `src/server/http/routes/auth.ts`：商户签名 API。
+- `src/server/http/routes/admin.ts`：后台 API 和 Admin guard。
+- `src/server/services/orders/create.ts`：建单。
+- `src/server/services/orders/checkout.ts`：收银台、支付选择、查账和确认。
+- `src/server/services/orders/repository.ts`：订单查询和 DTO 映射。
+- `src/server/services/orders/notifications.ts`：通知任务和投递。
+- `src/server/services/app/settings.ts`：系统设置和汇率缓存。
+- `src/server/services/app/setup.ts`：初始化流程。
+- `src/server/services/telegram/bot.ts`：Telegram Bot 行为。
+- `src/server/payments/driver.ts`：支付 driver 编排。
+- `src/shared/payments.ts`：支付网络和资产定义。
+- `src/shared/types/api.ts`：共享 API 类型。
+- `src/server/types/env.ts`：Worker 环境类型。
+- `src/app/pages/Pay.vue`：公开收银台页面。
+- `src/app/pages/Admin.vue`：后台应用壳。
+- `src/app/api/index.ts`：前端 API 模块。
+- `wrangler.jsonc`：Cloudflare 运行配置。

@@ -1,6 +1,6 @@
 import { getConfigBlob, setConfig } from "@/server/db";
 import defaultBannerBase64 from "@/server/assets/default-banner.webp?base64";
-import type { AppEnv } from "@/shared/types/env";
+import type { AppEnv } from "@/server/types/env";
 
 export async function ensureDefaultBanner(env: AppEnv) {
   const existing = await getConfigBlob(env, "banner");

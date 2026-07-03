@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { formatDisplayAmount as formatOrderAmount } from "@/app/utils/amount-format";
+import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { appT } from "@/app/i18n";
+import { formatTime } from "@/app/utils/format";
 import { assetLabel } from "@/shared/payments";
 
 const props = withDefaults(defineProps<{
@@ -18,25 +20,17 @@ const emit = defineEmits<{
   select: [checked: boolean];
 }>();
 
-function shortText(value: unknown, start = 12, end = 8) {
+function shortAddress(value: unknown) {
   const text = String(value || "");
-  return text.length > start + end + 3 ? `${text.slice(0, start)}...${text.slice(-end)}` : text;
-}
-
-function orderIdText(id: string) {
-  return /^[0-9A-Za-z]{12,24}$/.test(id) ? id : shortText(id, 8, 6);
-}
-
-function orderDescription(order: Record<string, any>) {
-  return order.description || order.merchantNo || "-";
+  return text.length > 19 ? `${text.slice(0, 10)}...${text.slice(-6)}` : text;
 }
 
 function orderStatusText(status: string) {
   const labels: Record<string, string> = {
-    expired: "已超时",
-    invalid: "异常",
-    paid: "已支付",
-    pending: "待支付",
+    expired: appT("status.expired"),
+    invalid: appT("status.invalid"),
+    paid: appT("status.paid"),
+    pending: appT("status.pending"),
   };
   return labels[status] ?? status;
 }
@@ -51,26 +45,6 @@ function orderStatusClass(status: string) {
   return classes[status] ?? "";
 }
 
-function currencyLabel(currency: unknown) {
-  return assetLabel(currency);
-}
-
-function formatOrderTime(value: unknown) {
-  const ts = Number(value);
-  if (!Number.isFinite(ts) || ts <= 0) return "--";
-  const date = new Date(ts * 1000);
-  const pad = (number: number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function orderPaywayLabel(order: Record<string, any>) {
-  if (!order.payway) return "未选择";
-  return order.paywayName || order.payment?.name || "已删除通道";
-}
-
-function orderPaymentTarget(order: Record<string, any>) {
-  return order.payment?.address || order.payment?.account || "";
-}
 </script>
 
 <template>
@@ -80,26 +54,28 @@ function orderPaymentTarget(order: Record<string, any>) {
     </div>
     <div class="order-cell order-id-cell">
       <button class="order-id-button" type="button" :title="props.order.id" @click="emit('open', props.order.id)">
-        {{ orderIdText(props.order.id) }}
+        {{ props.order.id }}
       </button>
-      <span>{{ orderDescription(props.order) }}</span>
+      <span>{{ props.order.description || '-' }}</span>
     </div>
     <div class="order-cell">
       <span class="order-status" :class="orderStatusClass(props.order.status)">{{ orderStatusText(props.order.status) }}</span>
     </div>
     <div class="order-cell order-amount-cell">
-      <strong>{{ formatOrderAmount(props.order.amount) }} {{ currencyLabel(props.order.currency) }}</strong>
-      <span v-if="props.order.payment?.amount">{{ formatOrderAmount(props.order.payment.amount) }} {{ currencyLabel(props.order.payment.currency) }}</span>
+      <strong>{{ formatAmount(props.order.amount) }} {{ assetLabel(props.order.currency) }}</strong>
+      <span v-if="props.order.payment?.amount">{{ formatAmount(props.order.payment.amount) }} {{ assetLabel(props.order.payment.currency) }}</span>
     </div>
     <div class="order-cell order-payment-cell">
       <strong class="order-payway-title">
         <span v-if="props.order.payway" class="order-payway-id">#{{ props.order.payway }}</span>
-        <span>{{ orderPaywayLabel(props.order) }}</span>
+        <span>{{ props.order.payway ? props.order.paywayName || props.order.payment?.name || appT('payment.channel_deleted') : appT('payment.channel_not_selected') }}</span>
       </strong>
-      <span :title="orderPaymentTarget(props.order)">{{ shortText(orderPaymentTarget(props.order), 14, 8) || '-' }}</span>
+      <span :title="props.order.payment?.address || ''">
+        {{ shortAddress(props.order.payment?.address) || '-' }}
+      </span>
     </div>
     <div class="order-cell order-time-cell">
-      <span>{{ formatOrderTime(props.order.createdAt) }}</span>
+      <span>{{ formatTime(props.order.createdAt) }}</span>
     </div>
   </div>
 </template>
