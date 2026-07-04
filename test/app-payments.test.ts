@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as payment from "@/app/payments";
+import { setLocale } from "@/app/i18n";
 import { canProbeInBrowser } from "@/app/payments/browser";
 
 describe("frontend payment module", () => {
@@ -40,5 +41,10 @@ describe("frontend payment module", () => {
     expect(canProbeInBrowser({ address: "EQAddress", driver: "ton" })).toBe(true);
     expect(canProbeInBrowser({ address: "0x123", driver: "aptos" })).toBe(true);
     expect(canProbeInBrowser({ address: "0x123", driver: "base" })).toBe(true);
+  });
+
+  it("uses exchange transfer wording for exchange drivers", () => {
+    setLocale("zh-CN");
+    expect(payment.paymentInstruction({ currency: "usdt", driver: "binance" })).toBe("请通过 Binance 币安 转账 USDT");
   });
 });

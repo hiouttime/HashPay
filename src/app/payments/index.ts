@@ -172,6 +172,12 @@ export function txUrl(payment: { driver?: string; tx?: { txid?: string } }) {
 }
 
 export function paymentInstruction(payment: Partial<PaymentSnapshot>) {
+  if ((paymentById(payment.driver) ?? paymentByNetwork(payment.driver))?.kind === "exchange") {
+    return appT("checkout.pay_with_exchange", {
+      asset: assetName(payment.currency),
+      platform: networkName(payment.driver),
+    });
+  }
   if (payment.url) {
     return appT("checkout.pay_with_platform", {
       asset: assetName(payment.currency),

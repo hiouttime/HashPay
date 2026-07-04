@@ -253,11 +253,10 @@ onMounted(() => run(load));
             </p>
           </div>
 
-          <div class="form-section grid">
+          <div v-if="isEdit" class="form-section grid">
             <div class="credential-title-row">
               <h3>{{ t('merchant.credentials') }}</h3>
               <n-popconfirm
-                v-if="isEdit"
                 :negative-text="t('common.cancel')"
                 :positive-text="t('common.reset')"
                 @positive-click="resetKey"

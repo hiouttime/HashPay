@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paymentExplorerUrl, paymentOptions, payments, validatePayment } from "@/server/payments/driver";
+import { assignPayment, paymentExplorerUrl, paymentOptions, payments, validateChannel } from "@/server/payments/driver";
 import { assetName, networkLabel, key, paymentById } from "@/shared/payments";
 
 describe("payment model", () => {
@@ -19,7 +19,7 @@ describe("payment model", () => {
       address: "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       assets: ["usdt", "gram", "ton"],
       createdAt: 1,
-      credentials: {},
+      data: {},
       driver: "ton",
       id: 7,
       name: "TON",
@@ -30,7 +30,7 @@ describe("payment model", () => {
     expect(options).toContainEqual({ asset: "gram", channelId: 7, network: "ton" });
     expect(options).toContainEqual({ asset: "usdt", channelId: 7, network: "ton" });
     expect(options).not.toContainEqual({ asset: "ton", channelId: 7, network: "ton" });
-    expect(() => validatePayment({
+    expect(() => validateChannel({
       address: "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       assets: ["ton"],
       driver: "ton",
@@ -42,7 +42,7 @@ describe("payment model", () => {
       address: "0x0000000000000000000000000000000000000001",
       assets: ["usdt", "bnb", "eth"],
       createdAt: 1,
-      credentials: {},
+      data: {},
       driver: "bep20",
       id: 9,
       name: "BEP20",
@@ -53,7 +53,7 @@ describe("payment model", () => {
     expect(options).toContainEqual({ asset: "usdt", channelId: 9, network: "bep20" });
     expect(options).toContainEqual({ asset: "bnb", channelId: 9, network: "bep20" });
     expect(options).not.toContainEqual({ asset: "eth", channelId: 9, network: "bep20" });
-    expect(() => validatePayment({
+    expect(() => validateChannel({
       address: "0x0000000000000000000000000000000000000001",
       assets: ["eth"],
       driver: "bep20",
@@ -69,6 +69,35 @@ describe("payment model", () => {
     expect(paymentExplorerUrl("trc20", "abc")).toBe("https://tronscan.org/#/transaction/abc");
   });
 
+  it("uses Binance ID as the address and keeps API details in data", () => {
+    expect(paymentById("binance")).toMatchObject({
+      address: { nameKey: "payment.binance.id" },
+      assets: ["usdt", "usdc"],
+      data: [
+        { id: "apiKey", nameKey: "payment.binance.api_key" },
+        { id: "secretKey", nameKey: "payment.binance.secret_key" },
+      ],
+    });
+    expect(() => validateChannel({ address: "34355667", assets: ["usdt"], driver: "binance" })).not.toThrow();
+    expect(() => validateChannel({ address: "abc", assets: ["usdt"], driver: "binance" })).toThrow("errors.payment_address_invalid");
+    expect(assignPayment({
+      address: "34355667",
+      assets: ["usdt"],
+      createdAt: 1,
+      data: { apiKey: "api-key", secretKey: "secret-key" },
+      driver: "binance",
+      id: 12,
+      name: "Binance",
+      status: "enabled",
+      updatedAt: 1,
+    }, 12.5, "usdt")).toMatchObject({
+      address: "34355667",
+      amount: 12.5,
+      currency: "usdt",
+      driver: "binance",
+    });
+  });
+
   it("supports Aptos as a chain payment driver", () => {
     const address = "0x1111111111111111111111111111111111111111111111111111111111111111";
     expect(paymentById("aptos")).toMatchObject({
@@ -80,7 +109,7 @@ describe("payment model", () => {
       address,
       assets: ["usdt", "usdc"],
       createdAt: 1,
-      credentials: {},
+      data: {},
       driver: "aptos",
       id: 10,
       name: "Aptos",
@@ -90,8 +119,8 @@ describe("payment model", () => {
       { asset: "usdt", channelId: 10, network: "aptos" },
       { asset: "usdc", channelId: 10, network: "aptos" },
     ]);
-    expect(() => validatePayment({ address: "0x1", assets: ["usdt"], driver: "aptos" })).toThrow("errors.payment_address_invalid");
-    expect(() => validatePayment({ address, assets: ["apt"], driver: "aptos" })).toThrow("errors.payment_asset_invalid");
+    expect(() => validateChannel({ address: "0x1", assets: ["usdt"], driver: "aptos" })).toThrow("errors.payment_address_invalid");
+    expect(() => validateChannel({ address, assets: ["apt"], driver: "aptos" })).toThrow("errors.payment_asset_invalid");
   });
 
   it("supports Base as an EVM payment driver", () => {
@@ -105,7 +134,7 @@ describe("payment model", () => {
       address,
       assets: ["usdt", "usdc", "eth", "bnb"],
       createdAt: 1,
-      credentials: {},
+      data: {},
       driver: "base",
       id: 11,
       name: "Base",

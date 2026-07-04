@@ -6,6 +6,7 @@ import * as pay from "@/app/payments";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
 import { useI18n } from "@/app/i18n";
+import { paymentById } from "@/shared/payments";
 
 const props = defineProps<{
   payment: any;
@@ -21,6 +22,12 @@ const message = useMessage();
 const qrVisible = ref(false);
 const { t } = useI18n();
 const address = computed(() => splitAddress(props.payment.address));
+const isExchange = computed(() => paymentById(props.payment.driver)?.kind === "exchange");
+const showQr = computed(() => Boolean(props.payment.address && !props.payment.url && !isExchange.value));
+const warning = computed(() => {
+  if (isExchange.value) return t("checkout.exchange_wait");
+  return props.payment.url ? t("checkout.url_warning") : t("checkout.network_warning");
+});
 
 function splitAddress(value: unknown) {
   const text = String(value || "");
@@ -54,10 +61,10 @@ function splitAddress(value: unknown) {
         <span>{{ t('checkout.address') }}</span>
         <div class="checkout-copy-actions">
           <n-button size="small" text type="primary" @click="copyText(payment.address, { message })">{{ t('common.copy') }}</n-button>
-          <n-button class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">{{ t('checkout.show_qr') }}</n-button>
+          <n-button v-if="showQr" class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">{{ t('checkout.show_qr') }}</n-button>
         </div>
       </div>
-      <div class="checkout-address-qr-inline">
+      <div v-if="showQr" class="checkout-address-qr-inline">
         <div class="checkout-qr-box">
           <n-qr-code :size="168" :value="payment.address" />
         </div>
@@ -81,7 +88,7 @@ function splitAddress(value: unknown) {
 
   <div class="checkout-warning">
     <strong>{{ pay.paymentInstruction(payment) }}</strong>
-    <span>{{ payment.url ? t('checkout.url_warning') : t('checkout.network_warning') }}</span>
+    <span>{{ warning }}</span>
   </div>
 
   <n-button
@@ -104,7 +111,7 @@ function splitAddress(value: unknown) {
       @close="qrVisible = false"
     >
       <div class="checkout-qr-modal-body">
-        <div v-if="payment.address" class="checkout-qr-box checkout-qr-box--modal">
+        <div v-if="showQr" class="checkout-qr-box checkout-qr-box--modal">
           <n-qr-code :size="260" :value="payment.address" />
         </div>
         <code v-if="payment.address" class="checkout-address-code">

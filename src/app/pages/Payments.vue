@@ -10,7 +10,7 @@ import { api, type Payment } from "@/app/api";
 interface PaymentForm {
   address: string;
   assets: string[];
-  credentials: Record<string, string>;
+  data: Record<string, string>;
   driver: string;
   enabled: boolean;
   name: string;
@@ -38,7 +38,7 @@ const editableFields = computed(() => {
   const driver = payment.isEvm(currentDriver.value) ? payment.evmDriver(payment.drivers, payment.evmIconNetwork) : currentDriver.value;
   return [payment.fieldFor(driver)];
 });
-const keyField = computed(() => currentDriver.value.key);
+const dataFields = computed(() => currentDriver.value.data ?? []);
 const selectedAssets = computed(() => form.assets);
 const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
@@ -73,7 +73,7 @@ function payload(driverId: string, network: string, assets: string[]) {
   return {
     address: form.address.trim(),
     assets,
-    credentials: { ...form.credentials },
+    data: { ...form.data },
     driver: driverId,
     name: selectedNetworks.value.length > 1 && payment.isEvmDriver(payment.drivers, driverId) ? `${form.name.trim()} · ${networkName(network)}` : form.name.trim(),
     status: isEdit.value && !form.enabled ? "disabled" as const : "enabled" as const,
@@ -104,8 +104,9 @@ function validate() {
     return false;
   }
 
-  if (!isEdit.value && keyField.value && !form.credentials.key?.trim()) {
-    message.error(t("payment.validation.field_required", { field: t(keyField.value.nameKey) }));
+  const missingData = !isEdit.value ? dataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
+  if (missingData) {
+    message.error(t("payment.validation.field_required", { field: t(missingData.nameKey) }));
     return false;
   }
 
@@ -150,7 +151,7 @@ function fillForm() {
   Object.assign(form, {
     address: method.address,
     assets: [...method.assets],
-    credentials: {},
+    data: {},
     driver: method.driver,
     enabled: method.status !== "disabled",
     name: method.name,
@@ -190,7 +191,7 @@ function setDriver(driverId: string) {
   form.driver = driver.id;
   form.address = "";
   form.assets = [...driver.assets];
-  form.credentials = {};
+  form.data = {};
   selection.evm = payment.isEvm(driver.id) ? { [network]: [...payment.assetsFor(driver, network)] } : {};
 }
 
@@ -234,7 +235,7 @@ function defaultForm(): PaymentForm {
   return {
     address: "",
     assets: [],
-    credentials: {},
+    data: {},
     driver: "",
     enabled: true,
     name: "",
@@ -288,13 +289,13 @@ onMounted(load);
         <span v-if="methodDriver(item)?.icon" class="pay-icon">
           <AppIcon :name="methodDriver(item)!.icon" :label="payment.networkName(methodDriver(item)!.network)" />
         </span>
-        <div>
+        <div class="pay-info">
           <strong>{{ item.name }} <span class="muted">#{{ item.id }}</span></strong>
           <p>{{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} / {{ item.status === 'disabled' ? t('common.disabled') : item.status === 'error' ? t('payment.channel_error') : t('common.enabled') }}</p>
           <div class="chip-row readonly">
             <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ payment.assetName(asset) }}</span>
           </div>
-          <p>{{ item.address || '--' }}</p>
+          <p class="pay-address">{{ item.address || '--' }}</p>
         </div>
       </div>
       <div class="form-actions">
@@ -420,16 +421,16 @@ onMounted(load);
               <small v-if="field.help" class="field-help">{{ field.help }}</small>
             </div>
           </template>
-          <div v-if="keyField" class="form-field-block">
+          <div v-for="field in dataFields" :key="field.id" class="form-field-block">
             <n-form-item :show-label="false" class="field-form-item">
               <n-input
-                v-model:value="form.credentials.key"
+                v-model:value="form.data[field.id]"
                 type="password"
                 show-password-on="click"
-                :placeholder="t(keyField.nameKey)"
+                :placeholder="t(field.nameKey)"
               />
             </n-form-item>
-            <small v-if="keyField.helpKey" class="field-help">{{ t(keyField.helpKey) }}</small>
+            <small v-if="field.helpKey" class="field-help" v-html="t(field.helpKey)"></small>
           </div>
         </div>
       </div>

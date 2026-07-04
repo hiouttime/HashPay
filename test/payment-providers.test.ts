@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkPayment, createPayment } from "@/server/payments/driver";
+import { validate as validateBinance } from "@/server/payments/providers/binance";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { Order } from "@/server/services/orders/repository";
 import { aptosAssets, evmAssets, tonAssets, trc20Assets } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -203,6 +205,104 @@ describe("OKPay provider", () => {
   });
 });
 
+describe("Binance Pay provider", () => {
+  it("validates Binance ID with the API key pair", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const fetchMock = vi.fn(async () => json({ uid: 34355667 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(validateBinance({
+      address: "34355667",
+      data: { apiKey: "api-key", secretKey: "secret-key" },
+    })).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v3/account");
+    expect(url).toContain("timestamp=1800000000000");
+    expect(url).toMatch(/signature=[a-f0-9]{64}/);
+    expect((init.headers as Record<string, string>)["X-MBX-APIKEY"]).toBe("api-key");
+  });
+
+  it("rejects Binance ID mismatches", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ uid: 34355667 })));
+
+    await expect(validateBinance({
+      address: "999999",
+      data: { apiKey: "api-key", secretKey: "secret-key" },
+    })).rejects.toMatchObject({ key: "errors.payment_credential_invalid", status: 400 });
+  });
+
+  it("matches payments received by Binance ID", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const fetchMock = vi.fn(async () => json({
+      code: "000000",
+      data: [{
+        fundsDetail: [{ amount: "12.5", currency: "USDT" }],
+        receiverInfo: { binanceId: "34355667" },
+        transactionId: "binance-tx",
+        transactionTime: 1_800_000_120_000,
+      }],
+      success: true,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: binanceChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "34355667", driver: "binance" }), {
+        createdAt: 1_800_000_000,
+        expireAt: 1_800_000_300,
+        id: "binance-order",
+      })],
+    })).resolves.toMatchObject({
+      matches: [{ orderId: "binance-order", time: 1_800_000_120, txid: "binance-tx" }],
+      status: "ok",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/sapi/v1/pay/transactions");
+    expect(url).toContain("startTime=1800000000000");
+    expect(url).toContain("endTime=1800000300000");
+    expect(url).toContain("timestamp=1800000000000");
+    expect(url).toMatch(/signature=[a-f0-9]{64}/);
+    expect((init.headers as Record<string, string>)["X-MBX-APIKEY"]).toBe("api-key");
+  });
+
+  it("ignores rows with a different Binance ID", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      code: "000000",
+      data: [
+        {
+          amount: "12.5",
+          currency: "USDT",
+          receiverInfo: { binanceId: "999999" },
+          transactionId: "wrong-receiver",
+          transactionTime: 120,
+        },
+        {
+          amount: "12.5",
+          currency: "USDT",
+          receiverInfo: { binanceId: "34355667" },
+          transactionId: "binance-id-tx",
+          transactionTime: 120,
+        },
+      ],
+      success: true,
+    })));
+
+    await expect(checkPayment({
+      channel: binanceChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "34355667", driver: "binance" }))],
+    })).resolves.toMatchObject({
+      matches: [{ orderId: "order", time: 120, txid: "binance-id-tx" }],
+      status: "ok",
+    });
+  });
+});
+
 function check(snapshot: PaymentSnapshot, candidate: Record<string, unknown>, overrides: Partial<ReturnType<typeof order>> = {}) {
   return checkPayment({
     candidates: { candidates: [candidate] },
@@ -247,7 +347,7 @@ function channel(input: Partial<PaymentChannel>): PaymentChannel {
     address: "address",
     assets: ["usdt"],
     createdAt: 100,
-    credentials: {},
+    data: {},
     driver: "trc20",
     id: 1,
     name: "Payment",
@@ -261,10 +361,21 @@ function okpayChannel(): PaymentChannel {
   return channel({
     address: "12345",
     assets: ["usdt", "trx"],
-    credentials: { key: "secret" },
+    data: { key: "secret" },
     driver: "okpay",
     id: 9,
     name: "OKPay",
+  });
+}
+
+function binanceChannel(): PaymentChannel {
+  return channel({
+    address: "34355667",
+    assets: ["usdt", "usdc"],
+    data: { apiKey: "api-key", secretKey: "secret-key" },
+    driver: "binance",
+    id: 6,
+    name: "Binance",
   });
 }
 

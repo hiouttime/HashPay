@@ -50,7 +50,7 @@ app.get("/payment", json(async (c) => (await listPayments(c.env)).map(publicPaym
 app.post("/payment", json(async (c) => publicPayment(await savePayment(c.env, await reqJson(c) as never))));
 app.put("/payment/:id", json(async (c) => {
   const body = await reqJson(c);
-  return publicPayment(await savePayment(c.env, { ...(body as { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) }));
+  return publicPayment(await savePayment(c.env, { ...(body as { address: string; assets: string[]; data?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) }));
 }));
 app.delete("/payment/:id", json(async (c) => {
   await deletePayment(c.env, Number(c.req.param("id")!));

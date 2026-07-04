@@ -39,7 +39,8 @@ export interface PaymentAddress {
   pattern?: RegExp;
 }
 
-export interface PaymentKey {
+export interface PaymentData {
+  id: string;
   helpKey?: string;
   nameKey: string;
 }
@@ -47,13 +48,13 @@ export interface PaymentKey {
 export interface Payment {
   address: PaymentAddress;
   assets: string[];
+  data?: PaymentData[];
   evm?: boolean;
   explorer?: {
     transaction: string;
   };
   icon: string;
   id: string;
-  key?: PaymentKey;
   kind: PaymentKind;
   nameKey: string;
   network: string;
@@ -263,10 +264,19 @@ export const aptos: Payment = {
 
 export const binance: Payment = {
   address: {
-    helpKey: "payment.help.platform",
-    nameKey: "payment.address.default",
+    helpKey: "payment.binance.id_help",
+    nameKey: "payment.binance.id",
+    pattern: /^[1-9]\d*$/,
   },
   assets: ["usdt", "usdc"],
+  data: [
+    {
+      id: "apiKey",
+      helpKey: "payment.binance.api_key_help",
+      nameKey: "payment.binance.api_key",
+    },
+    { id: "secretKey", helpKey: "payment.binance.secret_key_help", nameKey: "payment.binance.secret_key" },
+  ],
   icon: "icon-binance",
   id: "binance",
   kind: "exchange",
@@ -307,10 +317,7 @@ export const okpay: Payment = {
     pattern: /^[1-9]\d*$/,
   },
   assets: ["usdt", "trx"],
-  key: {
-    helpKey: "payment.okpay.key_help",
-    nameKey: "payment.okpay.key",
-  },
+  data: [{ id: "key", helpKey: "payment.okpay.key_help", nameKey: "payment.okpay.key" }],
   icon: "icon-okpay",
   id: "okpay",
   kind: "wallet",

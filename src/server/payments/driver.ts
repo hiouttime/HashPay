@@ -1,6 +1,7 @@
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import { check as checkAptos } from "@/server/payments/providers/aptos";
+import { check as checkBinance, validate as validateBinance } from "@/server/payments/providers/binance";
 import { check as checkEvm } from "@/server/payments/providers/evm";
 import { check as checkOkpay, create as createOkpay } from "@/server/payments/providers/okpay";
 import { check as checkTon } from "@/server/payments/providers/ton";
@@ -55,15 +56,18 @@ export interface PaymentCheckMatch {
 
 type Check = (input: PaymentCheckInput) => Promise<PaymentCheckResult>;
 type Create = (channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) => Promise<PaymentSnapshot>;
+type Validate = (input: { address: string; data: Record<string, string> }) => Promise<void>;
 type Provider = {
   check: Check;
   scheduled?: true;
+  validate?: Validate;
 };
 
 const providers: Partial<Record<string, Provider>> = {
   aptos: { check: checkAptos, scheduled: true },
   base: { check: checkEvm, scheduled: true },
   bep20: { check: checkEvm, scheduled: true },
+  binance: { check: checkBinance, scheduled: true, validate: validateBinance },
   erc20: { check: checkEvm, scheduled: true },
   okpay: { check: checkOkpay },
   polygon: { check: checkEvm, scheduled: true },
@@ -75,7 +79,7 @@ const creators: Partial<Record<string, Create>> = {
   okpay: createOkpay,
 };
 
-export function validatePayment(input: { address?: string; assets?: string[]; driver: string }) {
+export function validateChannel(input: { address?: string; assets?: string[]; driver: string }) {
   const payment = byId(input.driver);
   address(payment, input.address ?? "");
   validateAssets(input.assets ?? [], payment.assets);
@@ -103,6 +107,11 @@ export function assignPayment(channel: PaymentChannel, amount: number, targetAss
 
 export function createPayment(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
   return creators[channel.driver]?.(channel, order, snapshot) ?? Promise.resolve(snapshot);
+}
+
+export async function validateData(driver: string, address: string, data: Record<string, string>) {
+  byId(driver);
+  await providers[driver]?.validate?.({ address, data });
 }
 
 export function checkPayment(input: PaymentCheckInput) {

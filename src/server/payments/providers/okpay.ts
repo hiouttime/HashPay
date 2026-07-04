@@ -86,7 +86,7 @@ function sign(channel: PaymentChannel, input: Record<string, unknown>) {
 }
 
 function signature(channel: PaymentChannel, data: Record<string, string>) {
-  const token = String(channel.credentials.key ?? "").trim();
+  const token = String(channel.data.key ?? "").trim();
   if (!token) throw new AppError(400, "errors.payment_credential_missing");
   return createHash("md5").update(`${query(data)}&token=${token}`).digest("hex").toUpperCase();
 }

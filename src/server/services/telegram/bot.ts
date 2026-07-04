@@ -9,7 +9,7 @@ import { checkOrderPayment, checkoutData, selectTelegramPayment } from "@/server
 import { getOrder } from "@/server/services/orders/repository";
 import { botToken } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
-import { assetName, networkLabel, key } from "@/shared/payments";
+import { assetName, networkLabel, key, paymentById } from "@/shared/payments";
 import { paymentExplorerUrl } from "@/server/payments/driver";
 import { normalizeLocale, t, type Locale } from "@/shared/i18n";
 import { ceilAmount } from "@/shared/amount";
@@ -354,9 +354,10 @@ function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, local
 }
 
 function renderPaymentSnapshotText(order: PaidOrderRef, snapshot: PaymentSnapshot, locale: Locale) {
+  const exchange = paymentById(snapshot.driver)?.kind === "exchange";
   return [
-    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetName(snapshot.currency) })),
-    escapeHtml(t(locale, "telegram.network_warning")),
+    escapeHtml(t(locale, exchange ? "telegram.pay_exchange" : "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetName(snapshot.currency) })),
+    escapeHtml(t(locale, exchange ? "telegram.exchange_wait" : "telegram.network_warning")),
     "",
     t(locale, "telegram.address", { address: escapeHtml(snapshot.address ?? "") }),
     t(locale, "telegram.amount_due", { amount: escapeHtml(formatInlineAmount(snapshot.amount)) }),
@@ -567,6 +568,7 @@ async function replyPaymentMessage(ctx: GrammyContext, env: AppEnv, text: string
 
 async function orderQrUrl(env: AppEnv, orderId: string, snapshot: PaymentSnapshot) {
   if (!snapshot.address?.trim()) return "";
+  if (paymentById(snapshot.driver)?.kind === "exchange") return "";
   const domain = await getConfig(env, "domain");
   return domain ? `${domain.replace(/\/$/, "")}/order/${encodeURIComponent(orderId)}/qr.png` : "";
 }

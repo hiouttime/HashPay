@@ -823,6 +823,19 @@ a {
   min-width: 0;
 }
 
+.pay-card {
+  min-width: 0;
+}
+
+.pay-info {
+  min-width: 0;
+}
+
+.pay-address {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .pay-icon {
   align-items: center;
   background: #f9fafb;

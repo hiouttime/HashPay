@@ -55,9 +55,9 @@ function endpoints(options: ApiRequestOptions = {}) {
     },
     payments: {
       list: () => get<Payment[]>("/api/admin/payment", options),
-      create: (input: { address: string; assets: string[]; credentials: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
+      create: (input: { address: string; assets: string[]; data: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
         post<Payment>("/api/admin/payment", input, options),
-      update: (paymentId: number, input: { address: string; assets: string[]; credentials: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
+      update: (paymentId: number, input: { address: string; assets: string[]; data: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
         put<Payment>(`/api/admin/payment/${paymentId}`, input, options),
       remove: (paymentId: number) => del<{ ok: boolean }>(`/api/admin/payment/${paymentId}`, options),
     },
