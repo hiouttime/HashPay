@@ -51,6 +51,16 @@ D1 migrations are configured at `src/server/db/d1/migrations`. HashPay also runs
 npm run db:migrate:remote
 ```
 
+## Updating HashPay
+
+Repositories created from this template can update from the upstream project without handling Git conflicts manually:
+
+1. Open the repository created in your GitHub account.
+2. Go to **Actions**.
+3. Run **Update HashPay**.
+
+The workflow force-syncs application code from `tgdash/HashPay` and keeps deployment instance fields from the current repository, including Worker name, D1 database IDs, Queue names, routes, and plain Wrangler vars. Custom code changes in the instance repository may be overwritten by the update.
+
 ## Local Development
 
 Create local secrets:

@@ -23,7 +23,6 @@
     {
       "binding": "DB",
       "database_name": "hashpay",
-      "database_id": "replace-with-d1-database-id",
       "migrations_dir": "src/server/db/d1/migrations"
     }
   ],

@@ -1,0 +1,63 @@
+name: Update HashPay
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: Upstream repository
+        required: true
+        default: tgdash/HashPay
+      upstream_branch:
+        description: Upstream branch
+        required: true
+        default: main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-hashpay
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout instance repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync from upstream
+        shell: bash
+        env:
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream_repository }}
+          UPSTREAM_BRANCH: ${{ inputs.upstream_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ -f wrangler.jsonc ]; then
+            cp wrangler.jsonc "$RUNNER_TEMP/wrangler.current.jsonc"
+          fi
+
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream "${UPSTREAM_BRANCH}" --depth=1
+          git reset --hard FETCH_HEAD
+
+          if [ -f "$RUNNER_TEMP/wrangler.current.jsonc" ]; then
+            node scripts/merge-wrangler-config.mjs "$RUNNER_TEMP/wrangler.current.jsonc" wrangler.jsonc
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "HashPay is already up to date."
+          else
+            git add -A
+            git commit -m "Update HashPay from upstream"
+          fi
+
+          git push --force-with-lease origin "HEAD:${GITHUB_REF_NAME}"
