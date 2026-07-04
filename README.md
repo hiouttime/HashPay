@@ -1,4 +1,4 @@
-# HashPay Workers
+# HashPay
 
 HashPay v1 runs on Cloudflare Workers with Vite, Vue 3, Hono, D1, Queues, and Cron Triggers.
 
@@ -24,7 +24,7 @@ When importing this repository from Cloudflare Workers Builds, use these setting
 | --- | --- |
 | Production branch | `main` |
 | Root directory | leave empty unless this project is inside a monorepo |
-| Build command | leave empty; `wrangler.jsonc` runs `npm run build` before deploy |
+| Build command | leave empty; `npm run deploy` runs the Vite build |
 | Deploy command | `npm run deploy` |
 | Non-production branch deploy command | `npm run deploy:preview` |
 
