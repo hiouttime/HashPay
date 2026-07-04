@@ -263,8 +263,9 @@ describe("Binance Pay provider", () => {
   });
 
   it("reports Binance API failures with the platform reason", async () => {
+    const reason = "Invalid API-key, IP, or permissions for action. Please check API restrictions, read permission, and server IP allowlist before retrying.";
     vi.stubGlobal("fetch", vi.fn(async () => new Response(
-      JSON.stringify({ code: -2015, msg: "Invalid API-key, IP, or permissions for action." }),
+      JSON.stringify({ code: -2015, msg: reason }),
       { headers: { "content-type": "application/json" }, status: 401 },
     )));
 
@@ -273,7 +274,7 @@ describe("Binance Pay provider", () => {
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
       key: "errors.payment_api_credential_invalid",
-      params: { detail: "-2015 Invalid API-key, IP, or permissions for action." },
+      params: { detail: `-2015 ${reason}` },
       status: 400,
     });
   });

@@ -84,7 +84,7 @@ async function signedGet<T>(path: string, data: Record<string, string>, query: R
   }
   const payload = await res.json() as OkxResponse<T>;
   if (payload.code && payload.code !== "0") {
-    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: clean(`${payload.code} ${payload.msg ?? ""}`.trim()) });
+    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: `${payload.code} ${payload.msg ?? ""}`.replace(/\s+/g, " ").trim() });
   }
   return payload.data ?? [];
 }
@@ -96,14 +96,10 @@ async function responseReason(res: Response) {
     const body = await res.clone().json().catch(() => null) as { code?: unknown; msg?: unknown } | null;
     const code = String(body?.code ?? "").trim();
     const msg = String(body?.msg ?? "").trim();
-    return clean([code, msg].filter(Boolean).join(" ") || fallback);
+    return ([code, msg].filter(Boolean).join(" ") || fallback).replace(/\s+/g, " ").trim();
   }
   const text = await res.text().catch(() => "");
-  return clean(text || fallback);
-}
-
-function clean(value: string) {
-  return value.replace(/\s+/g, " ").slice(0, 160);
+  return (text || fallback).replace(/\s+/g, " ").trim();
 }
 
 function match(snapshot: PaymentSnapshot, row: OkxBill, created: number, expire: number) {

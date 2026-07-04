@@ -5,8 +5,8 @@ import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
-const api = "https://api.binance.com/sapi/v1/pay/transactions";
-const accountApi = "https://api.binance.com/api/v3/account";
+const api = "https://api-gcp.binance.com/sapi/v1/pay/transactions";
+const accountApi = "https://api-gcp.binance.com/api/v3/account";
 
 interface BinancePayRow {
   amount?: string | number;
@@ -82,14 +82,10 @@ async function responseReason(res: Response) {
     const body = await res.clone().json().catch(() => null) as { code?: unknown; msg?: unknown } | null;
     const code = String(body?.code ?? "").trim();
     const msg = String(body?.msg ?? "").trim();
-    return clean([code, msg].filter(Boolean).join(" ") || fallback);
+    return ([code, msg].filter(Boolean).join(" ") || fallback).replace(/\s+/g, " ").trim();
   }
   const text = await res.text().catch(() => "");
-  return clean(text || fallback);
-}
-
-function clean(value: string) {
-  return value.replace(/\s+/g, " ").slice(0, 160);
+  return (text || fallback).replace(/\s+/g, " ").trim();
 }
 
 function match(snapshot: PaymentSnapshot, row: BinancePayRow, created: number, expire: number) {
