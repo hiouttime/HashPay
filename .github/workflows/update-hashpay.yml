@@ -26,7 +26,7 @@ jobs:
             cp wrangler.jsonc "$RUNNER_TEMP/wrangler.current.jsonc"
           fi
 
-          git fetch https://github.com/tgdash/HashPay.git main --depth=1
+          git fetch https://github.com/TGDash/HashPay.git main --depth=1
           git reset --hard FETCH_HEAD
 
           if [ -f "$RUNNER_TEMP/wrangler.current.jsonc" ]; then

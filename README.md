@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/tgdash/HashPay">
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/TGDash/HashPay">
     <img alt="Deploy to Cloudflare" src="https://deploy.workers.cloudflare.com/button">
   </a>
 </p>
@@ -83,7 +83,7 @@ HashPay 是一款运行在 Cloudflare Wokers 上的加密货币收款网关。
 
 ## ⚡ 极速开始
 
-<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/tgdash/HashPay">
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/TGDash/HashPay">
     <img alt="Deploy to Cloudflare" src="https://deploy.workers.cloudflare.com/button">
 </a>
 
