@@ -38,7 +38,7 @@ describe("payment channels", () => {
       data: { apiKey: "api-key", secretKey: "secret-key" },
       driver: "binance",
       name: "Binance",
-    })).rejects.toMatchObject(new AppError(400, "errors.payment_credential_invalid"));
+    })).rejects.toMatchObject(new AppError(400, "errors.payment_account_id_invalid", { detail: "API 返回账户ID 34355667，与填写的 999999 不一致" }));
   });
 
   it("rejects plaintext stored credentials", async () => {

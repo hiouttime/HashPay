@@ -18,14 +18,11 @@ interface BinancePayRow {
 }
 
 export async function validate(input: { address: string; data: Record<string, string> }) {
-  try {
-    const payload = await signedGet<{ uid?: unknown }>(accountApi, input.data.apiKey, input.data.secretKey);
-    const uid = String(payload.uid ?? "").trim();
-    if (!uid) throw new Error("Binance account response is invalid");
-    if (uid !== input.address) throw new Error("Binance ID does not match API key pair");
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(400, "errors.payment_credential_invalid");
+  const payload = await signedGet<{ uid?: unknown }>(accountApi, input.data.apiKey, input.data.secretKey);
+  const uid = String(payload.uid ?? "").trim();
+  if (!uid) throw new AppError(400, "errors.payment_account_id_invalid", { detail: "Binance API 返回中没有账户ID" });
+  if (uid !== input.address) {
+    throw new AppError(400, "errors.payment_account_id_invalid", { detail: `API 返回账户ID ${uid}，与填写的 ${input.address} 不一致` });
   }
 }
 
@@ -72,8 +69,27 @@ async function signedGet<T>(url: string, apiKey: string, secretKey: string, data
   const res = await fetch(`${url}?${query}&signature=${signature}`, {
     headers: { accept: "application/json", "X-MBX-APIKEY": apiKey },
   });
-  if (!res.ok) throw new Error(`Binance request failed: ${res.status}`);
+  if (!res.ok) {
+    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: await responseReason(res) });
+  }
   return res.json() as Promise<T>;
+}
+
+async function responseReason(res: Response) {
+  const fallback = `HTTP ${res.status}`;
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = await res.clone().json().catch(() => null) as { code?: unknown; msg?: unknown } | null;
+    const code = String(body?.code ?? "").trim();
+    const msg = String(body?.msg ?? "").trim();
+    return clean([code, msg].filter(Boolean).join(" ") || fallback);
+  }
+  const text = await res.text().catch(() => "");
+  return clean(text || fallback);
+}
+
+function clean(value: string) {
+  return value.replace(/\s+/g, " ").slice(0, 160);
 }
 
 function match(snapshot: PaymentSnapshot, row: BinancePayRow, created: number, expire: number) {

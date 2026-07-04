@@ -255,7 +255,40 @@ describe("Binance Pay provider", () => {
     await expect(validateBinance({
       address: "999999",
       data: { apiKey: "api-key", secretKey: "secret-key" },
-    })).rejects.toMatchObject({ key: "errors.payment_credential_invalid", status: 400 });
+    })).rejects.toMatchObject({
+      key: "errors.payment_account_id_invalid",
+      params: { detail: "API 返回账户ID 34355667，与填写的 999999 不一致" },
+      status: 400,
+    });
+  });
+
+  it("reports Binance API failures with the platform reason", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      JSON.stringify({ code: -2015, msg: "Invalid API-key, IP, or permissions for action." }),
+      { headers: { "content-type": "application/json" }, status: 401 },
+    )));
+
+    await expect(validateBinance({
+      address: "34355667",
+      data: { apiKey: "api-key", secretKey: "secret-key" },
+    })).rejects.toMatchObject({
+      key: "errors.payment_api_credential_invalid",
+      params: { detail: "-2015 Invalid API-key, IP, or permissions for action." },
+      status: 400,
+    });
+  });
+
+  it("reports Binance account responses without a UID", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({})));
+
+    await expect(validateBinance({
+      address: "34355667",
+      data: { apiKey: "api-key", secretKey: "secret-key" },
+    })).rejects.toMatchObject({
+      key: "errors.payment_account_id_invalid",
+      params: { detail: "Binance API 返回中没有账户ID" },
+      status: 400,
+    });
   });
 
   it("matches payments received by Binance ID", async () => {
@@ -355,7 +388,37 @@ describe("OKX provider", () => {
     await expect(validateOkx({
       address: "999999",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
-    })).rejects.toMatchObject({ key: "errors.payment_credential_invalid", status: 400 });
+    })).rejects.toMatchObject({
+      key: "errors.payment_account_id_invalid",
+      params: { detail: "API 返回账户ID 888777，与填写的 999999 不一致" },
+      status: 400,
+    });
+  });
+
+  it("reports OKX API failures with the platform reason", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ code: "50113", msg: "Invalid signature" })));
+
+    await expect(validateOkx({
+      address: "888777",
+      data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+    })).rejects.toMatchObject({
+      key: "errors.payment_api_credential_invalid",
+      params: { detail: "50113 Invalid signature" },
+      status: 400,
+    });
+  });
+
+  it("reports OKX account responses without a UID", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{}] })));
+
+    await expect(validateOkx({
+      address: "888777",
+      data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+    })).rejects.toMatchObject({
+      key: "errors.payment_account_id_invalid",
+      params: { detail: "OKX API 返回中没有账户ID" },
+      status: 400,
+    });
   });
 
   it("matches OKX internal receive bills by amount, currency, and time", async () => {
