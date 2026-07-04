@@ -30,7 +30,7 @@ jobs:
           git reset --hard FETCH_HEAD
 
           if [ -f "$RUNNER_TEMP/wrangler.current.jsonc" ]; then
-            node scripts/merge-wrangler-config.mjs "$RUNNER_TEMP/wrangler.current.jsonc" wrangler.jsonc
+            node scripts/merge-wrangler.mjs "$RUNNER_TEMP/wrangler.current.jsonc" wrangler.jsonc
           fi
 
           git config user.name "HashPay Updater"
