@@ -6,6 +6,8 @@ HashPay v1 runs on Cloudflare Workers with Vite, Vue 3, Hono, D1, Queues, and Cr
 
 HashPay is a crypto payment gateway for Cloudflare Workers. It provides a Vue admin console, merchant order APIs, a hosted checkout page, Telegram bot and Mini App login, chain payment checks, D1 persistence, queue-backed merchant notifications, and scheduled jobs for expiry, rate sync, and payment verification.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tgdash/HashPay)
+
 Key Cloudflare features used by this project:
 
 - Workers and Hono for the backend API and Telegram webhook.
@@ -16,17 +18,19 @@ Key Cloudflare features used by this project:
 
 <!-- dash-content-end -->
 
-## Cloudflare Git Import
+## Cloudflare Install
 
-When importing this repository from Cloudflare Workers Builds, use these settings:
+Use the **Deploy to Cloudflare** button above, or import this repository in Cloudflare Workers Builds. The install page should use these fields:
 
 | Field | Value |
 | --- | --- |
 | Production branch | `main` |
 | Root directory | leave empty unless this project is inside a monorepo |
-| Build command | leave empty; `npm run deploy` runs the Vite build |
+| Build command | `npm run build` |
 | Deploy command | `npm run deploy` |
 | Non-production branch deploy command | `npm run deploy:preview` |
+
+Cloudflare reads the `build` and `deploy` scripts from `package.json` and pre-populates these fields during installation. If an existing Workers Builds project still has an empty Build command and only runs `npx wrangler deploy`, update its build settings to the values above.
 
 Runtime secrets must be configured in **Settings > Variables & Secrets**:
 
