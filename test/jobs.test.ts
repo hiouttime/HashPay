@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("scheduled jobs", () => {
-  it("runs every-minute jobs and enqueues due notifications", async () => {
+  it("runs every-minute jobs and enqueues due notify rows", async () => {
     const env = envWithQueue();
     mocks.all.mockResolvedValue([{ id: 11 }, { id: 12 }]);
 
@@ -75,7 +75,7 @@ describe("scheduled jobs", () => {
     expect(mocks.all).toHaveBeenCalledWith(env, expect.stringContaining("SELECT id FROM notify"), 1234);
   });
 
-  it("acks queue messages after DB-driven notify retry state is written", async () => {
+  it("acks queue messages after notify retry state is written in D1", async () => {
     const env = envWithQueue();
     const message = queueMessage({ notifyId: 42 });
     mocks.deliverNotify.mockRejectedValue(new Error("notify remains retryable in D1"));

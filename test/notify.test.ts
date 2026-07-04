@@ -7,7 +7,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("notify delivery", () => {
+describe("notify", () => {
   it("records HTTP failures for cron-driven retry without throwing", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_800_000);

@@ -71,7 +71,7 @@ export const paymentAssets: Record<PaymentAssetKey, { icon: string; name: string
 
 export const trc20Assets: Record<string, Trc20Asset> = {
   usdt: {
-    contract: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+    contract: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
     decimals: 6,
     symbol: "USDT",
   },
@@ -79,20 +79,20 @@ export const trc20Assets: Record<string, Trc20Asset> = {
 
 export const evmAssets: Record<string, Record<string, TokenAsset>> = {
   base: {
-    usdc: { contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, symbol: "USDC" },
-    usdt: { contract: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6, symbol: "USDT" },
+    usdc: { contract: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", decimals: 6, symbol: "USDC" },
+    usdt: { contract: "0xfde4c96c8593536e31f229ea8f37b2ada2699bb2", decimals: 6, symbol: "USDT" },
   },
   erc20: {
-    usdt: { contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6, symbol: "USDT" },
-    usdc: { contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6, symbol: "USDC" },
+    usdt: { contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6, symbol: "USDT" },
+    usdc: { contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", decimals: 6, symbol: "USDC" },
   },
   bep20: {
-    usdt: { contract: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, symbol: "USDT" },
+    usdt: { contract: "0x55d398326f99059ff775485246999027b3197955", decimals: 18, symbol: "USDT" },
     usdc: { contract: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", decimals: 18, symbol: "USDC" },
   },
   polygon: {
-    usdt: { contract: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", decimals: 6, symbol: "USDT" },
-    usdc: { contract: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", decimals: 6, symbol: "USDC" },
+    usdt: { contract: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", decimals: 6, symbol: "USDT" },
+    usdc: { contract: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", decimals: 6, symbol: "USDC" },
   },
 };
 
@@ -106,38 +106,36 @@ export const tonAssets: Record<string, TokenAsset> = {
 
 export const aptosAssets: Record<string, TokenAsset> = {
   usdc: {
-    contract: "0xbae7a5369b48c62ddc83e06f3d8a6f4a967d7f8ab6e433c0f2d5a62fdd6f3b",
+    contract: "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
     decimals: 6,
     symbol: "USDC",
   },
   usdt: {
-    contract: "0x357b0b28bb206f00e1ed4e0d6a5d0b8b95117c5c8840ad2b0f0e2c38b8f2dc2b",
+    contract: "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b",
     decimals: 6,
     symbol: "USDT",
   },
 };
 
-export function normalizeNetworkKey(value: unknown) {
+export function key(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-export function normalizePaymentAsset(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
+function text(value: unknown) {
+  return String(value ?? "").trim();
 }
 
-export function assetLabel(asset: unknown) {
-  const key = normalizePaymentAsset(asset) as PaymentAssetKey;
-  return paymentAssets[key]?.name ?? String(asset ?? "").trim().toUpperCase();
+function assetInfo(value: unknown) {
+  return paymentAssets[key(value) as PaymentAssetKey];
 }
 
-export function assetSymbol(asset: unknown) {
-  const key = normalizePaymentAsset(asset) as PaymentAssetKey;
-  return paymentAssets[key]?.symbol ?? String(asset ?? "").trim().toUpperCase();
+export function assetName(value: unknown) {
+  return assetInfo(value)?.name ?? text(value).toUpperCase();
 }
 
 export function normalizeAssetCsv(raw: unknown, fallback: readonly string[] = []) {
-  const source = String(raw ?? "").trim() || fallback.join(",");
-  return Array.from(new Set(source.split(",").map(normalizePaymentAsset).filter(Boolean)));
+  const source = text(raw) || fallback.join(",");
+  return Array.from(new Set(source.split(",").map(key).filter(Boolean)));
 }
 
 export const trc20: Payment = {
@@ -148,7 +146,7 @@ export const trc20: Payment = {
   },
   assets: ["usdt", "trx"],
   explorer: {
-    transaction: "https://nile.tronscan.org/#/transaction/{hash}",
+    transaction: "https://tronscan.org/#/transaction/{hash}",
   },
   icon: "icon-tron",
   id: "trc20",
@@ -345,11 +343,11 @@ export function paymentById(id: unknown) {
 }
 
 export function paymentByNetwork(network: unknown) {
-  return byNetwork.get(normalizeNetworkKey(network));
+  return byNetwork.get(key(network));
 }
 
 export function networkLabel(network: unknown) {
-  const raw = String(network ?? "").trim();
+  const raw = text(network);
   return paymentByNetwork(raw)?.nameKey ?? raw.toUpperCase();
 }
 
@@ -360,6 +358,5 @@ export function paymentExplorerUrl(network: unknown, hash: unknown) {
 }
 
 export function paymentAssetIcon(asset: unknown) {
-  const key = normalizePaymentAsset(asset) as PaymentAssetKey;
-  return paymentAssets[key]?.icon ?? "";
+  return assetInfo(asset)?.icon ?? "";
 }

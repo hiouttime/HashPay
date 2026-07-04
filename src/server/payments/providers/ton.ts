@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { sameAmount } from "@/shared/amount";
-import { normalizePaymentAsset, tonAssets } from "@/shared/payments";
+import { key, tonAssets } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -26,7 +26,7 @@ async function scan(input: PaymentCheckInput) {
   const expireAt = Math.max(...input.orders.map((order) => order.expireAt));
   if (!address) return [];
   const txs = [];
-  for (const asset of Array.from(new Set(input.orders.map((order) => normalizePaymentAsset(order.snapshot.currency)).filter(Boolean)))) {
+  for (const asset of Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)))) {
     txs.push(...(asset === "gram" ? await tonTransactions(address, asset, createdAt, expireAt) : await jettonTransfers(address, asset, createdAt, expireAt)));
   }
   return txs;
@@ -68,12 +68,12 @@ async function tonTransactions(address: string, asset: string, createdAt: number
 }
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
-  const asset = normalizePaymentAsset(snapshot.currency);
+  const asset = key(snapshot.currency);
   const token = tonAssets[asset];
   return Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
-    && normalizePaymentAsset(tx.currency) === asset
+    && key(tx.currency) === asset
     && (!token || master(tx.raw) === token.contract)
     && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
@@ -84,7 +84,7 @@ function submitted(input: unknown) {
     const row = item as Record<string, unknown>;
     return {
       amount: Number(row.amount),
-      currency: normalizePaymentAsset(row.currency),
+      currency: key(row.currency),
       hash: String(row.hash ?? ""),
       raw: row.raw ?? row,
       timestamp: Number(row.timestamp),

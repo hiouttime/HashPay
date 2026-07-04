@@ -1,4 +1,4 @@
-import { normalizePaymentAsset, trc20Assets } from "@/shared/payments";
+import { key, trc20Assets } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 
 export interface TronGridTokenTx {
@@ -31,7 +31,7 @@ export interface TronGridNativeTx {
 }
 
 export function trc20Candidate(item: TronGridTokenTx, currency: string): TxCandidate | null {
-  const asset = normalizePaymentAsset(currency);
+  const asset = key(currency);
   const token = trc20Assets[asset];
   if (!token || item.token_info?.address !== token.contract || String(item.token_info?.symbol || "").toUpperCase() !== token.symbol) return null;
   return {
@@ -61,6 +61,6 @@ export function trxCandidate(item: TronGridNativeTx, address: string): TxCandida
 }
 
 export function trc20ContractMatches(currency: string, raw: unknown) {
-  const token = trc20Assets[normalizePaymentAsset(currency)];
+  const token = trc20Assets[key(currency)];
   return !token || String((raw as TronGridTokenTx).token_info?.address ?? "") === token.contract;
 }

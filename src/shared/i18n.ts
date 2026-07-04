@@ -173,8 +173,6 @@ const zh = {
   "orders.empty": "暂无订单",
   "orders.batch_checked": "批量检查完成",
   "orders.batch_deleted": "已删除所选订单",
-  "orders.test": "生成测试订单",
-  "orders.test_created": "测试订单已创建",
 
   "order.detail": "订单详细",
   "order.id": "订单号",
@@ -645,8 +643,6 @@ const en: Record<keyof typeof zh, string> = {
   "orders.empty": "No orders",
   "orders.batch_checked": "Batch check completed",
   "orders.batch_deleted": "Selected orders deleted",
-  "orders.test": "Generate test order",
-  "orders.test_created": "Test order created",
   "order.detail": "Order details",
   "order.id": "Order ID",
   "order.merchant": "Merchant",

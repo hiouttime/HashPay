@@ -5,7 +5,7 @@ import { consumePin, createPin, endSession, telegramLogin } from "@/server/servi
 import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
 import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "@/server/services/merchants";
-import { checkOrderPayment, confirmOrder, createCheckoutTestOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
+import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
 import { dashboard } from "@/server/services/app";
 import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
 import { setupSession, startSetup } from "@/server/services/app/setup";
@@ -79,7 +79,6 @@ app.get("/orders", json((c) =>
     status: c.req.query("status") ?? "all",
   }),
 ));
-app.post("/orders/test", json(async (c) => createCheckoutTestOrder(c.env, c.req.url, await c.req.json().catch(() => ({})) as Record<string, unknown>)));
 app.get("/orders/:id", json((c) => getOrderDetail(c.env, c.req.param("id")!)));
 app.delete("/orders/:id", json((c) => deleteOrder(c.env, c.req.param("id")!)));
 app.post("/orders/:id/check", json((c) => checkOrderPayment(c.env, c.req.param("id")!)));

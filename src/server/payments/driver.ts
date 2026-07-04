@@ -9,7 +9,7 @@ import {
   defaultPayment,
   evmPayments,
   normalizeAssetCsv,
-  normalizePaymentAsset,
+  key,
   paymentById,
   paymentExplorerUrl,
   payments,
@@ -96,7 +96,7 @@ export function assignPayment(channel: PaymentChannel, amount: number, targetAss
   return {
     address: address(payment, channel.address),
     amount: ceilAmount(amount),
-    currency: normalizePaymentAsset(targetAsset),
+    currency: key(targetAsset),
     driver: payment.id,
   };
 }
@@ -132,7 +132,7 @@ function address(payment: Payment, raw: string) {
 }
 
 function validateAssets(raw: string[], supported: readonly string[]) {
-  const assets = Array.from(new Set(raw.map(normalizePaymentAsset).filter(Boolean)));
+  const assets = Array.from(new Set(raw.map(key).filter(Boolean)));
   if (!assets.length) throw new AppError(400, "errors.payment_asset_invalid");
   const invalid = assets.filter((asset) => !supported.includes(asset));
   if (invalid.length) throw new AppError(400, "errors.payment_asset_invalid");
@@ -140,5 +140,5 @@ function validateAssets(raw: string[], supported: readonly string[]) {
 
 function enabledAssets(raw: unknown, supported: readonly string[]) {
   const allowed = new Set(supported);
-  return (Array.isArray(raw) ? raw.map(normalizePaymentAsset) : normalizeAssetCsv(raw, supported)).filter((asset) => allowed.has(asset));
+  return (Array.isArray(raw) ? raw.map(key) : normalizeAssetCsv(raw, supported)).filter((asset) => allowed.has(asset));
 }

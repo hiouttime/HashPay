@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { sameAmount } from "@/shared/amount";
-import { aptosAssets, normalizePaymentAsset } from "@/shared/payments";
+import { aptosAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -25,7 +25,7 @@ export async function check(input: PaymentCheckInput): Promise<PaymentCheckResul
 async function scan(input: PaymentCheckInput) {
   const address = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
   if (!address) return [];
-  const assets = Array.from(new Set(input.orders.map((order) => normalizePaymentAsset(order.snapshot.currency)).filter(Boolean)));
+  const assets = Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)));
   return activities(
     address,
     assets,
@@ -70,12 +70,12 @@ async function activities(address: string, assets: string[], createdAt: number, 
 }
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
-  const asset = normalizePaymentAsset(snapshot.currency);
+  const asset = key(snapshot.currency);
   const token = aptosAssets[asset];
   return Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
-    && normalizePaymentAsset(tx.currency) === asset
+    && key(tx.currency) === asset
     && (!token || contract(tx.raw) === token.contract)
     && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
@@ -86,7 +86,7 @@ function submitted(input: unknown) {
     const row = item as Record<string, unknown>;
     return {
       amount: Number(row.amount),
-      currency: normalizePaymentAsset(row.currency),
+      currency: key(row.currency),
       hash: String(row.hash ?? ""),
       raw: row.raw ?? row,
       timestamp: Number(row.timestamp),

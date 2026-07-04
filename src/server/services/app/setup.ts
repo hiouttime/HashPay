@@ -1,4 +1,4 @@
-import { getConfig, jsonParseObject } from "@/server/db";
+import { getConfig, jsonParseObject, setConfigs } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
 import { setSessionCookie, signSession } from "@/server/services/auth/session";
@@ -22,6 +22,12 @@ export async function setupSession(c: Context<HonoEnv>) {
   if (!adminId) return { admin: null, bound: false };
   const admin = jsonParseObject<TelegramUser>(await getConfig(c.env, "admin_user"), { firstName: "", id: adminId, lastName: "" });
   setSessionCookie(c, await signSession(c.env, admin));
+  await setConfigs(c.env, {
+    currency: "CNY",
+    fast_confirm: "false",
+    rate_adjust: "0",
+    timeout: "5",
+  });
   await ensureDefaultBanner(c.env);
   await syncMarketRates(c.env);
   await configureBotMiniApp(c.env);

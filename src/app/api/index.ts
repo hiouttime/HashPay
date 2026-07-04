@@ -47,7 +47,6 @@ function endpoints(options: ApiRequestOptions = {}) {
     orders: {
       list: (input: { page: number; pageSize: number; q?: string; status: string }) =>
         get<{ items: Order[]; page: number; pageSize: number; total: number }>(`/api/admin/orders?${orderQuery(input)}`, options),
-      test: () => post<{ checkoutUrl: string; order: Order }>("/api/admin/orders/test", undefined, options),
       get: (orderId: string) => get<OrderDetail>(`/api/admin/orders/${id(orderId)}`, options),
       remove: (orderId: string) => del<{ ok: boolean }>(`/api/admin/orders/${id(orderId)}`, options),
       check: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/check`, undefined, options),

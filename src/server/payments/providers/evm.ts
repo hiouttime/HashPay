@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { sameAmount } from "@/shared/amount";
-import { evmAssets, normalizeNetworkKey, normalizePaymentAsset } from "@/shared/payments";
+import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -31,12 +31,12 @@ export async function check(input: PaymentCheckInput): Promise<PaymentCheckResul
 
 async function scan(input: PaymentCheckInput) {
   const first = input.orders[0]?.snapshot;
-  const network = normalizeNetworkKey(first?.driver);
+  const network = key(first?.driver);
   const chain = chains[network];
   const address = String(input.channel?.address ?? first?.address ?? "");
   if (!chain || !address) return [];
   const from = Math.min(...input.orders.map((order) => order.createdAt));
-  const assets = Array.from(new Set(input.orders.map((order) => normalizePaymentAsset(order.snapshot.currency)).filter(Boolean)));
+  const assets = Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)));
   const txs = [];
   for (const asset of assets) {
     txs.push(...(chain.explorer ? await blockscout(chain.explorer, address, asset, network) : await rpcScan(chain, address, asset, network, from)));
@@ -103,13 +103,13 @@ async function tokenLogs(chain: { blockSeconds: number; rpc?: string }, address:
 }
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
-  const network = normalizeNetworkKey(snapshot.driver);
-  const asset = normalizePaymentAsset(snapshot.currency);
+  const network = key(snapshot.driver);
+  const asset = key(snapshot.currency);
   const token = evmAssets[network]?.[asset];
   return Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
-    && normalizePaymentAsset(tx.currency) === asset
+    && key(tx.currency) === asset
     && (!token || lower(contract(tx.raw)) === lower(token.contract))
     && sameAmount(tx.amount, snapshot.amount)
     && lower(snapshot.address) === lower(tx.to);
@@ -120,7 +120,7 @@ function submitted(input: unknown) {
     const row = item as Record<string, unknown>;
     return {
       amount: Number(row.amount),
-      currency: normalizePaymentAsset(row.currency),
+      currency: key(row.currency),
       hash: String(row.hash ?? ""),
       raw: row.raw ?? row,
       timestamp: Number(row.timestamp),

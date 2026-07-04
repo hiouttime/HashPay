@@ -1,11 +1,10 @@
 import { appT } from "@/app/i18n";
 import {
-  assetLabel,
+  assetName as sharedAssetName,
   defaultPayment,
   evmPayments,
+  key,
   normalizeAssetCsv,
-  normalizeNetworkKey,
-  normalizePaymentAsset,
   paymentAssetIcon,
   paymentById,
   paymentByNetwork,
@@ -51,11 +50,11 @@ export const kinds: Array<{ label: string; value: Kind }> = [
 
 export function networkKey(value: unknown) {
   const raw = String(value).trim();
-  return normalizeNetworkKey(raw.includes("/") ? raw.split("/").pop() : raw);
+  return key(raw.includes("/") ? raw.split("/").pop() : raw);
 }
 
 export function assetKey(value: unknown) {
-  return normalizePaymentAsset(value);
+  return key(value);
 }
 
 export const drivers = payments;
@@ -103,9 +102,7 @@ export function assets(raw: unknown) {
   return normalizeAssetCsv(raw);
 }
 
-export function assetName(asset: unknown) {
-  return assetLabel(asset);
-}
+export const assetName = sharedAssetName;
 
 export function assetIcon(asset: unknown) {
   return paymentAssetIcon(asset);

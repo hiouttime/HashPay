@@ -48,6 +48,31 @@ describe("setup session", () => {
     expect(mocks.ensureDefaultBanner).toHaveBeenCalledTimes(1);
     expect(mocks.syncMarketRates).toHaveBeenCalledTimes(1);
     expect(mocks.configureBotMiniApp).toHaveBeenCalledTimes(1);
+    expect(configs.get("currency")).toBe("CNY");
+    expect(configs.get("fast_confirm")).toBe("false");
+    expect(configs.get("rate_adjust")).toBe("0");
+    expect(configs.get("timeout")).toBe("5");
+  });
+
+  it("writes default settings during setup even when stale values exist", async () => {
+    const app = new Hono<HonoEnv>();
+    app.get("/setup", async (c) => c.json(await setupSession(c)));
+    const configs = new Map<string, string | null>([
+      ["admin_id", "123"],
+      ["admin_user", JSON.stringify({ firstName: "Admin", id: 123, lastName: "" })],
+      ["currency", "USD"],
+      ["fast_confirm", "true"],
+      ["rate_adjust", "20"],
+      ["timeout", "15"],
+    ]);
+
+    const response = await app.fetch(new Request("https://hashpay.test/setup"), createEnv(configs));
+
+    expect(response.status).toBe(200);
+    expect(configs.get("currency")).toBe("CNY");
+    expect(configs.get("fast_confirm")).toBe("false");
+    expect(configs.get("rate_adjust")).toBe("0");
+    expect(configs.get("timeout")).toBe("5");
   });
 });
 
@@ -69,7 +94,14 @@ function createEnv(configs: Map<string, string | null>) {
             }
             return null;
           },
+          async run() {
+            if (sql.includes("INSERT INTO configs")) configs.set(String(values[0]), values[1] as string | null);
+            return {};
+          },
         };
+      },
+      batch(statements: Array<{ run: () => Promise<unknown> }>) {
+        return Promise.all(statements.map((statement) => statement.run()));
       },
     },
   } as unknown as AppEnv;

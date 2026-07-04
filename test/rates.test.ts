@@ -15,16 +15,11 @@ describe("market rates", () => {
     const configs = new Map<string, string | null>();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
-      if (url.includes("open.er-api.com")) {
-        return jsonResponse({
-          rates: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5 },
-          result: "success",
-        });
-      }
+      if (url.includes("open.er-api.com")) return json({ rates: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5 }, result: "success" });
       throw new Error(`unexpected fetch ${url}`);
     });
 
-    const rates = await syncMarketRates(createEnv(configs));
+    const rates = await syncMarketRates(env(configs));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(rates.fiatPerUSD.CNY).toBe(7.18);
@@ -34,21 +29,18 @@ describe("market rates", () => {
       fiatPerUSD: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5, USD: 1 },
       syncedAt,
     });
-
-    await expect(currentMarketRates(createEnv(configs))).resolves.toMatchObject({
-      syncedAt,
-    });
+    await expect(currentMarketRates(env(configs))).resolves.toMatchObject({ syncedAt });
   });
 
   it("does not mark default rates as freshly synced when the fiat API fails", async () => {
     const configs = new Map<string, string | null>();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network failed"));
 
-    const rates = await syncMarketRates(createEnv(configs));
+    const rates = await syncMarketRates(env(configs));
 
     expect(rates.messageKey).toBe("settings.rate_error_fiat");
     expect(rates.fiatPerUSD.CNY).toBe(7.2);
-    await expect(currentMarketRates(createEnv(configs))).resolves.toMatchObject({
+    await expect(currentMarketRates(env(configs))).resolves.toMatchObject({
       messageKey: "settings.rate_error_fiat",
       syncedAt: 0,
     });
@@ -65,20 +57,19 @@ describe("market rates", () => {
     vi.setSystemTime(Date.parse("2026-07-04T08:00:00Z"));
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network failed"));
 
-    const rates = await syncMarketRates(createEnv(configs));
+    const rates = await syncMarketRates(env(configs));
 
     expect(rates.messageKey).toBe("settings.rate_error_fiat");
     expect(rates.fiatPerUSD.CNY).toBe(6.8);
     expect(rates.syncedAt).toBe(1_783_148_400);
-    await expect(currentMarketRates(createEnv(configs))).resolves.toMatchObject({
+    await expect(currentMarketRates(env(configs))).resolves.toMatchObject({
       messageKey: "settings.rate_error_fiat",
       syncedAt: 1_783_148_400,
     });
   });
-
 });
 
-function createEnv(configs: Map<string, string | null>) {
+function env(configs: Map<string, string | null>) {
   return {
     DB: {
       prepare(sql: string) {
@@ -118,7 +109,7 @@ function context(rates: Awaited<ReturnType<typeof syncMarketRates>>) {
   };
 }
 
-function jsonResponse(body: unknown, status = 200) {
+function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
     status,

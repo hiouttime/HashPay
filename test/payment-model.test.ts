@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { paymentExplorerUrl, paymentOptions, payments, validatePayment } from "@/server/payments/driver";
-import { assetLabel, networkLabel, normalizeNetworkKey, normalizePaymentAsset, paymentById } from "@/shared/payments";
+import { assetName, networkLabel, key, paymentById } from "@/shared/payments";
 
 describe("payment model", () => {
   it("keeps TON as network and gram as the payment asset", () => {
     expect(networkLabel("ton")).toBe("network.ton");
-    expect(assetLabel("gram")).toBe("GRAM (ex TON)");
-    expect(normalizePaymentAsset("GRAM")).toBe("gram");
-    expect(normalizePaymentAsset("TON")).toBe("ton");
-    expect(normalizeNetworkKey("TRC20")).toBe("trc20");
-    expect(normalizeNetworkKey("BEP20")).toBe("bep20");
-    expect(normalizeNetworkKey("tron")).toBe("tron");
-    expect(normalizeNetworkKey("bnb")).toBe("bnb");
+    expect(assetName("gram")).toBe("GRAM (ex TON)");
+    expect(key("GRAM")).toBe("gram");
+    expect(key("TON")).toBe("ton");
+    expect(key("TRC20")).toBe("trc20");
+    expect(key("BEP20")).toBe("bep20");
+    expect(key("tron")).toBe("tron");
+    expect(key("bnb")).toBe("bnb");
   });
 
   it("lists gram on the TON network without treating TON as an asset alias", () => {
@@ -66,7 +66,7 @@ describe("payment model", () => {
       address: { nameKey: "payment.address.tron" },
       icon: "icon-tron",
     });
-    expect(paymentExplorerUrl("trc20", "abc")).toBe("https://nile.tronscan.org/#/transaction/abc");
+    expect(paymentExplorerUrl("trc20", "abc")).toBe("https://tronscan.org/#/transaction/abc");
   });
 
   it("supports Aptos as a chain payment driver", () => {

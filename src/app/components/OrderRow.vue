@@ -2,7 +2,7 @@
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { appT } from "@/app/i18n";
 import { formatTime } from "@/app/utils/format";
-import { assetLabel } from "@/shared/payments";
+import { assetName } from "@/shared/payments";
 import type { Order } from "@/shared/types/api";
 
 const props = withDefaults(defineProps<{
@@ -63,8 +63,8 @@ function orderStatusClass(status: string) {
       <span class="order-status" :class="orderStatusClass(props.order.status)">{{ orderStatusText(props.order.status) }}</span>
     </div>
     <div class="order-cell order-amount-cell">
-      <strong>{{ formatAmount(props.order.amount) }} {{ assetLabel(props.order.currency) }}</strong>
-      <span v-if="props.order.payment?.amount">{{ formatAmount(props.order.payment.amount) }} {{ assetLabel(props.order.payment.currency) }}</span>
+      <strong>{{ formatAmount(props.order.amount) }} {{ assetName(props.order.currency) }}</strong>
+      <span v-if="props.order.payment?.amount">{{ formatAmount(props.order.payment.amount) }} {{ assetName(props.order.payment.currency) }}</span>
     </div>
     <div class="order-cell order-payment-cell">
       <strong class="order-payway-title">

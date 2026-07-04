@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, watch } from "vue";
 import { useMessage } from "naive-ui";
 import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
-import TestOrderButton from "@/app/components/TestOrderButton.vue";
 import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 
@@ -137,7 +136,6 @@ onMounted(load);
     <div class="section-title">
       <h2>{{ t('orders.title') }}</h2>
       <div class="topbar-actions">
-        <TestOrderButton v-model:loading="view.loading" />
         <n-button :loading="view.loading" @click="load()">{{ t('common.refresh') }}</n-button>
       </div>
     </div>

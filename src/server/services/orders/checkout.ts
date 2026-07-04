@@ -8,7 +8,7 @@ import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWin
 import { createNotify } from "@/server/services/orders/notifications";
 import { imageData, resolveReview, saveReview } from "@/server/services/orders/review";
 import { conversionContext, convertAmount, convertAmountWithContext, systemSettings } from "@/server/services/app/settings";
-import { normalizeNetworkKey, normalizePaymentAsset } from "@/shared/payments";
+import { key } from "@/shared/payments";
 import { ceilAmount, sameAmount } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot, PaymentTxEvidence } from "@/shared/types/domain";
@@ -74,12 +74,12 @@ export async function selectTelegramPayment(env: AppEnv, orderId: string, asset:
 }
 
 async function selectPayment(env: AppEnv, order: Order, asset: string, network: string, refreshWindow: boolean) {
-  const targetAsset = normalizePaymentAsset(asset);
-  const targetNetwork = normalizeNetworkKey(network);
+  const targetAsset = key(asset);
+  const targetNetwork = key(network);
   const channels = [];
   for (const channel of (await listPayments(env)).filter((item) => item.status === "enabled")) {
     for (const quote of paymentOptions(channel)) {
-      if (normalizePaymentAsset(quote.asset) === targetAsset && normalizeNetworkKey(quote.network) === targetNetwork) {
+      if (key(quote.asset) === targetAsset && key(quote.network) === targetNetwork) {
         channels.push(channel);
       }
     }
@@ -108,7 +108,7 @@ async function uniqueAmount(env: AppEnv, channel: PaymentChannel, orderId: strin
   const used = rows.flatMap((row) => {
     const snapshot = jsonParseObject<Partial<PaymentSnapshot>>(row.payment, {});
     if (snapshot.address !== channel.address) return [];
-    if (normalizePaymentAsset(snapshot.currency) !== asset) return [];
+    if (key(snapshot.currency) !== asset) return [];
     const value = Number(snapshot.amount);
     return Number.isFinite(value) && value > 0 ? [value] : [];
   });
@@ -247,7 +247,7 @@ export async function okpayNotify(env: AppEnv, input: Record<string, unknown>) {
   const order = await getOrder(env, data.uniqueId);
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (snapshot.driver !== "okpay" || order.payway !== channel.id) throw new AppError(400, "errors.bad_request");
-  if (!sameAmount(data.amount, snapshot.amount) || data.coin !== normalizePaymentAsset(snapshot.currency)) throw new AppError(400, "errors.bad_request");
+  if (!sameAmount(data.amount, snapshot.amount) || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
   if (order.status === "paid") return { status: "success" };
   await markPaid(env, order, { txid: data.orderId });
   return { status: "success" };

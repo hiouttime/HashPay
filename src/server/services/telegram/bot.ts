@@ -9,7 +9,7 @@ import { checkOrderPayment, checkoutData, selectTelegramPayment } from "@/server
 import { getOrder } from "@/server/services/orders/repository";
 import { botToken } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
-import { assetLabel, networkLabel, normalizePaymentAsset } from "@/shared/payments";
+import { assetName, networkLabel, key } from "@/shared/payments";
 import { paymentExplorerUrl } from "@/server/payments/driver";
 import { normalizeLocale, t, type Locale } from "@/shared/i18n";
 import { ceilAmount } from "@/shared/amount";
@@ -164,8 +164,8 @@ export async function createBot(env: AppEnv) {
       return;
     }
     const resultId = `pay:${parsed.amount}:${parsed.currency}:${Date.now().toString(36)}`;
-    const title = t(locale, "telegram.inline_title", { amount: formatInlineAmount(parsed.amount), asset: assetLabel(parsed.currency) });
-    const pendingText = t(locale, "telegram.inline_pending", { amount: formatInlineAmount(parsed.amount), asset: assetLabel(parsed.currency) });
+    const title = t(locale, "telegram.inline_title", { amount: formatInlineAmount(parsed.amount), asset: assetName(parsed.currency) });
+    const pendingText = t(locale, "telegram.inline_pending", { amount: formatInlineAmount(parsed.amount), asset: assetName(parsed.currency) });
     await ctx.answerInlineQuery([{
       description: t(locale, "telegram.inline_desc"),
       id: resultId,
@@ -254,34 +254,34 @@ function formatInlineAmount(amount: number) {
 }
 
 function renderPaymentMenuText(order: { amount: number; currency: string }, locale: Locale) {
-  return t(locale, "telegram.payment_menu", { amount: formatInlineAmount(order.amount), asset: assetLabel(order.currency) });
+  return t(locale, "telegram.payment_menu", { amount: formatInlineAmount(order.amount), asset: assetName(order.currency) });
 }
 
 function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
   const keyboard = new InlineKeyboard();
   for (const asset of paymentAssets(options)) {
-    keyboard.text(assetLabel(asset), `payasset:${orderId}:${asset}`).row();
+    keyboard.text(assetName(asset), `payasset:${orderId}:${asset}`).row();
   }
   return keyboard;
 }
 
 function renderNetworkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale) {
-  const targetAsset = normalizePaymentAsset(asset);
-  const payAmount = options.find((option) => normalizePaymentAsset(option.asset) === targetAsset)?.amount ?? order.amount;
+  const targetAsset = key(asset);
+  const payAmount = options.find((option) => key(option.asset) === targetAsset)?.amount ?? order.amount;
   return t(locale, "telegram.network_menu", {
     amount: formatInlineAmount(order.amount),
-    asset: assetLabel(order.currency),
+    asset: assetName(order.currency),
     payAmount: formatInlineAmount(payAmount),
-    payAsset: assetLabel(asset),
+    payAsset: assetName(asset),
   });
 }
 
 function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
   const keyboard = new InlineKeyboard();
-  const targetAsset = normalizePaymentAsset(asset);
+  const targetAsset = key(asset);
   const networks = [...new Set(
     options
-      .filter((option) => normalizePaymentAsset(option.asset) === targetAsset)
+      .filter((option) => key(option.asset) === targetAsset)
       .map((option) => option.network.trim().toLowerCase())
       .filter(Boolean),
   )].sort((a, b) => t(locale, networkLabel(a)).localeCompare(t(locale, networkLabel(b))));
@@ -293,7 +293,7 @@ function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], as
 }
 
 function paymentAssets(options: TelegramPaymentOption[]) {
-  return [...new Set(options.map((option) => normalizePaymentAsset(option.asset)).filter(Boolean))].sort();
+  return [...new Set(options.map((option) => key(option.asset)).filter(Boolean))].sort();
 }
 
 async function renderSelectedPaymentKeyboard(env: AppEnv, order: TelegramOrderRef, locale: Locale) {
@@ -355,7 +355,7 @@ function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, local
 
 function renderPaymentSnapshotText(order: PaidOrderRef, snapshot: PaymentSnapshot, locale: Locale) {
   return [
-    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetLabel(snapshot.currency) })),
+    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetName(snapshot.currency) })),
     escapeHtml(t(locale, "telegram.network_warning")),
     "",
     t(locale, "telegram.address", { address: escapeHtml(snapshot.address ?? "") }),

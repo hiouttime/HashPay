@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { aptosAssets, evmAssets, normalizeNetworkKey, normalizePaymentAsset, tonAssets, trc20Assets } from "@/shared/payments";
+import { aptosAssets, evmAssets, key, tonAssets, trc20Assets } from "@/shared/payments";
 import { trc20Candidate, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -32,7 +32,7 @@ export async function browserTxCandidates(payment: BrowserPaymentSnapshot, order
 
 async function trc20(payment: BrowserPaymentSnapshot, order: OrderSnapshot, fastConfirm: boolean) {
   const address = String(payment.address || "");
-  const asset = normalizePaymentAsset(payment.currency);
+  const asset = key(payment.currency);
   const params = new URLSearchParams({
     limit: "50",
     min_timestamp: String(Math.max(0, Number(order.createdAt ?? 0)) * 1000),
@@ -63,7 +63,7 @@ async function polygon(payment: BrowserPaymentSnapshot) {
 }
 
 async function bep20(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
-  const asset = normalizePaymentAsset(payment.currency);
+  const asset = key(payment.currency);
   const token = evmAssets.bep20?.[asset];
   if (!token || !payment.address) return [];
   const latest = Number.parseInt(await rpc<string>("eth_blockNumber", []), 16);
@@ -95,8 +95,8 @@ async function bep20(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
 }
 
 async function blockscout(baseUrl: string, payment: BrowserPaymentSnapshot) {
-  const network = normalizeNetworkKey(payment.driver);
-  const asset = normalizePaymentAsset(payment.currency);
+  const network = key(payment.driver);
+  const asset = key(payment.currency);
   const token = evmAssets[network]?.[asset];
   if (!payment.address) return [];
   if (token) {
@@ -132,7 +132,7 @@ async function blockscout(baseUrl: string, payment: BrowserPaymentSnapshot) {
 
 async function ton(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
   const address = String(payment.address || "");
-  const asset = normalizePaymentAsset(payment.currency);
+  const asset = key(payment.currency);
   const start = Math.max(0, Number(order.createdAt ?? 0));
   if (!address) return [];
   if (asset === "gram") {
@@ -169,7 +169,7 @@ async function ton(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
 
 async function aptos(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
   const address = String(payment.address || "");
-  const asset = normalizePaymentAsset(payment.currency);
+  const asset = key(payment.currency);
   const token = aptosAssets[asset];
   if (!address || !token) return [];
   const query = `
@@ -220,7 +220,7 @@ async function aptos(payment: BrowserPaymentSnapshot, order: OrderSnapshot) {
 }
 
 async function tronGrid<T>(address: string, path: string, params: URLSearchParams) {
-  const url = `https://nile.trongrid.io/v1/accounts/${encodeURIComponent(address)}/${path}?${params}`;
+  const url = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(address)}/${path}?${params}`;
   const payload = await fetch(url).then((res) => res.json() as Promise<{ data?: T[] }>);
   return Array.isArray(payload.data) ? payload.data : [];
 }

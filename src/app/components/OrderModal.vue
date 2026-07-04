@@ -7,7 +7,7 @@ import { useI18n } from "@/app/i18n";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
 import { formatTime } from "@/app/utils/format";
-import { assetLabel } from "@/shared/payments";
+import { assetName } from "@/shared/payments";
 import type { OrderDetail, Order } from "@/shared/types/api";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -122,14 +122,14 @@ function paymentTarget(payment: Partial<PaymentSnapshot>) {
 }
 
 function payAmount(payment: Partial<PaymentSnapshot>) {
-  return payment.amount ? `${formatAmount(payment.amount)} ${assetLabel(payment.currency)}` : "--";
+  return payment.amount ? `${formatAmount(payment.amount)} ${assetName(payment.currency)}` : "--";
 }
 
 function rateText(value: OrderDetail) {
   const paid = Number(value.order.payment.amount);
   if (!paid) return t("order.not_selected");
   const rate = value.order.amount / paid;
-  return `1 ${assetLabel(value.order.payment.currency)} = ${formatAmount(rate)} ${assetLabel(value.order.currency)}`;
+  return `1 ${assetName(value.order.payment.currency)} = ${formatAmount(rate)} ${assetName(value.order.currency)}`;
 }
 
 function confirmMethod(payment: Partial<PaymentSnapshot>) {
@@ -250,7 +250,7 @@ function notifyText(status: string) {
             <div class="detail-grid">
               <div class="detail-item">
                 <span>{{ t('order.amount') }}</span>
-                <strong>{{ formatAmount(detail.order.amount) }} {{ assetLabel(detail.order.currency) }}</strong>
+                <strong>{{ formatAmount(detail.order.amount) }} {{ assetName(detail.order.currency) }}</strong>
               </div>
               <div class="detail-item">
                 <span>{{ t('order.pay_amount') }}</span>

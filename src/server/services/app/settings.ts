@@ -21,6 +21,8 @@ const assetUSDValues: Record<string, number> = {
   USDT: 1,
 };
 
+const defaultTimeoutMinutes = 5;
+
 export interface SystemSettings {
   currency: string;
   fastConfirm: boolean;
@@ -134,8 +136,9 @@ function normalizeRateAdjust(value: unknown) {
 }
 
 function normalizeTimeoutMinutes(value: unknown) {
+  if (value == null || (typeof value === "string" && !value.trim())) return defaultTimeoutMinutes;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 5;
+  if (!Number.isFinite(parsed)) return defaultTimeoutMinutes;
   return Math.min(Math.max(Math.round(parsed), 1), 30);
 }
 
