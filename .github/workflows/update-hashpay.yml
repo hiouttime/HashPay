@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout instance repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Sync from upstream
         shell: bash
@@ -26,7 +28,7 @@ jobs:
             cp wrangler.jsonc "$RUNNER_TEMP/wrangler.current.jsonc"
           fi
 
-          git fetch https://github.com/TGDash/HashPay.git main --depth=1
+          git fetch https://github.com/TGDash/HashPay.git main
           git reset --hard FETCH_HEAD
 
           if [ -f "$RUNNER_TEMP/wrangler.current.jsonc" ]; then
