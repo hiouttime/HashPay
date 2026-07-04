@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useMessage } from "naive-ui";
 import { api, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { formatTime } from "@/app/utils/format";
 
 const message = useMessage();
 const { t } = useI18n();
@@ -28,7 +29,13 @@ const bannerRestoring = ref(false);
 const bannerVersion = ref(Date.now());
 
 const bannerSrc = computed(() => `/banner.webp?v=${bannerVersion.value}`);
-const usdtRate = computed(() => settings.value.ratePreview?.items?.find((item) => item.currency === "USDT"));
+const usdtRate = computed(() => {
+  const marketRate = marketUSDT(settings.value.currency || "CNY");
+  return {
+    effectiveRate: marketRate ? marketRate * (1 + Number(settings.value.rateAdjust || 0) / 100) : 0,
+    marketRate,
+  };
+});
 
 async function load() {
   settings.value = await api.settings.get();
@@ -44,16 +51,7 @@ async function save() {
     timeout: settings.value.timeout,
   });
   settings.value = saved;
-  await refreshPreview();
   message.success(t("settings.saved"));
-}
-
-async function refreshPreview() {
-  if (!settings.value.currency) return;
-  settings.value.ratePreview = await api.settings.rates({
-    currency: settings.value.currency,
-    rateAdjust: settings.value.rateAdjust,
-  });
 }
 
 function rateText(value?: number) {
@@ -62,6 +60,12 @@ function rateText(value?: number) {
   if (amount >= 1000) return amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (amount >= 1) return amount.toLocaleString("en-US", { maximumFractionDigits: 4, minimumFractionDigits: 2 });
   return amount.toLocaleString("en-US", { maximumFractionDigits: 6, minimumFractionDigits: 4 });
+}
+
+function marketUSDT(currency: string) {
+  const code = currency.trim().toUpperCase();
+  if (code === "USD") return 1;
+  return settings.value.marketRates?.fiatPerUSD?.[code] || 0;
 }
 
 async function uploadBanner(options: { file: { file?: File | null }; onError?: () => void; onFinish?: () => void }) {
@@ -126,16 +130,6 @@ async function toWebp(file: File) {
   return blob;
 }
 
-watch(
-  () => [settings.value.currency, settings.value.rateAdjust] as const,
-  (_value, _oldValue, cleanup) => {
-    const timer = setTimeout(() => {
-      void refreshPreview();
-    }, 350);
-    cleanup(() => clearTimeout(timer));
-  },
-);
-
 onMounted(load);
 </script>
 
@@ -175,7 +169,10 @@ onMounted(load);
         <p v-if="Number(settings.rateAdjust)" class="muted">
           {{ t('settings.original_rate', { rate: rateText(usdtRate?.marketRate), currency: settings.currency || 'CNY' }) }}
         </p>
-        <p v-if="settings.ratePreview?.messageKey" class="muted">{{ t(settings.ratePreview.messageKey) }}</p>
+        <p class="muted">
+          {{ t('settings.rate_updated_at', { time: formatTime(settings.marketRates?.syncedAt) }) }}
+        </p>
+        <p v-if="settings.marketRates?.messageKey" class="muted">{{ t(settings.marketRates.messageKey) }}</p>
       </div>
     </div>
     <div class="panel grid">

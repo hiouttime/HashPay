@@ -100,10 +100,11 @@ export interface Settings {
   currency: string;
   domain: string;
   fastConfirm: boolean;
-  rateAdjust: number;
-  ratePreview: {
-    items: Array<{ currency: string; effectiveRate: number; marketRate: number }>;
+  marketRates: {
+    fiatPerUSD: Record<string, number>;
     messageKey?: string;
+    syncedAt: number;
   };
+  rateAdjust: number;
   timeout: number;
 }

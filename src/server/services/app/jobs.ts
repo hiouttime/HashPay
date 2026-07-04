@@ -1,15 +1,20 @@
+import { all, now, run } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
 import { checkPendingPayments } from "@/server/services/orders/checkout";
-import { deliverNotify, dueNotifyIds, expireOrders } from "@/server/services/orders/notifications";
+import { deliverNotify } from "@/server/services/orders/notifications";
 import { syncMarketRates } from "@/server/services/app/settings";
 import type { AppEnv } from "@/server/types/env";
 
-export async function runScheduledJobs(env: AppEnv) {
+const isTopOfHour = (time: Date) => time.getUTCMinutes() === 0;
+
+export async function runJobs(env: AppEnv, time = new Date()) {
   await migrateD1(env);
-  await syncMarketRates(env).catch(() => undefined);
-  await expireOrders(env);
+  if (isTopOfHour(time)) await syncMarketRates(env).catch(() => undefined);
+  const ts = now();
+  await run(env, "UPDATE orders SET status = 'expired', updated_at = ? WHERE status = 'pending' AND expire_at < ?", ts, ts);
   await checkPendingPayments(env);
-  for (const notifyId of await dueNotifyIds(env)) {
+  const dueNotify = await all<{ id: number }>(env, "SELECT id FROM notify WHERE status IN ('pending', 'retry') AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 20", ts);
+  for (const { id: notifyId } of dueNotify) {
     await env.QUEUE_NOTIFY?.send({ notifyId });
   }
 }
@@ -17,17 +22,8 @@ export async function runScheduledJobs(env: AppEnv) {
 export async function handleNotifyQueue(batch: MessageBatch<unknown>, env: AppEnv) {
   await migrateD1(env);
   for (const message of batch.messages) {
-    const body = message.body && typeof message.body === "object" ? (message.body as Record<string, unknown>) : {};
-    const notifyId = Number(body.notifyId);
-    if (!Number.isFinite(notifyId)) {
-      message.ack();
-      continue;
-    }
-    try {
-      await deliverNotify(env, notifyId);
-      message.ack();
-    } catch {
-      message.retry({ delaySeconds: 60 });
-    }
+    const notifyId = Number((message.body as { notifyId?: unknown } | undefined)?.notifyId);
+    if (Number.isFinite(notifyId)) await deliverNotify(env, notifyId).catch(() => undefined);
+    message.ack();
   }
 }

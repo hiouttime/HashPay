@@ -73,7 +73,6 @@ function endpoints(options: ApiRequestOptions = {}) {
     settings: {
       get: () => get<Settings>("/api/admin/settings", options),
       save: (input: { currency: string; domain: string; fastConfirm: boolean; rateAdjust: number; timeout: number }) => put<Settings>("/api/admin/settings", input, options),
-      rates: (input: { currency: string; rateAdjust: number | string }) => get<Settings["ratePreview"]>(`/api/admin/rates/preview?${rateQuery(input)}`, options),
     },
     banner: {
       upload: (body: ArrayBuffer) => upload<{ url: string }>("/api/admin/banner", body, "image/webp", options),
@@ -99,11 +98,4 @@ function orderQuery(input: { page: number; pageSize: number; q?: string; status:
   });
   if (input.q?.trim()) query.set("q", input.q.trim());
   return query.toString();
-}
-
-function rateQuery(input: { currency: string; rateAdjust: number | string }) {
-  return new URLSearchParams({
-    currency: input.currency,
-    rate_adjust: String(input.rateAdjust),
-  }).toString();
 }

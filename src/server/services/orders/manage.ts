@@ -4,7 +4,7 @@ import { getMerchant, listMerchants } from "@/server/services/merchants";
 import { createMerchantOrder, deleteOrder } from "@/server/services/orders/create";
 import { getDetailedOrder, listOrdersPage as queryOrdersPage, publicOrder } from "@/server/services/orders/repository";
 import { checkOrderPayment, confirmOrder } from "@/server/services/orders/checkout";
-import { resendOrderNotify } from "@/server/services/orders/notifications";
+import { resendNotify } from "@/server/services/orders/notifications";
 import { getReview } from "@/server/services/orders/review";
 import { systemSettings } from "@/server/services/app/settings";
 import type { AppEnv } from "@/server/types/env";
@@ -62,4 +62,4 @@ export async function createCheckoutTestOrder(env: AppEnv, requestUrl: string, i
   return { checkoutUrl, merchant, order: publicOrder(order), reused };
 }
 
-export { checkOrderPayment, confirmOrder, deleteOrder, resendOrderNotify };
+export { checkOrderPayment, confirmOrder, deleteOrder, resendNotify };

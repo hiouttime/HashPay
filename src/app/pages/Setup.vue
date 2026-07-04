@@ -6,25 +6,24 @@ import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import { api, type AppState, type TelegramUser } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 
-type Loading = "" | "domain" | "status" | "setup";
+type Loading = "" | "status" | "setup";
 
 const router = useRouter();
 const { t } = useI18n();
 const status = ref<Partial<AppState> | null>(null);
 const domain = ref("");
-const domainError = ref("");
 const submittedDomain = ref("");
 const admin = ref<TelegramUser | null>(null);
 const loading = ref<Loading>("");
 const polling = ref(false);
 const complete = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | undefined;
-let setupTimer: ReturnType<typeof setTimeout> | undefined;
-let domainCheckId = 0;
 
 const loaded = computed(() => Boolean(status.value));
 const botReady = computed(() => ["admin", "domain", "ready"].includes(String(status.value?.bot)));
 const canSetup = computed(() => botReady.value && !status.value?.db && !status.value?.queue);
+const setupUrl = computed(() => domain.value ? `https://${domain.value}` : "");
+const domainError = computed(() => domain.value && !validDomain(domain.value) ? t("setup.domain_invalid") : "");
 const setupStarted = computed(() => Boolean(submittedDomain.value && submittedDomain.value === domain.value));
 const botLink = computed(() => status.value?.username ? `https://t.me/${status.value.username}?start=start` : "");
 const checks = computed(() => [
@@ -60,7 +59,11 @@ async function load() {
       return;
     }
     status.value = next;
-    domain.value = next.domain || location.origin;
+    domain.value = normalizeDomain(next.domain || location.hostname);
+    if (next.domain) {
+      submittedDomain.value = domain.value;
+      startPolling();
+    }
   } catch (error) {
     status.value = {
       bot: "invalid",
@@ -75,50 +78,11 @@ async function load() {
   }
 }
 
-function scheduleSetup() {
-  clearSetupTimer();
-  domainCheckId += 1;
-  if (loading.value === "domain") loading.value = "";
-
-  if (submittedDomain.value && domain.value !== submittedDomain.value) {
-    submittedDomain.value = "";
-    admin.value = null;
-    stopPolling();
-  }
-  if (!canSetup.value || setupStarted.value) return;
-  if (!domain.value) {
-    domainError.value = "";
-    return;
-  }
-  domainError.value = validDomain(domain.value) ? "" : t("setup.domain_invalid");
-  if (domainError.value) return;
-
-  setupTimer = setTimeout(() => {
-    void checkDomain();
-  }, 600);
-}
-
-async function checkDomain() {
-  const value = domain.value;
-  const id = ++domainCheckId;
-  loading.value = "domain";
-  domainError.value = "";
-
-  const ok = await reachableSite(value);
-  if (id !== domainCheckId || value !== domain.value) return;
-  if (!ok) {
-    loading.value = "";
-    domainError.value = t("setup.domain_invalid");
-    return;
-  }
-  await submitSetup();
-}
-
 async function submitSetup() {
-  if (!canSetup.value || !validDomain(domain.value) || submittedDomain.value === domain.value) return;
+  if (!canSetup.value || loading.value === "setup" || !validDomain(domain.value) || setupStarted.value) return;
   loading.value = "setup";
   try {
-    await api.setup.submit(domain.value);
+    await api.setup.submit(setupUrl.value);
     submittedDomain.value = domain.value;
     startPolling();
   } catch {
@@ -128,30 +92,29 @@ async function submitSetup() {
   }
 }
 
-async function reachableSite(value: string) {
-  try {
-    await fetch(value, { cache: "no-store", method: "GET", mode: "cors" });
-    return true;
-  } catch (error) {
-    const text = error instanceof Error ? error.message.toLowerCase() : "";
-    return text.includes("cors") || text.includes("cross-origin") || text.includes("access-control");
-  }
+function validDomain(host: string) {
+  const domainPattern = /^(?=.{1,253}$)(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z][a-z0-9-]{1,62}$/;
+  return domainPattern.test(host)
+    && host !== "localhost"
+    && !host.endsWith(".local")
+    && !/^(\d{1,3}\.){3}\d{1,3}$/.test(host);
 }
 
-function validDomain(value: string) {
-  try {
-    const url = new URL(value.trim());
-    const host = url.hostname.toLowerCase();
-    const domain = /^(?=.{1,253}$)(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z][a-z0-9-]{1,62}$/;
-    return url.protocol === "https:"
-      && url.pathname === "/"
-      && host !== "localhost"
-      && !host.endsWith(".local")
-      && !/^(\d{1,3}\.){3}\d{1,3}$/.test(host)
-      && domain.test(host);
-  } catch {
-    return false;
-  }
+function updateDomain(value: string) {
+  domain.value = normalizeDomain(value);
+  submittedDomain.value = "";
+  admin.value = null;
+  stopPolling();
+}
+
+function normalizeDomain(value: string) {
+  const raw = value.trim().replace(/^(?:https?:\/\/)+/i, "").replace(/^\/+/, "");
+  return raw.split(/[/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
+}
+
+function nextStep() {
+  complete.value = true;
+  stopPolling();
 }
 
 function startPolling() {
@@ -172,16 +135,10 @@ async function checkAdmin() {
     const result = await api.silent.setup.session();
     if (!result.bound || !result.admin) return;
     admin.value = result.admin;
-    complete.value = true;
     stopPolling();
   } catch {
     stopPolling();
   }
-}
-
-function clearSetupTimer() {
-  if (setupTimer) clearTimeout(setupTimer);
-  setupTimer = undefined;
 }
 
 function adminName(user: TelegramUser) {
@@ -189,12 +146,9 @@ function adminName(user: TelegramUser) {
 }
 
 onMounted(load);
-watch(domain, scheduleSetup);
-watch(canSetup, scheduleSetup);
+watch([domain, canSetup], () => { void submitSetup(); });
 onBeforeUnmount(() => {
   stopPolling();
-  clearSetupTimer();
-  domainCheckId += 1;
 });
 </script>
 
@@ -209,8 +163,29 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="complete" class="grid">
         <div class="setup-done">
-          <p>{{ t('setup.done_bot', { bot: status?.username || '' }) }}</p>
-          <p>{{ t('setup.done_browser') }}</p>
+          <p>{{ t('setup.done_intro') }}</p>
+          <ul class="setup-done__ways">
+            <li>
+              <span class="setup-done__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M21.5 3.5 2.5 11l8 3 3 8 8-18.5Z" />
+                  <path d="m10.5 14 4-4" />
+                </svg>
+              </span>
+              <span>{{ t('setup.done_bot', { bot: status?.username || '' }) }}</span>
+            </li>
+            <li>
+              <span class="setup-done__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="M3 9h18" />
+                  <path d="M7 7h.01" />
+                  <path d="M10 7h.01" />
+                </svg>
+              </span>
+              <span>{{ t('setup.done_browser') }}</span>
+            </li>
+          </ul>
           <p>{{ t('setup.done_channel') }}</p>
         </div>
         <n-button type="primary" @click="router.push('/admin/overview')">{{ t('setup.enter_admin') }}</n-button>
@@ -247,9 +222,11 @@ onBeforeUnmount(() => {
               <span class="setup-step__index">2</span>
               <div>
                 <strong>{{ t('setup.domain') }}</strong>
-                <n-input v-model:value="domain" :disabled="loading === 'setup'" placeholder="https://hashpay.example.com" />
+                <n-input-group>
+                  <n-input-group-label>https://</n-input-group-label>
+                  <n-input :value="domain" :disabled="loading === 'setup'" placeholder="hashpay.example.com" @update:value="updateDomain" />
+                </n-input-group>
                 <p v-if="domainError" class="muted is-error">{{ domainError }}</p>
-                <p v-else-if="loading === 'domain'" class="muted">{{ t('setup.domain_checking') }}</p>
                 <p v-else-if="loading === 'setup'" class="muted">{{ t('setup.domain_configuring') }}</p>
               </div>
             </div>
@@ -268,6 +245,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+          <n-button block type="primary" :disabled="!admin" @click="nextStep">{{ t('setup.next') }}</n-button>
         </template>
       </div>
       <div class="setup-locale">

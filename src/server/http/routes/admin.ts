@@ -5,9 +5,9 @@ import { consumePin, createPin, endSession, telegramLogin } from "@/server/servi
 import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
 import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "@/server/services/merchants";
-import { checkOrderPayment, confirmOrder, createCheckoutTestOrder, deleteOrder, getOrderDetail, listOrdersPage, resendOrderNotify } from "@/server/services/orders/manage";
+import { checkOrderPayment, confirmOrder, createCheckoutTestOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
 import { dashboard } from "@/server/services/app";
-import { adminSettings, saveAdminSettings, settingsPreview } from "@/server/services/app/settings";
+import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
 import { setupSession, startSetup } from "@/server/services/app/setup";
 import type { HonoEnv } from "@/server/types/env";
 
@@ -84,12 +84,11 @@ app.get("/orders/:id", json((c) => getOrderDetail(c.env, c.req.param("id")!)));
 app.delete("/orders/:id", json((c) => deleteOrder(c.env, c.req.param("id")!)));
 app.post("/orders/:id/check", json((c) => checkOrderPayment(c.env, c.req.param("id")!)));
 app.post("/orders/:id/confirm", json(async (c) => confirmOrder(c.env, c.req.param("id")!, await reqJson(c))));
-app.post("/orders/:id/notify", json((c) => resendOrderNotify(c.env, c.req.param("id")!)));
+app.post("/orders/:id/notify", json((c) => resendNotify(c.env, c.req.param("id")!)));
 
 // Settings
 app.get("/settings", json((c) => adminSettings(c.env)));
 app.put("/settings", json(async (c) => saveAdminSettings(c.env, await reqJson(c))));
-app.get("/rates/preview", json((c) => settingsPreview(c.env, c.req.query("currency"), c.req.query("rate_adjust"))));
 app.put("/banner", json(async (c) => uploadBanner(c.env, await c.req.arrayBuffer())));
 app.post("/banner/restore", json(async (c) => {
   await restoreDefaultBanner(c.env);

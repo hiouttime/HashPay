@@ -11,9 +11,8 @@ const defaultFiatPerUSD: Record<string, number> = {
   USD: 1,
 };
 
-const defaultUSDPrices: Record<string, number> = {
+const assetUSDValues: Record<string, number> = {
   BNB: 610,
-  BTC: 85000,
   ETH: 3200,
   GRAM: 3,
   MATIC: 0.9,
@@ -21,19 +20,6 @@ const defaultUSDPrices: Record<string, number> = {
   USDC: 1,
   USDT: 1,
 };
-
-const priceSourceIDs: Record<string, string> = {
-  BNB: "binancecoin",
-  BTC: "bitcoin",
-  ETH: "ethereum",
-  GRAM: "the-open-network",
-  MATIC: "polygon-ecosystem-token",
-  TRX: "tron",
-  USDC: "usd-coin",
-  USDT: "tether",
-};
-
-const previewPriority = ["USDT", "USDC", "GRAM", "BTC", "ETH", "BNB", "TRX", "MATIC"];
 
 export interface SystemSettings {
   currency: string;
@@ -45,11 +31,7 @@ export interface SystemSettings {
 export interface MarketRates {
   fiatPerUSD: Record<string, number>;
   messageKey?: string;
-  source: string;
-  status: "fallback" | "live" | "partial";
   syncedAt: number;
-  updatedAt: number;
-  usdPrices: Record<string, number>;
 }
 
 export interface ConversionContext {
@@ -64,7 +46,7 @@ export async function adminSettings(env: AppEnv) {
   return {
     ...(await systemSettings(env)),
     domain: await getConfig(env, "domain") || "",
-    ratePreview: await settingsPreview(env),
+    marketRates: publicMarketRates(await currentMarketRates(env)),
   };
 }
 
@@ -81,7 +63,15 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
   return {
     ...settings,
     domain,
-    ratePreview: await settingsPreview(env, settings.currency, String(settings.rateAdjust)),
+    marketRates: publicMarketRates(await currentMarketRates(env)),
+  };
+}
+
+function publicMarketRates(rates: MarketRates) {
+  return {
+    fiatPerUSD: rates.fiatPerUSD,
+    messageKey: rates.messageKey,
+    syncedAt: rates.syncedAt,
   };
 }
 
@@ -123,24 +113,6 @@ export function convertAmountWithContext(amount: number, fromCurrency: string, t
   return ceilAmount(new Decimal(amount).div(rate));
 }
 
-export async function settingsPreview(env: AppEnv, currency?: string | null, rateAdjust?: string | null) {
-  const settings = await systemSettings(env);
-  const base = normalizeCurrency(currency || settings.currency);
-  const adjust = normalizeRateAdjust(rateAdjust ?? settings.rateAdjust);
-  const snapshot = await currentMarketRates(env);
-  return {
-    items: previewPriority.map((item) => {
-      const marketRate = quoteRate(snapshot, base, item, 0);
-      return {
-        currency: item,
-        effectiveRate: applyAdjust(marketRate, adjust),
-        marketRate,
-      };
-    }).filter((item) => item.marketRate > 0),
-    messageKey: snapshot.messageKey,
-  };
-}
-
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
   return {
     currency: normalizeCurrency(String(input.currency ?? "CNY")),
@@ -178,32 +150,15 @@ export async function currentMarketRates(env: AppEnv): Promise<MarketRates> {
 export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
   const cached = await getConfig(env, "market_rates");
   const current = parseMarketRates(cached);
-  if (cached && nowSeconds() - current.syncedAt < 10 * 60) {
-    memoryRates = { expiresAt: Date.now() + 60_000, snapshot: current };
-    return current;
-  }
-  const [fiat, prices] = await Promise.allSettled([fetchFiatRates(), fetchUSDPrices()]);
   const out = defaultMarketRates();
-  const source: string[] = [];
-  const problems: string[] = [];
-  if (fiat.status === "fulfilled") {
-    out.fiatPerUSD = fiat.value.rates;
-    out.updatedAt = fiat.value.updatedAt || out.updatedAt;
-    source.push("ExchangeRate API");
-  } else {
-    problems.push("settings.rate_error_fiat");
+  try {
+    out.fiatPerUSD = await fetchFiatRates();
+    out.syncedAt = nowSeconds();
+  } catch {
+    out.fiatPerUSD = current.fiatPerUSD;
+    out.messageKey = "settings.rate_error_fiat";
+    out.syncedAt = current.syncedAt;
   }
-  if (prices.status === "fulfilled") {
-    out.usdPrices = prices.value;
-    source.push("CoinGecko");
-  } else {
-    problems.push("settings.rate_error_price");
-  }
-  if (source.length) {
-    out.source = source.join(" + ");
-    out.status = problems.length ? "partial" : "live";
-  }
-  if (problems.length) out.messageKey = problems.length === 2 ? "settings.rate_error_all" : problems[0];
   await setConfig(env, "market_rates", JSON.stringify(out));
   memoryRates = { expiresAt: Date.now() + 60_000, snapshot: out };
   return out;
@@ -212,11 +167,7 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
 function defaultMarketRates(): MarketRates {
   return {
     fiatPerUSD: { ...defaultFiatPerUSD },
-    source: "system-default",
-    status: "fallback",
-    syncedAt: nowSeconds(),
-    updatedAt: nowSeconds(),
-    usdPrices: { ...defaultUSDPrices },
+    syncedAt: 0,
   };
 }
 
@@ -228,11 +179,7 @@ function parseMarketRates(value: string | null) {
     return {
       fiatPerUSD: { ...defaultFiatPerUSD, ...(parsed.fiatPerUSD ?? {}) },
       messageKey: parsed.messageKey,
-      source: parsed.source || "system-default",
-      status: parsed.status === "live" || parsed.status === "partial" || parsed.status === "fallback" ? parsed.status : "fallback",
-      syncedAt: Number(parsed.syncedAt) || Number(parsed.updatedAt) || nowSeconds(),
-      updatedAt: Number(parsed.updatedAt) || Math.floor(Date.now() / 1000),
-      usdPrices: { ...defaultUSDPrices, ...(parsed.usdPrices ?? {}) },
+      syncedAt: Number(parsed.syncedAt) || 0,
     };
   } catch {
     return defaultMarketRates();
@@ -241,14 +188,13 @@ function parseMarketRates(value: string | null) {
 
 async function fetchFiatRates() {
   const response = await fetch("https://open.er-api.com/v6/latest/USD", {
-    signal: timeoutSignal(1200),
+    signal: timeoutSignal(5000),
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw new Error(`fiat rates status ${response.status}`);
   const payload = await response.json<{
     rates?: Record<string, number>;
     result?: string;
-    time_last_update_unix?: number;
   }>();
   if (payload.result !== "success" || !payload.rates) throw new Error("fiat rates unavailable");
   const rates = { ...defaultFiatPerUSD };
@@ -256,23 +202,7 @@ async function fetchFiatRates() {
     if (currency === "USD") rates.USD = 1;
     else if (payload.rates[currency] > 0) rates[currency] = payload.rates[currency];
   }
-  return { rates, updatedAt: payload.time_last_update_unix ?? 0 };
-}
-
-async function fetchUSDPrices() {
-  const ids = Object.values(priceSourceIDs).sort().join(",");
-  const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd&ids=${encodeURIComponent(ids)}`, {
-    signal: timeoutSignal(1200),
-    headers: { accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`coin prices status ${response.status}`);
-  const payload = await response.json<Record<string, { usd?: number }>>();
-  const prices = { ...defaultUSDPrices };
-  for (const [currency, id] of Object.entries(priceSourceIDs)) {
-    const price = payload[id]?.usd;
-    if (price && price > 0) prices[currency] = price;
-  }
-  return prices;
+  return rates;
 }
 
 function quoteRate(snapshot: MarketRates, fromCurrency: string, toCurrency: string, adjustPercent: number) {
@@ -286,7 +216,7 @@ function quoteRate(snapshot: MarketRates, fromCurrency: string, toCurrency: stri
 }
 
 function currencyUSDValue(snapshot: MarketRates, currency: string) {
-  if (snapshot.usdPrices[currency] > 0) return snapshot.usdPrices[currency];
+  if (assetUSDValues[currency] > 0) return assetUSDValues[currency];
   if (snapshot.fiatPerUSD[currency] > 0) return 1 / snapshot.fiatPerUSD[currency];
   if (currency === "USD") return 1;
   return 0;

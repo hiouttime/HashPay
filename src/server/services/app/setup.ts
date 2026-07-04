@@ -2,6 +2,7 @@ import { getConfig, jsonParseObject } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
 import { setSessionCookie, signSession } from "@/server/services/auth/session";
+import { syncMarketRates } from "@/server/services/app/settings";
 import { configureBotMiniApp } from "@/server/services/telegram/api";
 import { startTelegramSetup } from "@/server/services/telegram/setup";
 import type { Context } from "hono";
@@ -22,6 +23,7 @@ export async function setupSession(c: Context<HonoEnv>) {
   const admin = jsonParseObject<TelegramUser>(await getConfig(c.env, "admin_user"), { firstName: "", id: adminId, lastName: "" });
   setSessionCookie(c, await signSession(c.env, admin));
   await ensureDefaultBanner(c.env);
+  await syncMarketRates(c.env);
   await configureBotMiniApp(c.env);
   return { admin, bound: true };
 }
