@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkPayment, createPayment } from "@/server/payments/driver";
 import { validate as validateBinance } from "@/server/payments/providers/binance";
+import { validate as validateOkx } from "@/server/payments/providers/okx";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { Order } from "@/server/services/orders/repository";
 import { aptosAssets, evmAssets, tonAssets, trc20Assets } from "@/shared/payments";
@@ -14,38 +15,56 @@ afterEach(() => {
 
 describe("TRC20 provider", () => {
   const snapshot = payment({ address: "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2", driver: "trc20" });
-  const candidate = tx({
-    raw: { token_info: { address: trc20Assets.usdt.contract } },
-    to: snapshot.address,
-  });
 
-  it("matches a submitted transaction inside the order window", async () => {
-    await expect(check(snapshot, candidate)).resolves.toMatchObject({
+  it("matches a chain transaction inside the order window", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [trc20Tx({ to: snapshot.address })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({
       matches: [{ orderId: "order", time: 120, txid: "tx" }],
       status: "ok",
     });
   });
 
   it("ignores transactions outside the order window", async () => {
-    await expect(check(snapshot, candidate, { createdAt: 121 })).resolves.toMatchObject({ matches: [], status: "ok" });
-    await expect(check(snapshot, candidate, { expireAt: 119 })).resolves.toMatchObject({ matches: [], status: "ok" });
-  });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [trc20Tx({ to: snapshot.address })] })));
 
-  it("rejects a submitted USDT candidate with the wrong contract", async () => {
-    await expect(check(snapshot, tx({
-      raw: { token_info: { address: "TFakeUsdtContract" } },
-      to: snapshot.address,
-    }))).resolves.toMatchObject({ matches: [], status: "ok" });
-  });
-
-  it("matches multiple orders from one submitted transaction list", async () => {
     await expect(checkPayment({
-      candidates: {
-        candidates: [
-          tx({ hash: "tx-a", raw: { token_info: { address: trc20Assets.usdt.contract } }, to: snapshot.address }),
-          tx({ amount: 12.51, hash: "tx-b", raw: { token_info: { address: trc20Assets.usdt.contract } }, to: snapshot.address }),
-        ],
-      },
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot, { createdAt: 121 })],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot, { expireAt: 119 })],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("rejects a chain USDT transfer with the wrong contract", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [trc20Tx({ contract: "TFakeUsdtContract", to: snapshot.address })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches multiple orders from one chain scan", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      data: [
+        trc20Tx({ hash: "tx-a", to: snapshot.address }),
+        trc20Tx({ hash: "tx-b", to: snapshot.address, value: "12510000" }),
+      ],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
       fastConfirm: false,
       orders: [
         order(snapshot, { id: "order-a" }),
@@ -65,37 +84,41 @@ describe("EVM provider", () => {
   const address = "0x78235da44022c614cbf25a26200cca47e2a61752";
 
   it("validates token contracts before marking an EVM payment as paid", async () => {
-    await expect(check(
-      payment({ address, amount: 2.5, driver: "bep20" }),
-      tx({ amount: 2.5, hash: "0xpaid", raw: { contract: evmAssets.bep20.usdt.contract }, to: address }),
-    )).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xpaid" }], status: "ok" });
+    const snapshot = payment({ address, amount: 2.5, currency: "usdc", driver: "base" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ items: [evmTokenTx({ address, contract: evmAssets.base.usdc.contract, hash: "0xpaid", value: "2500000" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "base" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xpaid" }], status: "ok" });
   });
 
   it("rejects fake EVM token contracts", async () => {
-    await expect(check(
-      payment({ address, amount: 2.5, driver: "bep20" }),
-      tx({ amount: 2.5, hash: "0xfake", raw: { contract: "0x0000000000000000000000000000000000000000" }, to: address }),
-    )).resolves.toMatchObject({ matches: [], status: "ok" });
+    const snapshot = payment({ address, amount: 2.5, currency: "usdc", driver: "base" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ items: [evmTokenTx({ address, contract: evmAssets.erc20.usdc.contract, hash: "0xfake", value: "2500000" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "base" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 
   it("validates Base token contracts before marking a payment as paid", async () => {
     const snapshot = payment({ address, amount: 8.8, currency: "usdc", driver: "base" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      items: [
+        evmTokenTx({ address, contract: evmAssets.base.usdc.contract, hash: "0xbase-paid", value: "8800000" }),
+        evmTokenTx({ address, contract: evmAssets.erc20.usdc.contract, hash: "0xbase-fake", value: "8800000" }),
+      ],
+    })));
 
-    await expect(check(snapshot, tx({
-      amount: 8.8,
-      currency: "USDC",
-      hash: "0xbase-paid",
-      raw: { contract: evmAssets.base.usdc.contract },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xbase-paid" }], status: "ok" });
-
-    await expect(check(snapshot, tx({
-      amount: 8.8,
-      currency: "USDC",
-      hash: "0xbase-fake",
-      raw: { contract: evmAssets.erc20.usdc.contract },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [], status: "ok" });
+    await expect(checkPayment({
+      channel: channel({ address, driver: "base" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xbase-paid" }], status: "ok" });
   });
 
   it("checks BSC token payments through RPC without block timestamp calls", async () => {
@@ -127,21 +150,23 @@ describe("TON provider", () => {
   const snapshot = payment({ address, amount: 3, driver: "ton" });
 
   it("validates the USDT jetton master before marking a TON payment as paid", async () => {
-    await expect(check(snapshot, tx({
-      amount: 3,
-      hash: "ton-paid",
-      raw: { jetton_master: tonAssets.usdt.contract },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "ton-paid" }], status: "ok" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ hash: "ton-paid" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "ton-paid" }], status: "ok" });
   });
 
   it("rejects fake TON jetton masters", async () => {
-    await expect(check(snapshot, tx({
-      amount: 3,
-      hash: "ton-fake",
-      raw: { jetton_master: "0:fake" },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [], status: "ok" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ hash: "ton-fake", master: "0:fake" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 });
 
@@ -150,23 +175,23 @@ describe("Aptos provider", () => {
   const snapshot = payment({ address, amount: 4.2, currency: "usdc", driver: "aptos" });
 
   it("validates Aptos asset metadata before marking a payment as paid", async () => {
-    await expect(check(snapshot, tx({
-      amount: 4.2,
-      currency: "USDC",
-      hash: "12345",
-      raw: { asset_type: aptosAssets.usdc.contract },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "12345" }], status: "ok" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address })] } })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "aptos" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "12345" }], status: "ok" });
   });
 
   it("rejects fake Aptos assets", async () => {
-    await expect(check(snapshot, tx({
-      amount: 4.2,
-      currency: "USDC",
-      hash: "12345",
-      raw: { asset_type: "0xfake" },
-      to: address,
-    }))).resolves.toMatchObject({ matches: [], status: "ok" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address, asset: "0xfake" })] } })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "aptos" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 });
 
@@ -303,13 +328,90 @@ describe("Binance Pay provider", () => {
   });
 });
 
-function check(snapshot: PaymentSnapshot, candidate: Record<string, unknown>, overrides: Partial<ReturnType<typeof order>> = {}) {
-  return checkPayment({
-    candidates: { candidates: [candidate] },
-    fastConfirm: false,
-    orders: [order(snapshot, overrides)],
+describe("OKX provider", () => {
+  it("validates OKX UID with the API key pair", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const fetchMock = vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(validateOkx({
+      address: "888777",
+      data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+    })).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(url).toBe("https://www.okx.com/api/v5/account/config");
+    expect(headers["OK-ACCESS-KEY"]).toBe("api-key");
+    expect(headers["OK-ACCESS-PASSPHRASE"]).toBe("passphrase");
+    expect(headers["OK-ACCESS-TIMESTAMP"]).toBe("2027-01-15T08:00:00.000Z");
+    expect(headers["OK-ACCESS-SIGN"]).toMatch(/^[A-Za-z0-9+/=]+$/);
   });
-}
+
+  it("rejects OKX UID mismatches", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] })));
+
+    await expect(validateOkx({
+      address: "999999",
+      data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+    })).rejects.toMatchObject({ key: "errors.payment_credential_invalid", status: 400 });
+  });
+
+  it("matches OKX internal receive bills by amount, currency, and time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const fetchMock = vi.fn(async () => json({
+      code: "0",
+      data: [{
+        balChg: "12.5",
+        billId: "okx-bill",
+        ccy: "USDT",
+        ts: "1800000120000",
+        type: "72",
+      }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: okxChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "888777", driver: "okx" }), {
+        createdAt: 1_800_000_000,
+        expireAt: 1_800_000_300,
+        id: "okx-order",
+      })],
+    })).resolves.toMatchObject({
+      matches: [{ orderId: "okx-order", time: 1_800_000_120, txid: "okx-bill" }],
+      status: "ok",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://www.okx.com/api/v5/asset/bills?ccy=USDT&limit=100&type=72");
+    expect((init.headers as Record<string, string>)["OK-ACCESS-KEY"]).toBe("api-key");
+  });
+
+  it("ignores OKX bills outside the order match", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      code: "0",
+      data: [
+        { balChg: "12.5", billId: "wrong-currency", ccy: "USDC", ts: "120", type: "72" },
+        { balChg: "-12.5", billId: "negative", ccy: "USDT", ts: "120", type: "72" },
+        { balChg: "12.5", billId: "wrong-type", ccy: "USDT", ts: "120", type: "73" },
+        { balChg: "12.5", billId: "okx-match", ccy: "USDT", ts: "120", type: "72" },
+      ],
+    })));
+
+    await expect(checkPayment({
+      channel: okxChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "888777", driver: "okx" }))],
+    })).resolves.toMatchObject({
+      matches: [{ orderId: "order", time: 120, txid: "okx-match" }],
+      status: "ok",
+    });
+  });
+});
 
 function order(snapshot: PaymentSnapshot, input: Partial<{ createdAt: number; expireAt: number; id: string }> = {}) {
   return {
@@ -330,15 +432,43 @@ function payment(input: Partial<PaymentSnapshot>): PaymentSnapshot {
   };
 }
 
-function tx(input: Partial<Record<string, unknown>> = {}) {
+function trc20Tx(input: Partial<{ contract: string; hash: string; timestamp: number; to: string; value: string }> = {}) {
   return {
-    amount: 12.5,
-    currency: "USDT",
-    hash: "tx",
-    raw: {},
-    timestamp: 120,
-    to: "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
-    ...input,
+    block_timestamp: (input.timestamp ?? 120) * 1000,
+    to: input.to ?? "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
+    token_info: { address: input.contract ?? trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },
+    transaction_id: input.hash ?? "tx",
+    value: input.value ?? "12500000",
+  };
+}
+
+function evmTokenTx(input: { address: string; contract: string; hash: string; value: string }) {
+  return {
+    timestamp: "1970-01-01T00:02:00Z",
+    to: { hash: input.address },
+    token: { address_hash: input.contract },
+    total: { value: input.value },
+    transaction_hash: input.hash,
+  };
+}
+
+function tonJettonTx(input: Partial<{ hash: string; master: string }> = {}) {
+  return {
+    amount: "3000000",
+    jetton_master: input.master ?? tonAssets.usdt.contract,
+    transaction_hash: input.hash ?? "ton-paid",
+    transaction_now: 120,
+  };
+}
+
+function aptosTx(input: { address: string; asset?: string }) {
+  return {
+    amount: "4200000",
+    asset_type: input.asset ?? aptosAssets.usdc.contract,
+    owner_address: input.address,
+    transaction_timestamp: "1970-01-01T00:02:00Z",
+    transaction_version: "12345",
+    type: "deposit",
   };
 }
 
@@ -376,6 +506,17 @@ function binanceChannel(): PaymentChannel {
     driver: "binance",
     id: 6,
     name: "Binance",
+  });
+}
+
+function okxChannel(): PaymentChannel {
+  return channel({
+    address: "888777",
+    assets: ["usdt", "usdc"],
+    data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+    driver: "okx",
+    id: 7,
+    name: "OKX",
   });
 }
 

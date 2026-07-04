@@ -41,7 +41,7 @@ export async function configureBotMiniApp(env: AppEnv) {
   const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/setChatMenuButton`, {
     body: JSON.stringify({
       menu_button: {
-        text: "Open HashPay",
+        text: "HashPay",
         type: "web_app",
         web_app: { url },
       },

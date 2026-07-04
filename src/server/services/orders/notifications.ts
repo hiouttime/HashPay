@@ -1,6 +1,7 @@
 import { jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { getOrder } from "@/server/services/orders/repository";
+import { encryptCallbackEnvelope } from "@/server/utils/crypto";
 import type { AppEnv } from "@/server/types/env";
 
 export async function createNotify(env: AppEnv, orderId: string) {
@@ -28,12 +29,13 @@ export async function resendNotify(env: AppEnv, orderId: string) {
 }
 
 export async function deliverNotify(env: AppEnv, notifyId: number) {
-  const notify = await one<{ attempts: number; callback: string | null; payload_json: string }>(
+  const notify = await one<{ attempts: number; callback: string | null; merchant: string; payload_json: string; publicKey: string | null }>(
     env,
     `
-      SELECT n.*, o.callback
+      SELECT n.*, o.callback, o.merchant, m.public_key AS publicKey
       FROM notify n
       JOIN orders o ON o.id = n.order_id
+      LEFT JOIN merchants m ON m.id = o.merchant
       WHERE n.id = ? AND n.status IN ('pending', 'retry')
       `,
     notifyId,
@@ -43,7 +45,11 @@ export async function deliverNotify(env: AppEnv, notifyId: number) {
     await run(env, "UPDATE notify SET status = 'done', updated_at = ? WHERE id = ?", now(), notifyId);
     return;
   }
-  const error = await deliveryError(notify.callback, notify.payload_json);
+  if (!notify.publicKey?.trim()) {
+    await recordFailure(env, notifyId, notify.attempts, "Merchant public key is missing");
+    return;
+  }
+  const error = await deliveryError(notify.callback, notify.payload_json, notify.merchant, notify.publicKey);
   if (error) {
     await recordFailure(env, notifyId, notify.attempts, error);
     return;
@@ -51,11 +57,21 @@ export async function deliverNotify(env: AppEnv, notifyId: number) {
   await run(env, "UPDATE notify SET status = 'done', attempts = attempts + 1, updated_at = ? WHERE id = ?", now(), notifyId);
 }
 
-async function deliveryError(callback: string, payload: string) {
+async function deliveryError(callback: string, payload: string, merchant: string, publicKey: string) {
   try {
+    const timestamp = String(now());
+    const body = JSON.stringify(await encryptCallbackEnvelope(publicKey, JSON.stringify({
+      payload: jsonParseObject(payload, {}),
+      timestamp: Number(timestamp),
+    })));
     const response = await fetch(callback, {
-      body: payload,
-      headers: { "content-type": "application/json" },
+      body,
+      headers: {
+        "content-type": "application/json",
+        "x-hashpay-encryption": "RSA-OAEP-256+A256GCM",
+        "x-hashpay-merchant": merchant,
+        "x-hashpay-timestamp": timestamp,
+      },
       method: "POST",
     });
     return response.ok ? null : `HTTP ${response.status}`;

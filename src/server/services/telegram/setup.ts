@@ -1,6 +1,8 @@
 import type { Context as GrammyContext } from "grammy";
-import { getConfig, setConfig } from "@/server/db";
-import { refreshBotInfo, setupWebhook } from "@/server/services/telegram/api";
+import { getConfig, setConfig, setConfigs } from "@/server/db";
+import { syncMarketRates } from "@/server/services/app/settings";
+import { ensureDefaultBanner } from "@/server/services/images/banner";
+import { configureBotMiniApp, refreshBotInfo, setupWebhook } from "@/server/services/telegram/api";
 import { normalizeLocale, t } from "@/shared/i18n";
 import type { AppEnv } from "@/server/types/env";
 
@@ -18,6 +20,15 @@ export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
   if (adminId) return false;
   const user = ctx.from;
   if (!user?.id) return false;
+  await setConfigs(env, {
+    currency: "CNY",
+    fast_confirm: "false",
+    rate_adjust: "0",
+    timeout: "5",
+  });
+  await ensureDefaultBanner(env);
+  await syncMarketRates(env);
+  await configureBotMiniApp(env);
   await setConfig(env, "admin_id", String(user.id));
   await setConfig(env, "admin_user", JSON.stringify({
     firstName: user.first_name || "",

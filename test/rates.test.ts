@@ -16,16 +16,20 @@ describe("market rates", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("open.er-api.com")) return json({ rates: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5 }, result: "success" });
+      if (url.includes("coingecko.com")) return json({ binancecoin: { usd: 610 }, ethereum: { usd: 3200 }, "polygon-ecosystem-token": { usd: 0.9 }, "the-open-network": { usd: 3 }, tron: { usd: 0.12 } });
       throw new Error(`unexpected fetch ${url}`);
     });
 
     const rates = await syncMarketRates(env(configs));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(rates.fiatPerUSD.CNY).toBe(7.18);
+    expect(rates.assetUSD.ETH).toBe(3200);
     expect(convertAmountWithContext(71.8, "CNY", "USDT", context(rates))).toBe(10);
     expect(convertAmountWithContext(71.8, "CNY", "USDC", context(rates))).toBe(10);
+    expect(convertAmountWithContext(6400, "USD", "ETH", context(rates))).toBe(2);
     expect(JSON.parse(configs.get("market_rates") || "{}")).toEqual({
+      assetUSD: { BNB: 610, ETH: 3200, GRAM: 3, MATIC: 0.9, TRX: 0.12, USDC: 1, USDT: 1 },
       fiatPerUSD: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5, USD: 1 },
       syncedAt,
     });
@@ -49,6 +53,7 @@ describe("market rates", () => {
   it("keeps the last successful fiat rate when a later sync fails", async () => {
     const configs = new Map<string, string | null>([
       ["market_rates", JSON.stringify({
+        assetUSD: { BNB: 600, ETH: 3000, GRAM: 2.8, MATIC: 0.8, TRX: 0.1, USDC: 1, USDT: 1 },
         fiatPerUSD: { CNY: 6.8, EUR: 0.9, GBP: 0.77, TWD: 31, USD: 1 },
         syncedAt: 1_783_148_400,
       })],
@@ -61,6 +66,7 @@ describe("market rates", () => {
 
     expect(rates.messageKey).toBe("settings.rate_error_fiat");
     expect(rates.fiatPerUSD.CNY).toBe(6.8);
+    expect(rates.assetUSD.ETH).toBe(3000);
     expect(rates.syncedAt).toBe(1_783_148_400);
     await expect(currentMarketRates(env(configs))).resolves.toMatchObject({
       messageKey: "settings.rate_error_fiat",

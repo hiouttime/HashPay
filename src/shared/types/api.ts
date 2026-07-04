@@ -101,6 +101,7 @@ export interface Settings {
   domain: string;
   fastConfirm: boolean;
   marketRates: {
+    assetUSD: Record<string, number>;
     fiatPerUSD: Record<string, number>;
     messageKey?: string;
     syncedAt: number;

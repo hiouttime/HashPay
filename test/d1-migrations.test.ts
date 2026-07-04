@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "@/server/types/env";
 
-const migrationNames = ["0001_init.sql", "0002_review.sql", "0003_merchant_status.sql"];
+const migrationNames = ["0001_init.sql"];
 
 describe("D1 migrations", () => {
   it("loads SQL migration files in filename order", async () => {

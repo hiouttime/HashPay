@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import { paymentMatches } from "@/server/payments/match";
 import { sameAmount } from "@/shared/amount";
 import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -16,12 +17,9 @@ const chains: Record<string, { blockSeconds: number; explorer?: string; native: 
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
-    const txs = input.candidates ? submitted(input.candidates) : await scan(input);
+    const txs = await scan(input);
     return {
-      matches: input.orders.flatMap((order) => {
-        const tx = txs.find((item) => match(order.snapshot, item, order.createdAt, order.expireAt));
-        return tx ? [{ orderId: order.id, time: tx.timestamp, txid: tx.hash }] : [];
-      }),
+      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
       status: "ok",
     };
   } catch (error) {
@@ -113,20 +111,6 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
     && (!token || lower(contract(tx.raw)) === lower(token.contract))
     && sameAmount(tx.amount, snapshot.amount)
     && lower(snapshot.address) === lower(tx.to);
-}
-
-function submitted(input: unknown) {
-  return ((input as { candidates?: unknown[] }).candidates ?? []).map((item) => {
-    const row = item as Record<string, unknown>;
-    return {
-      amount: Number(row.amount),
-      currency: key(row.currency),
-      hash: String(row.hash ?? ""),
-      raw: row.raw ?? row,
-      timestamp: Number(row.timestamp),
-      to: typeof row.to === "string" ? row.to : undefined,
-    };
-  });
 }
 
 async function json<T>(url: string) {

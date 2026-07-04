@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as payment from "@/app/payments";
 import { setLocale } from "@/app/i18n";
-import { canProbeInBrowser } from "@/app/payments/browser";
 
 describe("frontend payment module", () => {
   it("keeps asset display helpers frontend-only", () => {
@@ -37,10 +36,6 @@ describe("frontend payment module", () => {
     expect(payment.txUrl({ driver: "ton", tx: { txid: "abc" } })).toBe("https://tonviewer.com/transaction/abc");
     expect(payment.txUrl({ driver: "aptos", tx: { txid: "123" } })).toBe("https://explorer.aptoslabs.com/txn/123?network=mainnet");
     expect(payment.txUrl({ driver: "base", tx: { txid: "0xabc" } })).toBe("https://basescan.org/tx/0xabc");
-    expect(canProbeInBrowser({ address: "TAddress", driver: "trc20" })).toBe(true);
-    expect(canProbeInBrowser({ address: "EQAddress", driver: "ton" })).toBe(true);
-    expect(canProbeInBrowser({ address: "0x123", driver: "aptos" })).toBe(true);
-    expect(canProbeInBrowser({ address: "0x123", driver: "base" })).toBe(true);
   });
 
   it("uses exchange transfer wording for exchange drivers", () => {

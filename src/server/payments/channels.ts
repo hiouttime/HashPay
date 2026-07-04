@@ -1,6 +1,7 @@
 import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { validateChannel, validateData, type PaymentCheckResult } from "@/server/payments/driver";
+import { decryptSecret, encryptSecret } from "@/server/utils/crypto";
 import { key, paymentById } from "@/shared/payments";
 import type { Payment } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
@@ -16,12 +17,12 @@ type PaymentRow = Omit<Payment, "assets"> & {
 
 const columns = "id, driver, name, status, address, assets, credentials, created_at AS createdAt, updated_at AS updatedAt";
 
-function payment(row: PaymentRow): PaymentChannel {
+async function payment(env: AppEnv, row: PaymentRow): Promise<PaymentChannel> {
   return {
     address: row.address,
     assets: (JSON.parse(row.assets) as string[]).map(key).filter(Boolean),
     createdAt: row.createdAt,
-    data: jsonParseObject<Record<string, string>>(row.credentials, {}),
+    data: jsonParseObject<Record<string, string>>(await decryptSecret(env, row.credentials), {}),
     driver: row.driver,
     id: row.id,
     name: row.name,
@@ -31,7 +32,7 @@ function payment(row: PaymentRow): PaymentChannel {
 }
 
 export async function listPayments(env: AppEnv) {
-  return (await all<PaymentRow>(env, `SELECT ${columns} FROM payments ORDER BY id DESC`)).map(payment);
+  return Promise.all((await all<PaymentRow>(env, `SELECT ${columns} FROM payments ORDER BY id DESC`)).map((row) => payment(env, row)));
 }
 
 export function publicPayment(payment: PaymentChannel): Payment {
@@ -42,7 +43,7 @@ export function publicPayment(payment: PaymentChannel): Payment {
 async function getPayment(env: AppEnv, id: number) {
   const row = await one<PaymentRow>(env, `SELECT ${columns} FROM payments WHERE id = ?`, id);
   if (!row) throw new AppError(404, "errors.payment_not_found");
-  return payment(row);
+  return payment(env, row);
 }
 
 export async function savePayment(env: AppEnv, input: { address: string; assets: string[]; data?: Record<string, string>; driver: string; id?: number; name: string; status?: Payment["status"] }) {
@@ -59,7 +60,7 @@ export async function savePayment(env: AppEnv, input: { address: string; assets:
   const time = now();
   const name = input.name.trim() || payment.id;
   const status = input.status === "disabled" ? "disabled" : "enabled";
-  const fields = [input.driver, name, status, address, JSON.stringify(assets), JSON.stringify(data)] as const;
+  const fields = [input.driver, name, status, address, JSON.stringify(assets), await encryptSecret(env, JSON.stringify(data))] as const;
   if (input.id) {
     await run(env, "UPDATE payments SET driver = ?, name = ?, status = ?, address = ?, assets = ?, credentials = ?, updated_at = ? WHERE id = ?", ...fields, time, input.id);
     return getPayment(env, input.id);

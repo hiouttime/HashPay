@@ -1,6 +1,7 @@
 import { all, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { generateRsaKeyPair, verifyRsaSha256 } from "@/server/utils/crypto";
+import { normalizeCallbackUrl } from "@/server/utils/url";
 import type { Merchant as ApiMerchant } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
 
@@ -44,7 +45,7 @@ export async function saveMerchant(env: AppEnv, input: { callback?: string; id?:
   const time = now();
   const name = input.name.trim();
   const type = input.type === "telegram" ? "telegram" : "website";
-  const callback = input.callback?.trim() || null;
+  const callback = normalizeCallbackUrl(input.callback);
   const status = input.status === "disabled" ? "disabled" : "enabled";
   if (!name) throw new AppError(400, "errors.merchant_name_missing");
   if (input.id) {

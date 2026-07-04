@@ -98,6 +98,36 @@ describe("payment model", () => {
     });
   });
 
+  it("uses OKX UID as the address and keeps API details in data", () => {
+    expect(paymentById("okx")).toMatchObject({
+      address: { nameKey: "payment.okx.uid" },
+      assets: ["usdt", "usdc"],
+      data: [
+        { id: "apiKey", nameKey: "payment.okx.api_key" },
+        { id: "secretKey", nameKey: "payment.okx.secret_key" },
+        { id: "passphrase", nameKey: "payment.okx.passphrase" },
+      ],
+    });
+    expect(() => validateChannel({ address: "888777", assets: ["usdt"], driver: "okx" })).not.toThrow();
+    expect(() => validateChannel({ address: "abc", assets: ["usdt"], driver: "okx" })).toThrow("errors.payment_address_invalid");
+    expect(assignPayment({
+      address: "888777",
+      assets: ["usdt"],
+      createdAt: 1,
+      data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
+      driver: "okx",
+      id: 13,
+      name: "OKX",
+      status: "enabled",
+      updatedAt: 1,
+    }, 12.5, "usdt")).toMatchObject({
+      address: "888777",
+      amount: 12.5,
+      currency: "usdt",
+      driver: "okx",
+    });
+  });
+
   it("supports Aptos as a chain payment driver", () => {
     const address = "0x1111111111111111111111111111111111111111111111111111111111111111";
     expect(paymentById("aptos")).toMatchObject({

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/server/http/api";
 import { savePayment } from "@/server/payments/channels";
+import { decryptSecret } from "@/server/utils/crypto";
 import type { AppEnv } from "@/server/types/env";
 
 afterEach(() => {
@@ -24,6 +25,8 @@ describe("payment channels", () => {
 
     expect(saved.address).toBe("34355667");
     expect(saved.data).toEqual({ apiKey: "api-key", secretKey: "secret-key" });
+    expect(env.storedCredentials()).toContain("enc:v1:");
+    expect(env.storedCredentials()).not.toContain("secret-key");
   });
 
   it("rejects a Binance ID that does not match the API key pair", async () => {
@@ -37,11 +40,16 @@ describe("payment channels", () => {
       name: "Binance",
     })).rejects.toMatchObject(new AppError(400, "errors.payment_credential_invalid"));
   });
+
+  it("rejects plaintext stored credentials", async () => {
+    await expect(decryptSecret(envWithPayments(), "{\"secretKey\":\"plain\"}")).rejects.toMatchObject(new AppError(500, "errors.payment_credential_invalid"));
+  });
 });
 
 function envWithPayments() {
   let row: Record<string, unknown> | null = null;
   return {
+    APP_SECRET: "test-secret",
     DB: {
       prepare(sql: string) {
         let values: unknown[] = [];
@@ -75,7 +83,8 @@ function envWithPayments() {
         };
       },
     },
-  } as unknown as AppEnv;
+    storedCredentials: () => String(row?.credentials ?? ""),
+  } as unknown as AppEnv & { storedCredentials(): string };
 }
 
 function json(body: unknown) {

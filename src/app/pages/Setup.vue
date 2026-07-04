@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "@/app/components/AppIcon.vue";
 import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
-import { api, type AppState, type TelegramUser } from "@/app/api";
+import { api, type AppState } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 
 type Loading = "" | "status" | "setup";
@@ -13,7 +13,6 @@ const { t } = useI18n();
 const status = ref<Partial<AppState> | null>(null);
 const domain = ref("");
 const submittedDomain = ref("");
-const admin = ref<TelegramUser | null>(null);
 const loading = ref<Loading>("");
 const polling = ref(false);
 const complete = ref(false);
@@ -55,7 +54,9 @@ async function load() {
   try {
     const next = await api.silent.state.get();
     if (next.ready) {
-      await router.replace("/admin/overview");
+      status.value = next;
+      domain.value = normalizeDomain(next.domain || location.hostname);
+      complete.value = true;
       return;
     }
     status.value = next;
@@ -79,7 +80,7 @@ async function load() {
 }
 
 async function submitSetup() {
-  if (!canSetup.value || loading.value === "setup" || !validDomain(domain.value) || setupStarted.value) return;
+  if (complete.value || !canSetup.value || loading.value === "setup" || !validDomain(domain.value) || setupStarted.value) return;
   loading.value = "setup";
   try {
     await api.setup.submit(setupUrl.value);
@@ -103,7 +104,7 @@ function validDomain(host: string) {
 function updateDomain(value: string) {
   domain.value = normalizeDomain(value);
   submittedDomain.value = "";
-  admin.value = null;
+  complete.value = false;
   stopPolling();
 }
 
@@ -112,16 +113,11 @@ function normalizeDomain(value: string) {
   return raw.split(/[/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
 }
 
-function nextStep() {
-  complete.value = true;
-  stopPolling();
-}
-
 function startPolling() {
   if (pollTimer) return;
   polling.value = true;
-  void checkAdmin();
-  pollTimer = setInterval(checkAdmin, 2500);
+  void checkReady();
+  pollTimer = setInterval(checkReady, 2500);
 }
 
 function stopPolling() {
@@ -130,19 +126,16 @@ function stopPolling() {
   polling.value = false;
 }
 
-async function checkAdmin() {
+async function checkReady() {
   try {
-    const result = await api.silent.setup.session();
-    if (!result.bound || !result.admin) return;
-    admin.value = result.admin;
+    const next = await api.silent.state.get();
+    status.value = next;
+    if (!next.ready) return;
+    complete.value = true;
     stopPolling();
   } catch {
     stopPolling();
   }
-}
-
-function adminName(user: TelegramUser) {
-  return [user.firstName, user.lastName].filter(Boolean).join(" ") || String(user.id);
 }
 
 onMounted(load);
@@ -235,17 +228,15 @@ onBeforeUnmount(() => {
               <div>
                 <strong>{{ t('setup.admin') }}</strong>
                 <p v-if="!setupStarted" class="muted">{{ t('setup.admin_need_domain') }}</p>
-                <template v-else-if="!admin">
+                <template v-else>
                   <a :href="botLink" target="_blank" rel="noreferrer">
                     <n-button type="primary">{{ t('setup.open_bot') }}</n-button>
                   </a>
                   <p class="muted">{{ polling ? t('setup.admin_send', { bot: status?.username || '' }) : t('setup.admin_waiting') }}</p>
                 </template>
-                <p v-else class="muted">{{ t('setup.admin_bound_user', { user: adminName(admin) }) }}</p>
               </div>
             </div>
           </div>
-          <n-button block type="primary" :disabled="!admin" @click="nextStep">{{ t('setup.next') }}</n-button>
         </template>
       </div>
       <div class="setup-locale">

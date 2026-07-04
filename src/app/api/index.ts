@@ -21,7 +21,6 @@ function endpoints(options: ApiRequestOptions = {}) {
     },
     setup: {
       submit: (domain: string) => post<{ domain: string }>("/api/admin/setup", { domain }, options),
-      session: () => get<{ admin: TelegramUser | null; bound: boolean }>("/api/admin/setup", options),
     },
     session: {
       current: () => get<TelegramUser>("/api/admin/session", options),
@@ -36,8 +35,8 @@ function endpoints(options: ApiRequestOptions = {}) {
       status: (orderId: string) => get<Order>(`/api/checkout/${id(orderId)}/status`, options),
       select: (orderId: string, input: { asset: string; network: string }) =>
         put<Record<string, unknown>>(`/api/checkout/${id(orderId)}/payment`, input, options),
-      submitTx: (orderId: string, candidates: unknown[]) =>
-        post<Record<string, unknown>>(`/api/checkout/${id(orderId)}/check`, { candidates }, options),
+      check: (orderId: string) =>
+        post<Record<string, unknown>>(`/api/checkout/${id(orderId)}/check`, undefined, options),
       review: (orderId: string, input: { answer: string; image: string }) =>
         post<{ review: unknown }>(`/api/checkout/${id(orderId)}/review`, input, options),
     },

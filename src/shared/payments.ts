@@ -5,7 +5,6 @@ export type NetworkKey =
   | "binance"
   | "bep20"
   | "erc20"
-  | "huobi"
   | "okpay"
   | "okx"
   | "polygon"
@@ -286,28 +285,21 @@ export const binance: Payment = {
 
 export const okx: Payment = {
   address: {
-    helpKey: "payment.help.platform",
-    nameKey: "payment.address.default",
+    helpKey: "payment.okx.uid_help",
+    nameKey: "payment.okx.uid",
+    pattern: /^[1-9]\d*$/,
   },
   assets: ["usdt", "usdc"],
+  data: [
+    { id: "apiKey", helpKey: "payment.okx.api_key_help", nameKey: "payment.okx.api_key" },
+    { id: "secretKey", helpKey: "payment.okx.secret_key_help", nameKey: "payment.okx.secret_key" },
+    { id: "passphrase", helpKey: "payment.okx.passphrase_help", nameKey: "payment.okx.passphrase" },
+  ],
   icon: "icon-okx",
   id: "okx",
   kind: "exchange",
   nameKey: "network.okx",
   network: "okx",
-};
-
-export const huobi: Payment = {
-  address: {
-    helpKey: "payment.help.platform",
-    nameKey: "payment.address.default",
-  },
-  assets: ["usdt", "usdc"],
-  icon: "icon-huobi",
-  id: "huobi",
-  kind: "exchange",
-  nameKey: "network.huobi",
-  network: "huobi",
 };
 
 export const okpay: Payment = {
@@ -335,7 +327,6 @@ export const payments: Payment[] = [
   aptos,
   binance,
   okx,
-  huobi,
   okpay,
 ];
 

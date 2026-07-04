@@ -112,7 +112,8 @@ export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSi
 export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
   return (await all<OrderRow>(
     env,
-    "SELECT * FROM orders WHERE status = 'pending' AND payment <> '{}' ORDER BY created_at ASC LIMIT ?",
+    "SELECT * FROM orders WHERE status = 'pending' AND expire_at > ? AND payment <> '{}' ORDER BY created_at ASC LIMIT ?",
+    now(),
     Math.min(Math.max(Number(limit) || 20, 1), 200),
   )).map(order);
 }

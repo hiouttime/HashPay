@@ -1,11 +1,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { MessageApi } from "naive-ui";
 import * as pay from "@/app/payments";
-import { browserTxCandidates, canProbeInBrowser } from "@/app/payments/browser";
 import { api, type Checkout } from "@/app/api";
 import { appT } from "@/app/i18n";
 
-const paymentProbeIntervalMs = 3000;
+const paymentCheckIntervalMs = 3000;
 const statusPollIntervalMs = 5000;
 
 export function useCheckout(orderId: string, message: MessageApi) {
@@ -14,11 +13,10 @@ export function useCheckout(orderId: string, message: MessageApi) {
   const paidReturnDueAt = ref(0);
   const nowMs = ref(Date.now());
   let pollingStatus = false;
-  let probingPayment = false;
+  let checkingPayment = false;
   let clock: ReturnType<typeof setInterval> | undefined;
   let statusPoll: ReturnType<typeof setInterval> | undefined;
-  let paymentProbePoll: ReturnType<typeof setInterval> | undefined;
-  const submittedTxHashes = new Set<string>();
+  let paymentCheckPoll: ReturnType<typeof setInterval> | undefined;
 
   const paymentOptions = computed(() => pay.checkoutOptions(checkout.value?.options ?? []));
   const paidReturnSeconds = computed(() => {
@@ -54,25 +52,19 @@ export function useCheckout(orderId: string, message: MessageApi) {
     }
   }
 
-  async function probePayment() {
+  async function checkPayment() {
     const current = checkout.value;
     const order = current?.order;
     const payment = order?.payment ?? {};
-    if (!order || order.status !== "pending" || isExpired(order, nowMs.value) || !canProbeInBrowser(payment) || probingPayment) return;
-    probingPayment = true;
+    if (!order || order.status !== "pending" || isExpired(order, nowMs.value) || !payment.driver || checkingPayment) return;
+    checkingPayment = true;
     try {
-      const candidates = (await browserTxCandidates(payment, order, current.fastConfirm)).filter((item) => !submittedTxHashes.has(item.hash));
-      if (!candidates.length) return;
-      try {
-        await api.silent.checkout.submitTx(orderId, candidates);
-        await pollStatus();
-      } finally {
-        for (const candidate of candidates) submittedTxHashes.add(candidate.hash);
-      }
+      await api.silent.checkout.check(orderId);
+      await pollStatus();
     } catch {
-      // Browser-side probing depends on public API CORS and visitor network state.
+      // Payment checking must not interrupt the checkout flow.
     } finally {
-      probingPayment = false;
+      checkingPayment = false;
     }
   }
 
@@ -90,7 +82,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
     };
     changingPayment.value = false;
     message.success(appT("checkout.selected"));
-    void probePayment();
+    void checkPayment();
   }
 
   function changePayment() {
@@ -106,16 +98,16 @@ export function useCheckout(orderId: string, message: MessageApi) {
   }
 
   onMounted(() => {
-    void load().then(() => probePayment());
+    void load().then(() => checkPayment());
     clock = setInterval(() => {
       nowMs.value = Date.now();
     }, 1000);
     statusPoll = setInterval(() => {
       void pollStatus();
     }, statusPollIntervalMs);
-    paymentProbePoll = setInterval(() => {
-      void probePayment();
-    }, paymentProbeIntervalMs);
+    paymentCheckPoll = setInterval(() => {
+      void checkPayment();
+    }, paymentCheckIntervalMs);
   });
 
   watch(() => [checkout.value?.order?.status, checkout.value?.order?.returnUrl] as const, () => {
@@ -134,7 +126,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
   onBeforeUnmount(() => {
     if (clock) clearInterval(clock);
     if (statusPoll) clearInterval(statusPoll);
-    if (paymentProbePoll) clearInterval(paymentProbePoll);
+    if (paymentCheckPoll) clearInterval(paymentCheckPoll);
   });
 
   return {

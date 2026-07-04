@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { apiEnvelope, errorBody } from "@/server/http/api";
+import { getConfig } from "@/server/db";
 import routes from "@/server/http/routes";
 import { migrateD1 } from "@/server/db/migrations";
+import type { Context } from "hono";
 import type { HonoEnv } from "@/server/types/env";
 
 export function createApp() {
@@ -19,7 +21,7 @@ export function createApp() {
     await next();
   });
   app.use("/api/*", secureHeaders());
-  app.use("/api/*", cors({ credentials: true, origin: (origin) => origin }));
+  app.use("/api/*", cors({ credentials: true, origin: apiCorsOrigin }));
   app.use("/api/*", apiEnvelope);
   app.use("/api/*", async (c, next) => {
     if (!c.req.path.startsWith("/api/state")) await migrateD1(c.env);
@@ -34,4 +36,20 @@ export function createApp() {
   });
 
   return app;
+}
+
+async function apiCorsOrigin(origin: string, c: Context<HonoEnv>) {
+  const value = originUrl(origin);
+  if (!value) return null;
+  if (value === new URL(c.req.url).origin) return value;
+  const domain = await getConfig(c.env, "domain").catch(() => null);
+  return domain && value === originUrl(domain) ? value : null;
+}
+
+function originUrl(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
 }

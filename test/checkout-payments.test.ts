@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkPendingPayments, selectCheckoutPayment } from "@/server/services/orders/checkout";
+import { checkOrderPayment, checkPendingPayments, markPaid, selectCheckoutPayment } from "@/server/services/orders/checkout";
 import { trc20Assets } from "@/shared/payments";
 import type { AppEnv } from "@/server/types/env";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -26,7 +26,7 @@ describe("checkout payment selection", () => {
     expect(JSON.parse(env.updatedPayment).amount).toBe(10.01);
   });
 
-  it("releases the previous amount when the same order changes payment", async () => {
+  it("ignores the current order amount when the same order changes payment", async () => {
     const env = checkoutEnv({
       currentPayment: trc20Snapshot,
       includeExisting: false,
@@ -36,6 +36,62 @@ describe("checkout payment selection", () => {
 
     expect(snapshot.amount).toBe(10);
     expect(JSON.parse(env.updatedPayment).amount).toBe(10);
+  });
+});
+
+describe("checkout payment check", () => {
+  it("runs a server-side check instead of trusting browser candidates", async () => {
+    const env = checkoutEnv({
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [] }))));
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+
+    expect(env.paidOrders).toEqual(new Set());
+  });
+
+  it("rejects manual checks after the payment window expires", async () => {
+    const env = checkoutEnv({
+      currentPayment: trc20Snapshot,
+      expired: true,
+      includeExisting: false,
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.order_unavailable" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not create duplicate notifications when the paid update loses a race", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const order = orderRow("new-order", {
+      callback: "https://merchant.example/callback",
+      payment: JSON.stringify(trc20Snapshot),
+      payway: 1,
+      ts,
+    });
+    const inserts: string[] = [];
+    const env = {
+      DB: db({
+        first(sql) {
+          if (sql.includes("SELECT * FROM orders WHERE id = ?")) return { ...order, status: "paid" };
+          return null;
+        },
+        run(sql) {
+          if (sql.startsWith("INSERT INTO notify")) inserts.push(sql);
+          if (sql.startsWith("UPDATE orders SET status = 'paid'")) return { meta: { changes: 0 } };
+          return { meta: { changes: 1, last_row_id: 1 } };
+        },
+      }),
+    } as unknown as AppEnv;
+
+    await markPaid(env, orderFromRow(order), { txid: "tx" });
+
+    expect(inserts).toEqual([]);
   });
 });
 
@@ -58,13 +114,13 @@ describe("scheduled checkout payment checks", () => {
   });
 });
 
-function checkoutEnv(options: { currentPayment?: PaymentSnapshot; includeExisting?: boolean } = {}) {
+function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
   const ts = Math.floor(Date.now() / 1000);
   const orders = new Map<string, Record<string, unknown>>([
     ["new-order", orderRow("new-order", {
       payment: options.currentPayment ? JSON.stringify(options.currentPayment) : "{}",
       payway: options.currentPayment ? 1 : null,
-      ts,
+      ts: options.expired ? ts - 3600 : ts,
     })],
   ]);
 
@@ -77,6 +133,7 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; includeExistin
   }
 
   const env = {
+    paidOrders: new Set<string>(),
     updatedPayment: "",
     DB: db({
       all(sql, values) {
@@ -98,9 +155,11 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; includeExistin
       },
       run(sql, values) {
         if (sql.startsWith("UPDATE orders SET payway = ?")) env.updatedPayment = String(values[1]);
+        if (sql.startsWith("UPDATE orders SET status = 'paid'")) env.paidOrders.add(String(values[3]));
+        return { meta: { changes: 1, last_row_id: 1 } };
       },
     }),
-  } as unknown as AppEnv & { updatedPayment: string };
+  } as unknown as AppEnv & { paidOrders: Set<string>; updatedPayment: string };
 
   return env;
 }
@@ -135,7 +194,9 @@ function scheduledCheckEnv() {
             order.status = "paid";
             order.payment = values[0];
           }
+          return { meta: { changes: 1, last_row_id: 1 } };
         }
+        return { meta: { changes: 1, last_row_id: 1 } };
       },
     }),
   } as unknown as AppEnv & { paidOrders: Set<string>; paymentChecks: number };
@@ -146,7 +207,7 @@ function scheduledCheckEnv() {
 function db(handlers: {
   all?: (sql: string, values: unknown[]) => unknown[];
   first?: (sql: string, values: unknown[]) => unknown;
-  run?: (sql: string, values: unknown[]) => void;
+  run?: (sql: string, values: unknown[]) => unknown;
 }) {
   return {
     prepare(sql: string) {
@@ -163,18 +224,17 @@ function db(handlers: {
           return handlers.first?.(sql, values) ?? null;
         },
         async run() {
-          handlers.run?.(sql, values);
-          return { meta: { last_row_id: 1 } };
+          return handlers.run?.(sql, values) ?? { meta: { changes: 1, last_row_id: 1 } };
         },
       };
     },
   };
 }
 
-function orderRow(id: string, input: { amount?: number; payment: string; payway: number | null; ts: number }) {
+function orderRow(id: string, input: { amount?: number; callback?: string | null; payment: string; payway: number | null; ts: number }) {
   return {
     amount: input.amount ?? 10,
-    callback: null,
+    callback: input.callback ?? null,
     created_at: input.ts,
     currency: "USDT",
     description: id,
@@ -188,6 +248,26 @@ function orderRow(id: string, input: { amount?: number; payment: string; payway:
     redirect_url: null,
     status: "pending",
     updated_at: input.ts,
+  };
+}
+
+function orderFromRow(row: Record<string, unknown>) {
+  return {
+    amount: Number(row.amount),
+    callback: row.callback as string | null,
+    createdAt: Number(row.created_at),
+    currency: String(row.currency),
+    description: row.description as string | null,
+    expireAt: Number(row.expire_at),
+    id: String(row.id),
+    merchant: String(row.merchant),
+    merchantNo: String(row.merchant_no),
+    paidAt: row.paid_at as number | null,
+    payment: String(row.payment),
+    payway: row.payway as number | null,
+    redirectUrl: row.redirect_url as string | null,
+    status: row.status as "pending",
+    updatedAt: Number(row.updated_at),
   };
 }
 

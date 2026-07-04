@@ -59,7 +59,18 @@ CREATE TABLE IF NOT EXISTS notify (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS review (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  answer TEXT NOT NULL,
+  image BLOB,
+  image_url TEXT
+);
+
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
 CREATE INDEX IF NOT EXISTS orders_expire_at_idx ON orders(expire_at);
 CREATE INDEX IF NOT EXISTS orders_payway_idx ON orders(payway);
 CREATE INDEX IF NOT EXISTS notify_status_next_idx ON notify(status, next_run_at);
+CREATE INDEX IF NOT EXISTS review_status_idx ON review(status);
+CREATE INDEX IF NOT EXISTS review_order_idx ON review(order_id);

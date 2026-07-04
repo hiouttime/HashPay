@@ -8,7 +8,7 @@ import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "
 import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
 import { dashboard } from "@/server/services/app";
 import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
-import { setupSession, startSetup } from "@/server/services/app/setup";
+import { startSetup } from "@/server/services/app/setup";
 import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
@@ -23,7 +23,6 @@ function reqJson(c: Context<HonoEnv>) {
 }
 
 // Setup
-app.get("/setup", json((c) => setupSession(c)));
 app.post("/setup", json(async (c) => startSetup(c, await reqJson(c))));
 
 // Session

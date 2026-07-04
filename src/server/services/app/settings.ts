@@ -11,7 +11,7 @@ const defaultFiatPerUSD: Record<string, number> = {
   USD: 1,
 };
 
-const assetUSDValues: Record<string, number> = {
+const defaultAssetUSD: Record<string, number> = {
   BNB: 610,
   ETH: 3200,
   GRAM: 3,
@@ -19,6 +19,14 @@ const assetUSDValues: Record<string, number> = {
   TRX: 0.12,
   USDC: 1,
   USDT: 1,
+};
+
+const cryptoPriceIds: Record<string, string> = {
+  BNB: "binancecoin",
+  ETH: "ethereum",
+  GRAM: "the-open-network",
+  MATIC: "polygon-ecosystem-token",
+  TRX: "tron",
 };
 
 const defaultTimeoutMinutes = 5;
@@ -31,6 +39,7 @@ export interface SystemSettings {
 }
 
 export interface MarketRates {
+  assetUSD: Record<string, number>;
   fiatPerUSD: Record<string, number>;
   messageKey?: string;
   syncedAt: number;
@@ -71,6 +80,7 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
 
 function publicMarketRates(rates: MarketRates) {
   return {
+    assetUSD: rates.assetUSD,
     fiatPerUSD: rates.fiatPerUSD,
     messageKey: rates.messageKey,
     syncedAt: rates.syncedAt,
@@ -162,6 +172,14 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
     out.messageKey = "settings.rate_error_fiat";
     out.syncedAt = current.syncedAt;
   }
+  try {
+    out.assetUSD = await fetchCryptoRates();
+    out.syncedAt = out.syncedAt || nowSeconds();
+  } catch {
+    out.assetUSD = current.assetUSD;
+    out.messageKey = out.messageKey ?? "settings.rate_error_crypto";
+    out.syncedAt = out.syncedAt || current.syncedAt;
+  }
   await setConfig(env, "market_rates", JSON.stringify(out));
   memoryRates = { expiresAt: Date.now() + 60_000, snapshot: out };
   return out;
@@ -169,6 +187,7 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
 
 function defaultMarketRates(): MarketRates {
   return {
+    assetUSD: { ...defaultAssetUSD },
     fiatPerUSD: { ...defaultFiatPerUSD },
     syncedAt: 0,
   };
@@ -180,6 +199,7 @@ function parseMarketRates(value: string | null) {
     const parsed = JSON.parse(value) as Partial<MarketRates>;
     if (!parsed || typeof parsed !== "object") return defaultMarketRates();
     return {
+      assetUSD: { ...defaultAssetUSD, ...(parsed.assetUSD ?? {}) },
       fiatPerUSD: { ...defaultFiatPerUSD, ...(parsed.fiatPerUSD ?? {}) },
       messageKey: parsed.messageKey,
       syncedAt: Number(parsed.syncedAt) || 0,
@@ -208,6 +228,23 @@ async function fetchFiatRates() {
   return rates;
 }
 
+async function fetchCryptoRates() {
+  const ids = Object.values(cryptoPriceIds);
+  const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd`, {
+    signal: timeoutSignal(5000),
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`crypto rates status ${response.status}`);
+  const payload = await response.json<Record<string, { usd?: number }>>();
+  const rates: Record<string, number> = { ...defaultAssetUSD, USDC: 1, USDT: 1 };
+  for (const [asset, id] of Object.entries(cryptoPriceIds)) {
+    const price = Number(payload[id]?.usd);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`crypto rate missing: ${asset}`);
+    rates[asset] = price;
+  }
+  return rates;
+}
+
 function quoteRate(snapshot: MarketRates, fromCurrency: string, toCurrency: string, adjustPercent: number) {
   const from = fromCurrency.trim().toUpperCase();
   const to = toCurrency.trim().toUpperCase();
@@ -219,7 +256,7 @@ function quoteRate(snapshot: MarketRates, fromCurrency: string, toCurrency: stri
 }
 
 function currencyUSDValue(snapshot: MarketRates, currency: string) {
-  if (assetUSDValues[currency] > 0) return assetUSDValues[currency];
+  if (snapshot.assetUSD[currency] > 0) return snapshot.assetUSD[currency];
   if (snapshot.fiatPerUSD[currency] > 0) return 1 / snapshot.fiatPerUSD[currency];
   if (currency === "USD") return 1;
   return 0;

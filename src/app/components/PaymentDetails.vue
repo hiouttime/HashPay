@@ -57,21 +57,21 @@ function splitAddress(value: unknown) {
   </n-button>
 
   <div v-if="payment.address && !payment.url" class="checkout-copy-field checkout-copy-field--address">
-      <div class="checkout-copy-head">
-        <span>{{ t('checkout.address') }}</span>
-        <div class="checkout-copy-actions">
-          <n-button size="small" text type="primary" @click="copyText(payment.address, { message })">{{ t('common.copy') }}</n-button>
-          <n-button v-if="showQr" class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">{{ t('checkout.show_qr') }}</n-button>
-        </div>
+    <div class="checkout-copy-head">
+      <span>{{ t(isExchange ? 'payment.exchange_address' : 'checkout.address') }}</span>
+      <div class="checkout-copy-actions">
+        <n-button size="small" text type="primary" @click="copyText(payment.address, { message })">{{ t('common.copy') }}</n-button>
+        <n-button v-if="showQr" class="checkout-mobile-qr-button" size="small" secondary type="primary" @click="qrVisible = true">{{ t('checkout.show_qr') }}</n-button>
       </div>
-      <div v-if="showQr" class="checkout-address-qr-inline">
-        <div class="checkout-qr-box">
-          <n-qr-code :size="168" :value="payment.address" />
-        </div>
+    </div>
+    <div v-if="showQr" class="checkout-address-qr-inline">
+      <div class="checkout-qr-box">
+        <n-qr-code :size="168" :value="payment.address" />
       </div>
-      <code class="checkout-address-code">
-        <strong>{{ address.prefix }}</strong><span>{{ address.middle }}</span><strong>{{ address.suffix }}</strong>
-      </code>
+    </div>
+    <code class="checkout-address-code">
+      <strong>{{ address.prefix }}</strong><span>{{ address.middle }}</span><strong>{{ address.suffix }}</strong>
+    </code>
   </div>
 
   <div class="checkout-due-amount">

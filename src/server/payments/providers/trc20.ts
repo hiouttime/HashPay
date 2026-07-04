@@ -1,5 +1,6 @@
 import { key, trc20Assets } from "@/shared/payments";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import { paymentMatches } from "@/server/payments/match";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import { sameAmount } from "@/shared/amount";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
@@ -7,12 +8,9 @@ import type { TxCandidate } from "@/shared/types/domain";
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
-    const txs = input.candidates ? submittedTxs(input.candidates) : await scan(input);
+    const txs = await scan(input);
     return {
-      matches: input.orders.flatMap((order) => {
-        const tx = txs.find((item) => match(order.snapshot, item, order.createdAt, order.expireAt));
-        return tx ? [{ orderId: order.id, time: tx.timestamp, txid: tx.hash }] : [];
-      }),
+      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
       status: "ok",
     };
   } catch (error) {
@@ -59,21 +57,6 @@ async function tronGrid<T>(address: string, path: string, params: URLSearchParam
   const result = await fetch(url).then((res) => res.json() as Promise<{ data?: T[] }>);
   if (!Array.isArray(result.data)) throw new Error("TronGrid response is invalid");
   return result.data;
-}
-
-function submittedTxs(input: unknown) {
-  const candidates = (input as { candidates?: unknown[] }).candidates ?? [];
-  return candidates.map((item) => {
-    const row = item as Record<string, unknown>;
-    return {
-      amount: Number(row.amount),
-      currency: key(row.currency),
-      hash: String(row.hash ?? ""),
-      raw: row.raw ?? row,
-      timestamp: Number(row.timestamp),
-      to: typeof row.to === "string" ? row.to : undefined,
-    };
-  });
 }
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {

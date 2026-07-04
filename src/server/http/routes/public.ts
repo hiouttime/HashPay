@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { migrateD1 } from "@/server/db/migrations";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
-import { checkoutData, checkoutStatus, checkSubmittedPayment, okpayNotify, selectCheckoutPayment, submitPaymentReview } from "@/server/services/orders/checkout";
+import { publicCheckoutErrorBody } from "@/server/http/public-errors";
+import { checkoutData, checkoutStatus, checkOrderPayment, okpayNotify, selectCheckoutPayment, submitPaymentReview } from "@/server/services/orders/checkout";
 import { orderQrPng } from "@/server/services/images/qr";
 import { handleTelegramWebhook } from "@/server/services/telegram/bot";
 import { appState } from "@/server/services/app";
@@ -28,18 +30,16 @@ app.get("/order/:id/qr.png", async (c) => {
 
 app.get("/api/state", async (c) => c.json(await appState(c.env, c.req.url)));
 
-app.get("/api/checkout/:orderId", async (c) => c.json(await checkoutData(c.env, c.req.param("orderId"))));
-app.get("/api/checkout/:orderId/status", async (c) => c.json(await checkoutStatus(c.env, c.req.param("orderId"))));
-app.put("/api/checkout/:orderId/payment", async (c) => {
+app.get("/api/checkout/:orderId", checkoutJson((c) => checkoutData(c.env, String(c.req.param("orderId") ?? ""))));
+app.get("/api/checkout/:orderId/status", checkoutJson((c) => checkoutStatus(c.env, String(c.req.param("orderId") ?? ""))));
+app.put("/api/checkout/:orderId/payment", checkoutJson(async (c) => {
   const body = (await c.req.json()) as { asset?: string; network?: string };
-  return c.json(await selectCheckoutPayment(c.env, c.req.param("orderId"), String(body.asset ?? ""), String(body.network ?? "")));
-});
-app.post("/api/checkout/:orderId/check", async (c) => {
-  return c.json(await checkSubmittedPayment(c.env, c.req.param("orderId"), await c.req.json()));
-});
-app.post("/api/checkout/:orderId/review", async (c) => {
-  return c.json(await submitPaymentReview(c.env, c.req.param("orderId"), (await c.req.json()) as Record<string, unknown>));
-});
+  return selectCheckoutPayment(c.env, String(c.req.param("orderId") ?? ""), String(body.asset ?? ""), String(body.network ?? ""));
+}));
+app.post("/api/checkout/:orderId/check", checkoutJson((c) => checkOrderPayment(c.env, String(c.req.param("orderId") ?? ""))));
+app.post("/api/checkout/:orderId/review", checkoutJson(async (c) => {
+  return submitPaymentReview(c.env, String(c.req.param("orderId") ?? ""), (await c.req.json()) as Record<string, unknown>);
+}));
 
 app.post("/telegram/webhook/:secret", async (c) => {
   await migrateD1(c.env);
@@ -47,6 +47,17 @@ app.post("/telegram/webhook/:secret", async (c) => {
 });
 
 export default app;
+
+function checkoutJson<T>(handler: (c: Context<HonoEnv>) => T | Promise<T>) {
+  return async (c: Context<HonoEnv>) => {
+    try {
+      return c.json(await handler(c) as never);
+    } catch (error) {
+      const { body, status } = publicCheckoutErrorBody(error);
+      return c.json(body, status as never);
+    }
+  };
+}
 
 async function okpayBody(c: { req: { formData(): Promise<FormData>; header(name: string): string | undefined; json(): Promise<unknown> } }) {
   if (c.req.header("content-type")?.includes("application/json")) return await c.req.json() as Record<string, unknown>;

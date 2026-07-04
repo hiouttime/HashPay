@@ -129,26 +129,11 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
     },
   };
   const ts = now();
-  await run(env, "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'", JSON.stringify(paidPayment), ts, ts, order.id);
+  const result = await run(env, "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'", JSON.stringify(paidPayment), ts, ts, order.id);
+  if (!result.meta.changes) return jsonParseObject<PaymentSnapshot>((await getOrder(env, order.id)).payment, {} as PaymentSnapshot);
   await resolveReview(env, order.id);
   await createNotify(env, order.id);
   return paidPayment;
-}
-
-export async function checkSubmittedPayment(env: AppEnv, orderId: string, input: unknown) {
-  const order = await getOrder(env, orderId);
-  const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
-  const result = await checkPayment({
-    candidates: input,
-    channel: await orderChannel(env, order),
-    fastConfirm: (await systemSettings(env)).fastConfirm,
-    orders: [checkOrder(order, snapshot)],
-  });
-  if (result && order.payway) await recordCheck(env, order.payway, result);
-  if (result?.status === "error") throw new AppError(502, "errors.payment_check_failed");
-  const match = result.matches.find((item) => item.orderId === order.id);
-  if (match) return markPaid(env, order, { timestamp: match.time, txid: match.txid });
-  throw new AppError(400, "errors.tx_not_found");
 }
 
 export async function submitPaymentReview(env: AppEnv, orderId: string, input: Record<string, unknown>) {
@@ -166,7 +151,8 @@ export async function submitPaymentReview(env: AppEnv, orderId: string, input: R
 
 export async function checkOrderPayment(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
-  if (order.status !== "pending") return jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
+  if (order.status === "paid") return jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
+  if (order.status !== "pending" || now() > order.expireAt) throw new AppError(400, "errors.order_unavailable");
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (!snapshot.driver) throw new AppError(400, "errors.payment_not_selected");
   const result = await checkPayment({
@@ -229,7 +215,7 @@ function checkOrder(order: Order, snapshot: PaymentSnapshot) {
 
 export async function confirmOrder(env: AppEnv, orderId: string, input: Record<string, unknown>) {
   const order = await getOrder(env, orderId);
-  if (order.status !== "pending") throw new AppError(400, "errors.order_unavailable");
+  if (order.status !== "pending" || now() > order.expireAt) throw new AppError(400, "errors.order_unavailable");
   const tx: PaymentTxEvidence = {
     confirmedBy: "admin",
     timestamp: Number(input.timestamp ?? now()),
