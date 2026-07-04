@@ -24,7 +24,7 @@ When importing this repository from Cloudflare Workers Builds, use these setting
 | --- | --- |
 | Production branch | `main` |
 | Root directory | leave empty unless this project is inside a monorepo |
-| Build command | `npm run build` |
+| Build command | leave empty; `wrangler.jsonc` runs `npm run build` before deploy |
 | Deploy command | `npm run deploy` |
 | Non-production branch deploy command | `npm run deploy:preview` |
 

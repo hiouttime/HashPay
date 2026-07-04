@@ -36,7 +36,7 @@
     "db:migrate:local": "wrangler d1 migrations apply hashpay --local",
     "db:migrate:remote": "wrangler d1 migrations apply hashpay --remote",
     "deploy": "wrangler deploy --keep-vars",
-    "deploy:dry": "npm run build && wrangler deploy --dry-run",
+    "deploy:dry": "wrangler deploy --dry-run",
     "deploy:preview": "wrangler versions upload",
     "dev": "vite",
     "dev:worker": "wrangler dev",
