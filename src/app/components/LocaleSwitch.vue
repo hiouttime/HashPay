@@ -16,6 +16,7 @@ const { locale, localeOptions, setLocale } = useI18n();
 
 <style scoped>
 .locale-switch {
-  min-width: 8rem;
+  flex: 0 0 9.5rem;
+  width: 9.5rem;
 }
 </style>

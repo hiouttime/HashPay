@@ -19,7 +19,7 @@ export async function startSetup(c: Context<HonoEnv>, input: Record<string, unkn
 export async function setupSession(c: Context<HonoEnv>) {
   const adminId = Number(await getConfig(c.env, "admin_id"));
   if (!adminId) return { admin: null, bound: false };
-  const admin = jsonParseObject<TelegramUser>(await getConfig(c.env, "admin_user"), { id: adminId });
+  const admin = jsonParseObject<TelegramUser>(await getConfig(c.env, "admin_user"), { firstName: "", id: adminId, lastName: "" });
   setSessionCookie(c, await signSession(c.env, admin));
   await ensureDefaultBanner(c.env);
   await configureBotMiniApp(c.env);

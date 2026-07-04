@@ -41,9 +41,9 @@ const visible = computed({
 });
 const questions = computed(() => {
   const asset = pay.assetKey(props.payment?.currency || props.selectedAsset || "usdt");
-  const network = pay.networkKey(props.payment?.network || props.selectedNetwork || "trc20");
+  const network = pay.networkKey(props.payment?.driver || props.selectedNetwork || "trc20");
   const amount = Number(props.payment?.amount || props.selectedOption?.amount || props.order?.amount || 0);
-  const networkCorrect = props.payment?.networkName || pay.networkName(network);
+  const networkCorrect = pay.networkName(network);
   const assetCorrect = pay.assetName(asset);
   const amountCorrect = `${formatExactAmount(amount)} ${assetCorrect}`;
   return [
@@ -133,7 +133,7 @@ async function upload(options: { file: { file?: File | null }; onError?: () => v
   }
   try {
     imageName.value = file.name;
-    image.value = await fileToDataUrl(file);
+    image.value = await fileToWebp(file);
     options.onFinish?.();
   } catch {
     options.onError?.();
@@ -170,12 +170,22 @@ function answerText() {
   ].join("\n\n");
 }
 
-function fileToDataUrl(file: File) {
+function fileToWebp(file: File) {
   return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext("2d")?.drawImage(image, 0, 0);
+      URL.revokeObjectURL(image.src);
+      resolve(canvas.toDataURL("image/webp", 0.86));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(image.src);
+      reject(new Error("image_load_failed"));
+    };
+    image.src = URL.createObjectURL(file);
   });
 }
 

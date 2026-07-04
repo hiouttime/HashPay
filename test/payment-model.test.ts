@@ -68,4 +68,54 @@ describe("payment model", () => {
     });
     expect(paymentExplorerUrl("trc20", "abc")).toBe("https://nile.tronscan.org/#/transaction/abc");
   });
+
+  it("supports Aptos as a chain payment driver", () => {
+    const address = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    expect(paymentById("aptos")).toMatchObject({
+      address: { nameKey: "payment.address.aptos" },
+      assets: ["usdt", "usdc"],
+      icon: "icon-aptos",
+    });
+    expect(paymentOptions({
+      address,
+      assets: ["usdt", "usdc"],
+      createdAt: 1,
+      credentials: {},
+      driver: "aptos",
+      id: 10,
+      name: "Aptos",
+      status: "enabled",
+      updatedAt: 1,
+    })).toEqual([
+      { asset: "usdt", channelId: 10, network: "aptos" },
+      { asset: "usdc", channelId: 10, network: "aptos" },
+    ]);
+    expect(() => validatePayment({ address: "0x1", assets: ["usdt"], driver: "aptos" })).toThrow("errors.payment_address_invalid");
+    expect(() => validatePayment({ address, assets: ["apt"], driver: "aptos" })).toThrow("errors.payment_asset_invalid");
+  });
+
+  it("supports Base as an EVM payment driver", () => {
+    const address = "0x0000000000000000000000000000000000000001";
+    expect(paymentById("base")).toMatchObject({
+      address: { nameKey: "payment.address.evm" },
+      assets: ["usdt", "usdc", "eth"],
+      icon: "icon-base",
+    });
+    expect(paymentOptions({
+      address,
+      assets: ["usdt", "usdc", "eth", "bnb"],
+      createdAt: 1,
+      credentials: {},
+      driver: "base",
+      id: 11,
+      name: "Base",
+      status: "enabled",
+      updatedAt: 1,
+    })).toEqual([
+      { asset: "usdt", channelId: 11, network: "base" },
+      { asset: "usdc", channelId: 11, network: "base" },
+      { asset: "eth", channelId: 11, network: "base" },
+    ]);
+    expect(paymentExplorerUrl("base", "0xabc")).toBe("https://basescan.org/tx/0xabc");
+  });
 });

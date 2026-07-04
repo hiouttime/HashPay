@@ -37,7 +37,7 @@ function testEnv(publicKeyPem: string) {
     id: "merchant-1",
     name: "Demo Merchant",
     public_key: publicKeyPem,
-    status: "active",
+    status: "enabled",
     type: "website",
     updated_at: 1,
   };

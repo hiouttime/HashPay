@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "@/server/types/env";
 
+const migrationNames = ["0001_init.sql", "0002_review.sql", "0003_merchant_status.sql"];
+
 describe("D1 migrations", () => {
   it("loads SQL migration files in filename order", async () => {
     const { d1Migrations } = await loadMigrations();
 
-    expect(d1Migrations.map((migration) => migration.name)).toEqual([
-      "0001_init.sql",
-    ]);
+    expect(d1Migrations.map((migration) => migration.name)).toEqual(migrationNames);
   });
 
   it("applies migration files through the Worker D1 binding", async () => {
@@ -16,23 +16,24 @@ describe("D1 migrations", () => {
 
     const result = await migrateD1(env);
 
-    expect(result.applied).toEqual(["0001_init.sql"]);
+    expect(result.applied).toEqual(migrationNames);
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS d1_migrations"));
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS configs"));
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS notify"));
-    expect(env.applied).toEqual(new Set(["0001_init.sql"]));
+    expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS review"));
+    expect(env.applied).toEqual(new Set(migrationNames));
   });
 
   it("uses migration records as the source of truth", async () => {
     const { migrateD1 } = await loadMigrations();
-    const env = migrationEnv(["0001_init.sql"]);
+    const env = migrationEnv(migrationNames);
 
     const result = await migrateD1(env);
 
     expect(result).toEqual({ applied: [] });
     expect(env.DB.exec).toHaveBeenCalledTimes(1);
     expect(env.DB.batch).not.toHaveBeenCalled();
-    expect(env.applied).toEqual(new Set(["0001_init.sql"]));
+    expect(env.applied).toEqual(new Set(migrationNames));
   });
 
   it("does not touch D1 again after a successful migration in the same isolate", async () => {
@@ -63,9 +64,9 @@ describe("D1 migrations", () => {
 
     const [a, b] = await Promise.all([first, second]);
 
-    expect(a.applied).toEqual(["0001_init.sql"]);
+    expect(a.applied).toEqual(migrationNames);
     expect(b).toBe(a);
-    expect(env.DB.exec).toHaveBeenCalledTimes(2);
+    expect(env.DB.exec).toHaveBeenCalledTimes(migrationNames.length + 1);
   });
 });
 

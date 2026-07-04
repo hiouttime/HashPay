@@ -17,7 +17,6 @@ export async function signSession(env: AppEnv, user: TelegramUser) {
   return new SignJWT({
     firstName: user.firstName,
     lastName: user.lastName,
-    username: user.username,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(user.id))
@@ -45,10 +44,9 @@ export async function verifySession(env: AppEnv, token: string): Promise<Telegra
   const id = Number(result.payload.sub);
   if (!Number.isFinite(id)) throw new AppError(401, "errors.session_invalid");
   return {
-    firstName: typeof result.payload.firstName === "string" ? result.payload.firstName : undefined,
+    firstName: typeof result.payload.firstName === "string" ? result.payload.firstName : "",
     id,
-    lastName: typeof result.payload.lastName === "string" ? result.payload.lastName : undefined,
-    username: typeof result.payload.username === "string" ? result.payload.username : undefined,
+    lastName: typeof result.payload.lastName === "string" ? result.payload.lastName : "",
   };
 }
 

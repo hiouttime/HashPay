@@ -1,21 +1,25 @@
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
+import { check as checkAptos } from "@/server/payments/providers/aptos";
+import { check as checkEvm } from "@/server/payments/providers/evm";
+import { check as checkOkpay, create as createOkpay } from "@/server/payments/providers/okpay";
+import { check as checkTon } from "@/server/payments/providers/ton";
 import { check as checkTrc20 } from "@/server/payments/providers/trc20";
 import {
   defaultPayment,
   evmPayments,
   normalizeAssetCsv,
   normalizePaymentAsset,
-  paymentAssetName,
   paymentById,
   paymentExplorerUrl,
   payments,
   type Payment,
 } from "@/shared/payments";
 import { ceilAmount } from "@/shared/amount";
+import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
-export { defaultPayment, evmPayments, paymentAssetName, paymentExplorerUrl, payments };
+export { defaultPayment, evmPayments, paymentExplorerUrl, payments };
 
 export interface PaymentOption {
   asset: string;
@@ -25,23 +29,50 @@ export interface PaymentOption {
 
 export interface PaymentCheckInput {
   candidates?: unknown;
+  channel?: PaymentChannel;
+  fastConfirm: boolean;
+  orders: PaymentCheckOrder[];
+}
+
+export interface PaymentCheckOrder {
   createdAt: number;
   expireAt: number;
-  fastConfirm: boolean;
+  id: string;
   snapshot: PaymentSnapshot;
 }
 
 export interface PaymentCheckResult {
   error?: string;
-  status: "error" | "paid" | "pending";
+  matches: PaymentCheckMatch[];
+  status: "error" | "ok";
+}
+
+export interface PaymentCheckMatch {
+  orderId: string;
   time?: number;
   txid?: string;
 }
 
 type Check = (input: PaymentCheckInput) => Promise<PaymentCheckResult>;
+type Create = (channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) => Promise<PaymentSnapshot>;
+type Provider = {
+  check: Check;
+  scheduled?: true;
+};
 
-const checkers: Partial<Record<string, Check>> = {
-  trc20: checkTrc20,
+const providers: Partial<Record<string, Provider>> = {
+  aptos: { check: checkAptos, scheduled: true },
+  base: { check: checkEvm, scheduled: true },
+  bep20: { check: checkEvm, scheduled: true },
+  erc20: { check: checkEvm, scheduled: true },
+  okpay: { check: checkOkpay },
+  polygon: { check: checkEvm, scheduled: true },
+  ton: { check: checkTon, scheduled: true },
+  trc20: { check: checkTrc20, scheduled: true },
+};
+
+const creators: Partial<Record<string, Create>> = {
+  okpay: createOkpay,
 };
 
 export function validatePayment(input: { address?: string; assets?: string[]; driver: string }) {
@@ -66,16 +97,23 @@ export function assignPayment(channel: PaymentChannel, amount: number, targetAss
     address: address(payment, channel.address),
     amount: ceilAmount(amount),
     currency: normalizePaymentAsset(targetAsset),
-    currencyName: paymentAssetName(targetAsset),
     driver: payment.id,
-    network: payment.network,
-    networkName: payment.nameKey,
   };
 }
 
+export function createPayment(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
+  return creators[channel.driver]?.(channel, order, snapshot) ?? Promise.resolve(snapshot);
+}
+
 export function checkPayment(input: PaymentCheckInput) {
-  byId(input.snapshot.driver);
-  return checkers[input.snapshot.driver]?.(input) ?? Promise.resolve({ status: "pending" });
+  const driver = input.orders[0]?.snapshot.driver;
+  if (!driver) return Promise.resolve({ matches: [], status: "ok" } satisfies PaymentCheckResult);
+  byId(driver);
+  return providers[driver]?.check(input) ?? Promise.resolve({ matches: [], status: "ok" });
+}
+
+export function checksOnSchedule(driver: string) {
+  return providers[driver]?.scheduled === true;
 }
 
 function byId(id: string) {

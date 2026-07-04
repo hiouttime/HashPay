@@ -38,13 +38,13 @@ const loading = ref(true);
 const navOpen = ref(false);
 const status = ref<AppState | null>(null);
 const user = ref<TelegramUser | null>(null);
-const username = computed(() => status.value!.username!);
+const username = computed(() => status.value?.username || "");
 
 
 async function init() {
   loading.value = true;
   status.value = await api.state.get();
-  if (!status.value.installed) {
+  if (!status.value.ready) {
     await router.replace("/setup");
     return;
   }

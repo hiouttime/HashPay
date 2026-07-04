@@ -37,8 +37,8 @@ const previewPriority = ["USDT", "USDC", "GRAM", "BTC", "ETH", "BNB", "TRX", "MA
 
 export interface SystemSettings {
   currency: string;
-  fast_confirm: boolean;
-  rate_adjust: number;
+  fastConfirm: boolean;
+  rateAdjust: number;
   timeout: number;
 }
 
@@ -58,15 +58,13 @@ export interface ConversionContext {
   settings: SystemSettings;
 }
 
-const bannerUrl = "/banner.webp";
 let memoryRates: { expiresAt: number; snapshot: MarketRates } | null = null;
 
 export async function adminSettings(env: AppEnv) {
   return {
     ...(await systemSettings(env)),
-    banner_url: bannerUrl,
     domain: await getConfig(env, "domain") || "",
-    rate_preview: await settingsPreview(env),
+    ratePreview: await settingsPreview(env),
   };
 }
 
@@ -76,15 +74,14 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
   await setConfigs(env, {
     currency: settings.currency,
     domain,
-    fast_confirm: String(settings.fast_confirm),
-    rate_adjust: String(settings.rate_adjust),
+    fast_confirm: String(settings.fastConfirm),
+    rate_adjust: String(settings.rateAdjust),
     timeout: String(settings.timeout),
   });
   return {
     ...settings,
-    banner_url: bannerUrl,
     domain,
-    rate_preview: await settingsPreview(env, settings.currency, String(settings.rate_adjust)),
+    ratePreview: await settingsPreview(env, settings.currency, String(settings.rateAdjust)),
   };
 }
 
@@ -97,8 +94,8 @@ export async function systemSettings(env: AppEnv): Promise<SystemSettings> {
   ]);
   return {
     currency: normalizeCurrency(currency || "CNY"),
-    fast_confirm: fastConfirm === "true",
-    rate_adjust: normalizeRateAdjust(rateAdjust),
+    fastConfirm: fastConfirm === "true",
+    rateAdjust: normalizeRateAdjust(rateAdjust),
     timeout: normalizeTimeoutMinutes(timeout),
   };
 }
@@ -114,7 +111,7 @@ export async function convertAmount(env: AppEnv, amount: number, fromCurrency: s
 export async function conversionContext(env: AppEnv): Promise<ConversionContext> {
   const settings = await systemSettings(env);
   return {
-    rateAdjust: settings.rate_adjust,
+    rateAdjust: settings.rateAdjust,
     rates: await currentMarketRates(env),
     settings,
   };
@@ -129,32 +126,26 @@ export function convertAmountWithContext(amount: number, fromCurrency: string, t
 export async function settingsPreview(env: AppEnv, currency?: string | null, rateAdjust?: string | null) {
   const settings = await systemSettings(env);
   const base = normalizeCurrency(currency || settings.currency);
-  const adjust = normalizeRateAdjust(rateAdjust ?? settings.rate_adjust);
+  const adjust = normalizeRateAdjust(rateAdjust ?? settings.rateAdjust);
   const snapshot = await currentMarketRates(env);
   return {
-    adjust_percent: adjust,
-    base_currency: base,
     items: previewPriority.map((item) => {
       const marketRate = quoteRate(snapshot, base, item, 0);
       return {
         currency: item,
-        effective_rate: applyAdjust(marketRate, adjust),
-        market_rate: marketRate,
-        usd_price: snapshot.usdPrices[item] ?? 0,
+        effectiveRate: applyAdjust(marketRate, adjust),
+        marketRate,
       };
-    }).filter((item) => item.market_rate > 0),
-    message_key: snapshot.messageKey,
-    source: snapshot.source,
-    status: snapshot.status,
-    updated_at: snapshot.updatedAt,
+    }).filter((item) => item.marketRate > 0),
+    messageKey: snapshot.messageKey,
   };
 }
 
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
   return {
     currency: normalizeCurrency(String(input.currency ?? "CNY")),
-    fast_confirm: input.fast_confirm === true || input.fast_confirm === "true",
-    rate_adjust: normalizeRateAdjust(input.rate_adjust),
+    fastConfirm: input.fastConfirm === true || input.fastConfirm === "true",
+    rateAdjust: normalizeRateAdjust(input.rateAdjust),
     timeout: normalizeTimeoutMinutes(input.timeout),
   };
 }

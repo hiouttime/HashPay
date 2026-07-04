@@ -67,7 +67,9 @@ HashPay/
 │   ├── api/                             # 前端 API client，复用 shared/types/api.ts
 │   ├── components/                      # 前端组件
 │   ├── pages/                           # 前端页面
-│   ├── payments/                        # 前端支付展示和浏览器查账 helpers
+│   ├── payments/                        # 前端支付展示和浏览器侧查账能力
+│   ├── utils/                           # 前端格式化、剪贴板、收银台状态机等工具
+│   ├── i18n.ts                          # 前端轻量 i18n store
 │   └── styles.scss                      # 全局样式
 ├── test/                                # Vitest 单元测试
 ├── wrangler.jsonc                       # Cloudflare Workers 配置
@@ -79,7 +81,7 @@ HashPay/
 
 - `src/index.ts` 是唯一 Worker 入口，导出 `fetch`、`scheduled`、`queue`。
 - `fetch` 进入 `createApp()`，Hono 在 `src/server/http/app.ts` 装配中间件、路由和 Assets 回退。
-- API 响应由 `apiEnvelope` 包装为 `{ data: ... }`；错误统一走 `{ error: { code, message } }`。
+- API 响应由 `apiEnvelope` 包装为 `{ data: ... }`；错误统一走 `{ error: { key, params } }`，前端负责按当前语言翻译。
 - `/api/*` 请求会先执行 `migrateD1(c.env)`，但 `/api/state` 例外；`appState()` 自行尝试迁移并把 DB 错误转成状态字段。
 - 未命中后端路由时回落到 `ASSETS.fetch()`，用于服务 SPA。
 - Cron 每分钟执行 `runScheduledJobs()`：迁移、同步汇率、过期订单、检查待支付 TRON 订单、把到期通知放入队列。
@@ -112,7 +114,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 - `configs`：系统配置、Bot 状态、管理员、Banner blob、汇率缓存等。
 - `merchants`：商户、公钥、回调 URL、状态和类型。
-- `payments`：收款通道、driver、地址/账户、支持资产、凭据和状态。
+- `payments`：收款通道、driver、地址、支持资产、凭据和状态。
 - `orders`：订单主体，`merchant_no` 是商户侧幂等单号，`payment` 是支付快照 JSON。
 - `notify`：商户回调任务、重试状态、payload 和错误信息。
 - `d1_migrations`：由迁移执行器自动创建，作为迁移是否已应用的事实来源。
@@ -151,25 +153,25 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 1. `/api/checkout/:orderId` 读取订单、商户、启用的支付通道和当前汇率缓存。
 2. `checkoutData()` 用一次 `conversionContext()` 为所有通道生成候选金额。
-3. 用户选择资产/网络后，`selectOrderPaymentByAssetNetwork()` 随机选择可用通道，并写入 `orders.payment` 快照。
+3. 用户选择资产/网络后，`selectCheckoutPayment()` 随机选择可用通道，并写入 `orders.payment` 快照。
 4. 已写入的 `payment.amount` 是固定应付金额；除非用户重新选择网络/币种，不应随汇率变化。
-5. `nextPaymentAmount()` 会避开同一通道、同一地址、同一资产网络下其他未过期订单的相同金额。
+5. `uniqueAmount()` 会避开同一通道、同一地址、同一资产网络下其他未过期订单的相同金额。
 6. 前端 `Pay.vue` 展示订单状态、二维码/地址、倒计时、支付成功返回和人工审核入口。
 
 不要在打开收银台或生成候选项时重新请求外部汇率。汇率同步归 `syncMarketRates()`，收银台读取归 `currentMarketRates()` / `conversionContext()`。
 
 ### 支付确认
 
-- 自动检查入口：`checkOrderPayment()`、`submitTxCandidates()`、Cron 扫描待支付 TRON 订单。
-- 浏览器辅助查账：`src/app/payments/index.ts` 只为带 `publicCheck` 的网络生成候选交易，再提交给服务端校验。
+- 自动检查入口：`checkOrderPayment()`、`checkSubmittedPayment()`、Cron 扫描待支付 TRON 订单。
+- 浏览器辅助查账：`src/app/payments/browser.ts` 只为带 `publicCheck` 的网络生成候选交易，再提交给服务端校验。
 - 服务端查账：`server/payments/driver.ts` 根据 `snapshot.driver` 派发 provider。
 - 当前 TRC20 provider 使用 Nile TronGrid，并要求时间窗口、币种、合约、金额、收款地址都匹配。
-- 确认支付统一调用 `markOrderPaid()`，写入 `payment.tx`，更新订单为 `paid`，并创建 notify。
+- 确认支付统一调用 `markPaid()`，写入 `payment.tx`，更新订单为 `paid`，并创建 notify。
 - 人工确认入口在后台订单详情，`confirmedBy` 为 `admin`。
 
 ### 商户通知
 
-1. `markOrderPaid()` 调用 `createNotify()`。
+1. `markPaid()` 调用 `createNotify()`。
 2. notify payload 包含订单号、商户单号、金额、币种、状态和 payment 快照。
 3. 如果订单没有 callback，则不创建通知。
 4. `deliverNotify()` POST JSON 到 callback；失败最多重试 8 次，`next_run_at` 按 attempts 分钟递增。
@@ -178,7 +180,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 ### Telegram 收款
 
 - Bot `/pay 10 USDT` 和 inline query 都通过 `createTelegramOrder()` 创建 `INLINE` 内部商户订单。
-- Telegram 内选择资产和网络复用 `checkoutData()` 与 `selectTelegramOrderPaymentByNetwork()`。
+- Telegram 内选择资产和网络复用 `checkoutData()` 与 `selectTelegramPayment()`。
 - Telegram 订单重新选择网络时会刷新支付窗口；普通网页收银台不会自动刷新窗口。
 - Telegram 消息中的付款说明、检查付款按钮、审核入口和交易链接由 `server/services/telegram/bot.ts` 维护。
 
@@ -196,23 +198,34 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 - `src/server/services/orders/checkout.ts`：收银台数据、支付选择、查账、人工确认、审核提交。
 - `src/server/services/orders/notifications.ts`：订单过期、待查订单筛选、notify 创建和投递。
 - `src/server/payments/driver.ts`：支付定义校验、候选项、支付快照、查账 provider 分派。
-- `src/server/payments/channels.ts`：收款通道 CRUD、通道健康和查账结果状态回写。
+- `src/server/payments/channels.ts`：收款通道 CRUD、通道健康和查账结果状态回写；服务端内部称为 `PaymentChannel`。
 - `src/shared/payments.ts`：支付网络、资产、展示名、图标、地址规则、explorer URL 的事实来源。
 - `src/shared/types/api.ts`：前后端共享 API DTO。
 - `src/shared/types/domain.ts`：领域状态和支付快照类型。
 - `src/app/api/*`：前端请求封装和 API 模块；不要在页面里拼重复 fetch 逻辑。
 - `src/app/pages/Admin.vue`：后台应用壳、会话初始化和导航。
-- `src/app/pages/Pay.vue` + `src/app/pages/pay.ts`：公开收银台 UI 和轮询/查账状态机。
-- `src/app/payments/index.ts`：前端支付展示、EVM 组合选择、浏览器可查账能力。
+- `src/app/pages/Pay.vue` + `src/app/utils/checkout.ts`：公开收银台 UI 和轮询/查账状态机。
+- `src/app/payments/index.ts`：前端支付展示、EVM 组合选择和通道展示元数据。
+- `src/app/payments/browser.ts`：浏览器侧查账能力，一种付款通道对应一个检查函数。
+
+## 代码结构和命名约定
+
+- 命名优先表达当前模块语境，不把实现细节堆进函数名。例：收银台选择付款用 `selectCheckoutPayment()`，Telegram 选择付款用 `selectTelegramPayment()`，不要写成长串 `selectOrderPaymentByAssetNetwork()`。
+- Server 内部把 `payments` 表的业务对象称为 `PaymentChannel`；前端 API DTO 保留 `PaymentMethod` 只是展示层接口名，不要把旧 method 命名重新带回 server。
+- 支付通道函数统一使用 `listPayments()`、`savePayment()`、`deletePayment()`、`recordCheck()`、`paymentHealth()`。
+- 订单确认统一走 `markPaid()`；只有后台手动确认时写入 `confirmedBy: "admin"`，自动检查、浏览器候选、Cron 命中都默认是 system。
+- 不新增只做换名或一行转发的 helper。允许保留的短函数必须承担明确边界：DB helper、row -> DTO 映射、领域公式、加密/SQL 转义等。
+- 如果一个 helper 只是为了“看起来分层”而没有隐藏复杂度、没有统一规则、没有隔离边界，应直接内联。
+- 不做兼容旧函数名、旧字段名的导出别名；破坏性修改后同步更新调用方和测试。
 
 ## 支付通道扩展约定
 
 新增或调整支付网络/资产时，按这个顺序检查：
 
-1. `src/shared/payments.ts`：新增 Payment 定义、资产、图标 id、地址/账户规则、explorer 和 publicCheck。
-2. `src/server/payments/driver.ts`：确认 `validatePaymentConfig()`、`paymentOptions()`、`assignPayment()` 是否能覆盖。
+1. `src/shared/payments.ts`：新增 Payment 定义、资产、图标 id、地址规则、explorer 和 publicCheck。
+2. `src/server/payments/driver.ts`：确认 `validatePayment()`、`paymentOptions()`、`assignPayment()` 是否能覆盖。
 3. `src/server/payments/providers/`：如果要自动查账，新增 provider 并注册到 `checkers`。
-4. `src/app/payments/index.ts`：前端网络/资产选择、浏览器查账能力、EVM 聚合展示。
+4. `src/app/payments/index.ts`：前端网络/资产选择和 EVM 聚合展示；需要浏览器侧查账时同步 `src/app/payments/browser.ts`。
 5. `public/icons.svg`：需要展示的新图标。
 6. `test/payment-model.test.ts`、`test/app-payments.test.ts`、`test/payments.test.ts`：补充模型和查账行为。
 
@@ -236,15 +249,15 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 - 后台页面由 `Admin.vue` 统一承载，页面组件在 `src/app/pages/`。
 - 公开收银台独立在 `Pay.vue`，不要把后台登录态、管理菜单或内部设置泄漏到收银台。
 - 前端接口类型从 `@/app/api` 导出，源头是 `src/shared/types/api.ts`。
-- 当前项目没有独立 i18n 层；新增大量可见文案前先确认是否需要抽出文案层，不要只在一个重复界面改文案。
+- 可见文案走轻量 i18n：共享字典在 `src/shared/i18n.ts`，前端语言状态在 `src/app/i18n.ts`；不要在页面、Toast、Modal 或 Telegram 消息里硬编码新增文案。
 
 ## API 和错误约定
 
-- 服务端业务错误使用 `AppError(status, code, message)`。
-- 前端 `request()` 会解包 `{ data }`，并把 `{ error.message }` 显示给用户。
+- 服务端业务错误使用 `AppError(status, key, params?)`。
+- 前端 `request()` 会解包 `{ data }`，并把 `{ error: { key, params } }` 翻译成当前语言的 `ApiError.message`。
 - 轮询、后台刷新、浏览器辅助查账等非阻塞请求使用 `{ silent: true }`。
 - Admin API 在 `src/server/http/routes/admin.ts`，公开收银台和状态接口在 `public.ts`，商户签名 API 在 `auth.ts`。
-- 新增 API 时同步更新 `src/shared/types/api.ts` 和 `src/app/api/index.ts`。
+- 新增 API 时同步更新 `src/shared/types/api.ts`、`src/app/api/index.ts`；新增错误 key 时同步更新 `src/shared/i18n.ts`。
 
 ## 测试约定
 

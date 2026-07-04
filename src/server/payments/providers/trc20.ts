@@ -3,22 +3,33 @@ import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/dr
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import { sameAmount } from "@/shared/amount";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
-import type { TxCandidate } from "@/shared/types/api";
+import type { TxCandidate } from "@/shared/types/domain";
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
-    const txs = input.candidates ? submittedTxs(input.candidates) : await scan(input.snapshot, input.createdAt, input.fastConfirm);
-    const tx = txs.find((item) => match(input.snapshot, item, input.createdAt, input.expireAt));
-    if (!tx) return { status: "pending" };
-    return { status: "paid", time: tx.timestamp, txid: tx.hash };
+    const txs = input.candidates ? submittedTxs(input.candidates) : await scan(input);
+    return {
+      matches: input.orders.flatMap((order) => {
+        const tx = txs.find((item) => match(order.snapshot, item, order.createdAt, order.expireAt));
+        return tx ? [{ orderId: order.id, time: tx.timestamp, txid: tx.hash }] : [];
+      }),
+      status: "ok",
+    };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "TRC20 check failed", status: "error" };
+    return { error: error instanceof Error ? error.message : "TRC20 check failed", matches: [], status: "error" };
   }
 }
 
-async function scan(snapshot: PaymentSnapshot, from: number, fast: boolean) {
-  const asset = normalizePaymentAsset(snapshot.currency);
-  const address = String(snapshot.address);
+async function scan(input: PaymentCheckInput) {
+  const address = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
+  const from = Math.min(...input.orders.map((order) => order.createdAt));
+  const assets = Array.from(new Set(input.orders.map((order) => normalizePaymentAsset(order.snapshot.currency)).filter(Boolean)));
+  const txs = [];
+  for (const asset of assets) txs.push(...await scanAsset(address, asset, from, input.fastConfirm));
+  return txs;
+}
+
+async function scanAsset(address: string, asset: string, from: number, fast: boolean) {
   const params = new URLSearchParams({
     limit: "50",
     min_timestamp: String(Math.max(0, from) * 1000),
@@ -51,7 +62,7 @@ async function tronGrid<T>(address: string, path: string, params: URLSearchParam
 }
 
 function submittedTxs(input: unknown) {
-  const candidates = (input as { candidates: unknown[] }).candidates;
+  const candidates = (input as { candidates?: unknown[] }).candidates ?? [];
   return candidates.map((item) => {
     const row = item as Record<string, unknown>;
     return {

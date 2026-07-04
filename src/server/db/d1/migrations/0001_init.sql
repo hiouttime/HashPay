@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS merchants (
   name TEXT NOT NULL,
   public_key TEXT NOT NULL DEFAULT '',
   callback TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
+  status TEXT NOT NULL DEFAULT 'enabled',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

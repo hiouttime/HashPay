@@ -5,23 +5,24 @@ export interface PaymentSnapshot {
   address?: string;
   amount: number;
   currency: string;
-  currencyName: string;
   driver: string;
-  network: string;
-  networkName?: string;
-  review?: PaymentReviewEvidence;
+  out_id?: string;
   tx?: PaymentTxEvidence;
-}
-
-export interface PaymentReviewEvidence {
-  answer: string;
-  image: string;
-  status: "pending";
-  submittedAt: number;
+  url?: string;
 }
 
 export interface PaymentTxEvidence {
   confirmedBy: "system" | "admin";
   timestamp: number;
   txid?: string;
+}
+
+export interface TxCandidate {
+  amount: number;
+  currency: string;
+  from?: string;
+  hash: string;
+  raw: unknown;
+  timestamp: number;
+  to?: string;
 }

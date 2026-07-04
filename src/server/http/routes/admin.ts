@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { deletePayment, listPayments, savePayment } from "@/server/payments/channels";
+import { deletePayment, listPayments, publicPayment, savePayment } from "@/server/payments/channels";
 import { consumePin, createPin, endSession, telegramLogin } from "@/server/services/auth/login";
 import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
@@ -46,11 +46,11 @@ app.use("*", async (c, next) => {
 app.get("/dashboard", json((c) => dashboard(c.env)));
 
 // Payments
-app.get("/payment", json((c) => listPayments(c.env)));
-app.post("/payment", json(async (c) => savePayment(c.env, await reqJson(c) as never)));
+app.get("/payment", json(async (c) => (await listPayments(c.env)).map(publicPayment)));
+app.post("/payment", json(async (c) => publicPayment(await savePayment(c.env, await reqJson(c) as never))));
 app.put("/payment/:id", json(async (c) => {
   const body = await reqJson(c);
-  return savePayment(c.env, { ...(body as { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) });
+  return publicPayment(await savePayment(c.env, { ...(body as { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; name: string; status?: "enabled" | "disabled" | "error" }), id: Number(c.req.param("id")!) }));
 }));
 app.delete("/payment/:id", json(async (c) => {
   await deletePayment(c.env, Number(c.req.param("id")!));

@@ -1,9 +1,7 @@
 import { Hono } from "hono";
 import { migrateD1 } from "@/server/db/migrations";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
-import { checkoutData, checkSubmittedPayment, selectCheckoutPayment, submitPaymentReview } from "@/server/services/orders/checkout";
-import { publicOrder } from "@/server/services/orders/repository";
-import { getOrder } from "@/server/services/orders/repository";
+import { checkoutData, checkoutStatus, checkSubmittedPayment, okpayNotify, selectCheckoutPayment, submitPaymentReview } from "@/server/services/orders/checkout";
 import { orderQrPng } from "@/server/services/images/qr";
 import { handleTelegramWebhook } from "@/server/services/telegram/bot";
 import { appState } from "@/server/services/app";
@@ -12,6 +10,11 @@ import type { HonoEnv } from "@/server/types/env";
 const app = new Hono<HonoEnv>();
 
 app.get("/health", (c) => c.json({ ok: true, service: "hashpay", ts: new Date().toISOString() }));
+
+app.post("/okpay/notify", async (c) => {
+  await migrateD1(c.env);
+  return c.json(await okpayNotify(c.env, await okpayBody(c)));
+});
 
 app.get("/banner.webp", async (c) => {
   const banner = await ensureDefaultBanner(c.env);
@@ -26,7 +29,7 @@ app.get("/order/:id/qr.png", async (c) => {
 app.get("/api/state", async (c) => c.json(await appState(c.env, c.req.url)));
 
 app.get("/api/checkout/:orderId", async (c) => c.json(await checkoutData(c.env, c.req.param("orderId"))));
-app.get("/api/checkout/:orderId/status", async (c) => c.json(publicOrder(await getOrder(c.env, c.req.param("orderId")))));
+app.get("/api/checkout/:orderId/status", async (c) => c.json(await checkoutStatus(c.env, c.req.param("orderId"))));
 app.put("/api/checkout/:orderId/payment", async (c) => {
   const body = (await c.req.json()) as { asset?: string; network?: string };
   return c.json(await selectCheckoutPayment(c.env, c.req.param("orderId"), String(body.asset ?? ""), String(body.network ?? "")));
@@ -44,3 +47,18 @@ app.post("/telegram/webhook/:secret", async (c) => {
 });
 
 export default app;
+
+async function okpayBody(c: { req: { formData(): Promise<FormData>; header(name: string): string | undefined; json(): Promise<unknown> } }) {
+  if (c.req.header("content-type")?.includes("application/json")) return await c.req.json() as Record<string, unknown>;
+  const form = await c.req.formData();
+  const out: Record<string, unknown> = {};
+  const data: Record<string, unknown> = {};
+  for (const [key, value] of form as unknown as Iterable<[string, FormDataEntryValue]>) {
+    const text = String(value);
+    const match = /^data\[(.+)]$/.exec(key);
+    if (match) data[match[1]!] = text;
+    else out[key] = text;
+  }
+  if (Object.keys(data).length) out.data = data;
+  return out;
+}

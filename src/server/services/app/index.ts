@@ -1,91 +1,64 @@
-import { all, getConfig, now, one } from "@/server/db";
+import { all, getConfig, one } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
 import { listPayments, paymentHealth } from "@/server/payments/channels";
-import { listOrders, publicOrder } from "@/server/services/orders/repository";
+import { listOrders, listReviewOrders, publicOrder } from "@/server/services/orders/repository";
 import { getBotInfo, refreshBotInfo } from "@/server/services/telegram/api";
 import type { AppEnv } from "@/server/types/env";
 
-export async function appState(env: AppEnv, requestUrl: string) {
+export async function appState(env: AppEnv, _requestUrl: string) {
+  let db: string | null = null;
   let domain: string | null = null;
   let adminId: string | null = null;
   let webhookSecret: string | null = null;
-  let username: string | null = null;
-  let dbError: string | null = null;
+  let username = "";
   try {
     await migrateD1(env);
-    [domain, adminId, webhookSecret, username] = await Promise.all([
+    const configs = await Promise.all([
       getConfig(env, "domain"),
       getConfig(env, "admin_id"),
       getConfig(env, "bot_secret"),
       getConfig(env, "bot_username"),
     ]);
+    [domain, adminId, webhookSecret] = configs;
+    username = configs[3] || "";
   } catch (error) {
-    dbError = error instanceof Error ? error.message : "Database is not available";
+    db = error instanceof Error ? error.message : "Database is not available";
   }
-  let botStatus: "invalid" | "missing" | "ready" = "missing";
+  let bot: "admin" | "domain" | "invalid" | "missing" | "ready" = "missing";
   if (!env.TGBOT_TOKEN) {
-    botStatus = "missing";
-  } else if (username && domain && adminId) {
-    botStatus = "ready";
+    bot = "missing";
   } else {
     try {
-      const bot = dbError ? await getBotInfo(env) : await refreshBotInfo(env);
-      username = bot.username ?? null;
-      botStatus = "ready";
+      username = username || (db ? await getBotInfo(env) : await refreshBotInfo(env)).username;
+      bot = !domain || !webhookSecret ? "domain" : !adminId ? "admin" : "ready";
     } catch {
-      botStatus = "invalid";
+      bot = "invalid";
     }
   }
-  const queueReady = Boolean(env.QUEUE_NOTIFY);
-  const dbReady = !dbError;
-  const botReady = botStatus === "ready" && Boolean(username);
-  const origin = new URL(requestUrl).origin;
   return {
-    adminBound: Boolean(adminId),
-    botReady,
-    botStatus,
-    db_error: dbError,
-    db_ready: dbReady,
+    db,
+    bot,
     domain,
-    environmentReady: botReady && dbReady && queueReady,
-    installed: Boolean(domain && adminId),
-    queueError: queueReady ? null : "QUEUE_NOTIFY binding is not configured",
-    queueReady,
-    suggestedDomain: origin,
+    queue: env.QUEUE_NOTIFY ? null : "QUEUE_NOTIFY binding is not configured",
+    ready: bot === "ready",
     username,
-    webhookReady: Boolean(webhookSecret),
   };
 }
 
 export async function dashboard(env: AppEnv) {
   const startOfDay = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-  const [orderStats, todayOrders, todayPaid, failedNotify, pendingNotify, paymentList, trends, recentOrders] = await Promise.all([
-    all<{ status: string; count: number }>(env, "SELECT status, COUNT(*) AS count FROM orders GROUP BY status"),
-    one<{ count: number }>(env, "SELECT COUNT(*) AS count FROM orders WHERE created_at >= ?", startOfDay),
-    one<{ amount: number; count: number }>(env, "SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount FROM orders WHERE status = 'paid' AND paid_at >= ?", startOfDay),
-    one<{ count: number }>(env, "SELECT COUNT(*) AS count FROM notify WHERE status = 'failed'"),
-    one<{ count: number }>(env, "SELECT COUNT(*) AS count FROM notify WHERE status IN ('pending', 'retry')"),
+  const [pending, paymentList, trends, actions, orders] = await Promise.all([
+    one<{ count: number }>(env, "SELECT COUNT(*) AS count FROM orders WHERE status = 'pending'"),
     listPayments(env),
     dashboardTrends(env, startOfDay),
+    listReviewOrders(env).then((orders) => orders.map(publicOrder)),
     listOrders(env, { limit: 5, status: "all" }).then((orders) => orders.map(publicOrder)),
   ]);
-  const counts = Object.fromEntries(orderStats.map((row) => [row.status, row.count]));
   return {
-    failedNotifyCount: failedNotify?.count ?? 0,
-    now: now(),
-    notifyPendingCount: pendingNotify?.count ?? 0,
-    orderCounts: {
-      expired: counts.expired ?? 0,
-      invalid: counts.invalid ?? 0,
-      paid: counts.paid ?? 0,
-      pending: counts.pending ?? 0,
-      total: Object.values(counts).reduce((sum, value) => sum + Number(value), 0),
-    },
-    paymentHealth: paymentList.filter((payment) => payment.status !== "disabled").map(paymentHealth),
-    recentOrders,
-    todayOrderCount: todayOrders?.count ?? 0,
-    todayPaidAmount: todayPaid?.amount ?? 0,
-    todayPaidCount: todayPaid?.count ?? 0,
+    actions,
+    health: paymentList.filter((payment) => payment.status !== "disabled").map(paymentHealth),
+    orders,
+    pending: pending?.count ?? 0,
     trends,
   };
 }

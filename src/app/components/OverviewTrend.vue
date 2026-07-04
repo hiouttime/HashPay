@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { DashboardTrendKey, DashboardTrendPoint } from "@/app/api";
+import type { Dashboard } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 
 type TrendField = "amount" | "orders";
+type TrendRange = keyof Dashboard["trends"];
 
 const props = defineProps<{
   currency?: string;
   pending: number;
-  trends?: Partial<Record<DashboardTrendKey, DashboardTrendPoint[]>> | null;
+  trends?: Partial<Dashboard["trends"]> | null;
 }>();
 
 const charts = [
@@ -18,7 +19,7 @@ const charts = [
 ] as const;
 
 const { t } = useI18n();
-const range = ref<DashboardTrendKey>("td");
+const range = ref<TrendRange>("td");
 const hover = ref<{ field: TrendField; index: number } | null>(null);
 
 const points = computed(() => props.trends?.[range.value] ?? []);

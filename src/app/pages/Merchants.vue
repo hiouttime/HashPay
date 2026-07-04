@@ -2,31 +2,28 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
-import { api, type MerchantDto, type MerchantInput } from "@/app/api";
+import { api, type Merchant } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { copyText } from "@/app/utils/clipboard";
 import { formatTime } from "@/app/utils/format";
 
-type MerchantStatus = "active" | "paused";
-type MerchantType = "telegram" | "website";
-
 interface MerchantForm {
   callback: string;
   name: string;
-  status: MerchantStatus;
-  type: MerchantType;
+  status: Merchant["status"];
+  type: Merchant["type"];
 }
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const { t } = useI18n();
-const merchants = ref<MerchantDto[]>([]);
+const merchants = ref<Merchant[]>([]);
 const credential = ref<{ merchantId: string; privateKey: string } | null>(null);
 const loading = ref(false);
-const form = reactive<MerchantForm>({ callback: "", name: "", status: "active", type: "website" });
+const form = reactive<MerchantForm>({ callback: "", name: "", status: "enabled", type: "website" });
 
-const typeOptions = computed<Array<{ description: string; label: string; value: MerchantType }>>(() => [
+const typeOptions = computed<Array<{ description: string; label: string; value: Merchant["type"] }>>(() => [
   {
     description: t("merchant.type.website_desc"),
     label: t("merchant.type.website"),
@@ -88,7 +85,7 @@ async function save() {
   }
 
   const creating = mode.value === "new";
-  const input: MerchantInput = { callback, name, status: form.status, type: form.type };
+  const input = { callback, name, status: form.status, type: form.type };
 
   await run(async () => {
     const result = editingId.value
@@ -112,8 +109,8 @@ async function remove(id: string) {
   });
 }
 
-async function setStatus(item: MerchantDto, status: string) {
-  const next = status === "active" ? "active" : "paused";
+async function setStatus(item: Merchant, status: string) {
+  const next = status === "enabled" ? "enabled" : "disabled";
   const previous = item.status;
   item.status = next;
   try {
@@ -125,7 +122,7 @@ async function setStatus(item: MerchantDto, status: string) {
         type: item.type,
       });
       merchants.value = merchants.value.map((merchant) => (merchant.id === result.merchant.id ? result.merchant : merchant));
-      message.success(next === "active" ? t("merchant.enabled") : t("merchant.disabled"));
+      message.success(next === "enabled" ? t("merchant.enabled") : t("merchant.disabled"));
     });
   } catch {
     item.status = previous;
@@ -146,21 +143,21 @@ async function resetKey() {
 }
 
 function closeForm() {
-  Object.assign(form, { callback: "", name: "", status: "active", type: "website" });
+  Object.assign(form, { callback: "", name: "", status: "enabled", type: "website" });
   void router.push("/admin/merchants");
 }
 
 function syncForm() {
   if (mode.value === "new") {
-    Object.assign(form, { callback: "", name: "", status: "active", type: "website" });
+    Object.assign(form, { callback: "", name: "", status: "enabled", type: "website" });
     return;
   }
   if (!current.value) return;
   Object.assign(form, {
     callback: current.value.callback ?? "",
     name: current.value.name,
-    status: current.value.status as MerchantStatus,
-    type: current.value.type as MerchantType,
+    status: current.value.status,
+    type: current.value.type,
   });
 }
 
@@ -201,12 +198,12 @@ onMounted(() => run(load));
         <div class="merchant-card-actions" @click.stop>
           <n-button size="small" quaternary @click="router.push(`/admin/merchants/${item.id}/edit`)">{{ t('common.edit') }}</n-button>
           <div class="merchant-status-control">
-            <span>{{ item.status === 'active' ? t('common.enabled_short') : t('common.disabled_short') }}</span>
+            <span>{{ item.status === 'enabled' ? t('common.enabled_short') : t('common.disabled_short') }}</span>
             <n-switch
               :disabled="loading"
               :value="item.status"
-              checked-value="active"
-              unchecked-value="paused"
+              checked-value="enabled"
+              unchecked-value="disabled"
               @update:value="setStatus(item, $event)"
             />
           </div>
@@ -229,7 +226,7 @@ onMounted(() => run(load));
             <n-input v-model:value="form.name" :placeholder="t('merchant.name_placeholder')" />
             <div v-if="isEdit" class="switch-line">
               <span>{{ t('payment.channel_enabled') }}</span>
-              <n-switch v-model:value="form.status" checked-value="active" unchecked-value="paused" />
+              <n-switch v-model:value="form.status" checked-value="enabled" unchecked-value="disabled" />
             </div>
           </div>
 

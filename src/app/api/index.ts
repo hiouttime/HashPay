@@ -3,33 +3,16 @@ export * from "@/app/api/http";
 
 import { del, get, post, put, upload, type ApiRequestOptions } from "@/app/api/http";
 import type {
-  CheckoutData,
-  DashboardDto,
-  MerchantDto,
-  MerchantInput,
-  MerchantSaveResult,
-  OrderDetailDto,
-  OrderDto,
-  PaymentMethod,
-  PaymentMethodInput,
-  RatePreview,
-  SettingsDto,
-  SettingsInput,
+  Checkout,
+  Dashboard,
+  Merchant,
+  OrderDetail,
+  Order,
+  Payment,
+  Settings,
   AppState,
   TelegramUser,
 } from "@/shared/types/api";
-
-interface OrderListInput {
-  page: number;
-  pageSize: number;
-  q?: string;
-  status: string;
-}
-
-interface RateInput {
-  currency: string;
-  rate_adjust: number | string;
-}
 
 function endpoints(options: ApiRequestOptions = {}) {
   return {
@@ -49,8 +32,8 @@ function endpoints(options: ApiRequestOptions = {}) {
       telegram: (initData: string) => post<TelegramUser & { setupRequired: boolean }>("/api/admin/session/telegram", { initData }, options),
     },
     checkout: {
-      order: (orderId: string) => get<CheckoutData>(`/api/checkout/${id(orderId)}`, options),
-      status: (orderId: string) => get<OrderDto>(`/api/checkout/${id(orderId)}/status`, options),
+      order: (orderId: string) => get<Checkout>(`/api/checkout/${id(orderId)}`, options),
+      status: (orderId: string) => get<Order>(`/api/checkout/${id(orderId)}/status`, options),
       select: (orderId: string, input: { asset: string; network: string }) =>
         put<Record<string, unknown>>(`/api/checkout/${id(orderId)}/payment`, input, options),
       submitTx: (orderId: string, candidates: unknown[]) =>
@@ -59,35 +42,38 @@ function endpoints(options: ApiRequestOptions = {}) {
         post<{ review: unknown }>(`/api/checkout/${id(orderId)}/review`, input, options),
     },
     dashboard: {
-      get: () => get<DashboardDto>("/api/admin/dashboard", options),
+      get: () => get<Dashboard>("/api/admin/dashboard", options),
     },
     orders: {
-      list: (input: OrderListInput) =>
-        get<{ items: OrderDto[]; page: number; pageSize: number; total: number }>(`/api/admin/orders?${orderQuery(input)}`, options),
-      test: () => post<{ checkoutUrl: string; order: OrderDto }>("/api/admin/orders/test", undefined, options),
-      get: (orderId: string) => get<OrderDetailDto>(`/api/admin/orders/${id(orderId)}`, options),
+      list: (input: { page: number; pageSize: number; q?: string; status: string }) =>
+        get<{ items: Order[]; page: number; pageSize: number; total: number }>(`/api/admin/orders?${orderQuery(input)}`, options),
+      test: () => post<{ checkoutUrl: string; order: Order }>("/api/admin/orders/test", undefined, options),
+      get: (orderId: string) => get<OrderDetail>(`/api/admin/orders/${id(orderId)}`, options),
       remove: (orderId: string) => del<{ ok: boolean }>(`/api/admin/orders/${id(orderId)}`, options),
       check: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/check`, undefined, options),
       confirm: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/confirm`, undefined, options),
       resend: (orderId: string) => post(`/api/admin/orders/${id(orderId)}/notify`, undefined, options),
     },
     payments: {
-      list: () => get<PaymentMethod[]>("/api/admin/payment", options),
-      create: (input: PaymentMethodInput) => post<PaymentMethod>("/api/admin/payment", input, options),
-      update: (paymentId: number, input: PaymentMethodInput) => put<PaymentMethod>(`/api/admin/payment/${paymentId}`, input, options),
+      list: () => get<Payment[]>("/api/admin/payment", options),
+      create: (input: { address: string; assets: string[]; credentials: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
+        post<Payment>("/api/admin/payment", input, options),
+      update: (paymentId: number, input: { address: string; assets: string[]; credentials: Record<string, string>; driver: string; name: string; status: "disabled" | "enabled" }) =>
+        put<Payment>(`/api/admin/payment/${paymentId}`, input, options),
       remove: (paymentId: number) => del<{ ok: boolean }>(`/api/admin/payment/${paymentId}`, options),
     },
     merchants: {
-      list: () => get<MerchantDto[]>("/api/admin/merchants", options),
-      create: (input: MerchantInput) => post<MerchantSaveResult>("/api/admin/merchants", input, options),
-      update: (merchantId: string, input: MerchantInput) => put<MerchantSaveResult>(`/api/admin/merchants/${id(merchantId)}`, input, options),
+      list: () => get<Merchant[]>("/api/admin/merchants", options),
+      create: (input: { callback: string | null; name: string; status: Merchant["status"]; type: Merchant["type"] }) => post<{ merchant: Merchant; privateKey?: string }>("/api/admin/merchants", input, options),
+      update: (merchantId: string, input: { callback: string | null; name: string; status: Merchant["status"]; type: Merchant["type"] }) =>
+        put<{ merchant: Merchant; privateKey?: string }>(`/api/admin/merchants/${id(merchantId)}`, input, options),
       remove: (merchantId: string) => del<{ ok: boolean }>(`/api/admin/merchants/${id(merchantId)}`, options),
-      rotateKey: (merchantId: string) => post<MerchantSaveResult>(`/api/admin/merchants/${id(merchantId)}/rotate-key`, undefined, options),
+      rotateKey: (merchantId: string) => post<{ merchant: Merchant; privateKey?: string }>(`/api/admin/merchants/${id(merchantId)}/rotate-key`, undefined, options),
     },
     settings: {
-      get: () => get<SettingsDto>("/api/admin/settings", options),
-      save: (input: SettingsInput) => put<SettingsDto>("/api/admin/settings", input, options),
-      rates: (input: RateInput) => get<RatePreview>(`/api/admin/rates/preview?${rateQuery(input)}`, options),
+      get: () => get<Settings>("/api/admin/settings", options),
+      save: (input: { currency: string; domain: string; fastConfirm: boolean; rateAdjust: number; timeout: number }) => put<Settings>("/api/admin/settings", input, options),
+      rates: (input: { currency: string; rateAdjust: number | string }) => get<Settings["ratePreview"]>(`/api/admin/rates/preview?${rateQuery(input)}`, options),
     },
     banner: {
       upload: (body: ArrayBuffer) => upload<{ url: string }>("/api/admin/banner", body, "image/webp", options),
@@ -105,7 +91,7 @@ function id(value: string) {
   return encodeURIComponent(value);
 }
 
-function orderQuery(input: OrderListInput) {
+function orderQuery(input: { page: number; pageSize: number; q?: string; status: string }) {
   const query = new URLSearchParams({
     page: String(input.page),
     pageSize: String(input.pageSize),
@@ -115,9 +101,9 @@ function orderQuery(input: OrderListInput) {
   return query.toString();
 }
 
-function rateQuery(input: RateInput) {
+function rateQuery(input: { currency: string; rateAdjust: number | string }) {
   return new URLSearchParams({
     currency: input.currency,
-    rate_adjust: String(input.rate_adjust),
+    rate_adjust: String(input.rateAdjust),
   }).toString();
 }

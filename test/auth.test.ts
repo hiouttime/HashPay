@@ -36,8 +36,8 @@ function testEnv() {
 describe("jwt session", () => {
   it("signs and verifies telegram user", async () => {
     const env = { APP_SECRET: "test-secret" } as AppEnv;
-    const token = await signSession(env, { id: 123, username: "admin" });
-    await expect(verifySession(env, token)).resolves.toMatchObject({ id: 123, username: "admin" });
+    const token = await signSession(env, { firstName: "Admin", id: 123, lastName: "User" });
+    await expect(verifySession(env, token)).resolves.toMatchObject({ firstName: "Admin", id: 123, lastName: "User" });
   });
 });
 
@@ -49,8 +49,8 @@ describe("web login pin", () => {
     expect(command).toBe("/login 123456");
     await expect(consumeLoginPin(env, "123456", challenge)).resolves.toBeNull();
 
-    await confirmLoginPin(env, "123456", { id: 123, username: "admin" });
-    await expect(consumeLoginPin(env, "123456", challenge)).resolves.toMatchObject({ id: 123, username: "admin" });
+    await confirmLoginPin(env, "123456", { firstName: "Admin", id: 123, lastName: "" });
+    await expect(consumeLoginPin(env, "123456", challenge)).resolves.toMatchObject({ firstName: "Admin", id: 123 });
     await expect(consumeLoginPin(env, "123456", challenge)).resolves.toBeNull();
   });
 });

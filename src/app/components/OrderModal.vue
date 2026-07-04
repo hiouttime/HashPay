@@ -2,13 +2,13 @@
 import { computed, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { txUrl } from "@/app/payments";
-import { api, type OrderDetailDto } from "@/app/api";
+import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
 import { formatTime } from "@/app/utils/format";
 import { assetLabel } from "@/shared/payments";
-import type { OrderDto } from "@/shared/types/api";
+import type { OrderDetail, Order } from "@/shared/types/api";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const props = defineProps<{
@@ -24,7 +24,7 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const { t } = useI18n();
-const detail = ref<OrderDetailDto | null>(null);
+const detail = ref<OrderDetail | null>(null);
 const action = ref("");
 const loading = ref(false);
 
@@ -100,7 +100,7 @@ async function deleteOrder() {
   });
 }
 
-function statusClass(status: OrderDto["status"]) {
+function statusClass(status: Order["status"]) {
   return {
     expired: "is-muted",
     invalid: "is-error",
@@ -109,30 +109,30 @@ function statusClass(status: OrderDto["status"]) {
   }[status];
 }
 
-function merchantName(value: OrderDetailDto) {
-  return value.merchant?.name || value.order.merchantId || "--";
+function merchantName(value: OrderDetail) {
+  return value.merchantName || value.order.merchantId || "--";
 }
 
-function channelName(value: OrderDetailDto) {
-  return value.payway?.name || value.order.paywayName || String(value.order.payment.name || "") || t("payment.channel_not_selected");
+function channelName(value: OrderDetail) {
+  return value.order.payway?.name || t("payment.channel_not_selected");
 }
 
-function paymentTarget(payment: Partial<PaymentSnapshot> & Record<string, unknown>) {
+function paymentTarget(payment: Partial<PaymentSnapshot>) {
   return payment.address || "";
 }
 
-function payAmount(payment: Partial<PaymentSnapshot> & Record<string, unknown>) {
+function payAmount(payment: Partial<PaymentSnapshot>) {
   return payment.amount ? `${formatAmount(payment.amount)} ${assetLabel(payment.currency)}` : "--";
 }
 
-function rateText(value: OrderDetailDto) {
-  const rate = value.rate;
-  return rate.rate && rate.paymentCurrency
-    ? `1 ${assetLabel(rate.paymentCurrency)} = ${formatAmount(rate.rate)} ${rate.originalCurrency}`
-    : t("order.not_selected");
+function rateText(value: OrderDetail) {
+  const paid = Number(value.order.payment.amount);
+  if (!paid) return t("order.not_selected");
+  const rate = value.order.amount / paid;
+  return `1 ${assetLabel(value.order.payment.currency)} = ${formatAmount(rate)} ${assetLabel(value.order.currency)}`;
 }
 
-function confirmMethod(payment: Partial<PaymentSnapshot> & Record<string, unknown>) {
+function confirmMethod(payment: Partial<PaymentSnapshot>) {
   return payment.tx?.confirmedBy === "admin" ? t("order.confirm_manual") : t("order.confirm_auto");
 }
 
@@ -292,24 +292,20 @@ function notifyText(status: string) {
             </div>
           </section>
 
-          <section v-if="detail.order.payment.review" class="order-modal-section">
+          <section v-if="detail.review" class="order-modal-section">
             <h3>{{ t('order.review') }}</h3>
             <div class="detail-grid">
-              <div class="detail-item">
-                <span>{{ t('order.review_submitted_at') }}</span>
-                <strong>{{ formatTime(detail.order.payment.review.submittedAt) }}</strong>
-              </div>
               <div class="detail-item">
                 <span>{{ t('common.status') }}</span>
                 <strong>{{ t('order.review_pending') }}</strong>
               </div>
               <div class="detail-item detail-item-wide">
                 <span>{{ t('order.payment_confirm') }}</span>
-                <strong class="detail-review-answer">{{ detail.order.payment.review.answer }}</strong>
+                <strong class="detail-review-answer">{{ detail.review.answer }}</strong>
               </div>
-              <div class="detail-item detail-item-wide">
+              <div v-if="detail.review.image || detail.review.imageUrl" class="detail-item detail-item-wide">
                 <span>{{ t('order.payment_image') }}</span>
-                <img class="detail-review-image" :src="detail.order.payment.review.image" :alt="t('order.payment_image')" />
+                <img class="detail-review-image" :src="detail.review.image || detail.review.imageUrl || ''" :alt="t('order.payment_image')" />
               </div>
             </div>
           </section>

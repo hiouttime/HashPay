@@ -2,23 +2,14 @@ import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { validatePayment, type PaymentCheckResult } from "@/server/payments/driver";
 import { normalizePaymentAsset, paymentById } from "@/shared/payments";
+import type { Payment } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
 
-export type PaymentStatus = "enabled" | "disabled" | "error";
-
-export interface PaymentChannel {
-  id: number;
-  name: string;
-  driver: string;
-  address: string;
-  assets: string[];
-  createdAt: number;
-  updatedAt: number;
-  status: PaymentStatus;
+export type PaymentChannel = Payment & {
   credentials: Record<string, string>;
-}
+};
 
-type PaymentRow = Omit<PaymentChannel, "assets" | "credentials"> & {
+type PaymentRow = Omit<Payment, "assets"> & {
   assets: string;
   credentials: string;
 };
@@ -43,17 +34,27 @@ export async function listPayments(env: AppEnv) {
   return (await all<PaymentRow>(env, `SELECT ${columns} FROM payments ORDER BY id DESC`)).map(payment);
 }
 
+export function publicPayment(payment: PaymentChannel): Payment {
+  const { credentials: _credentials, ...out } = payment;
+  return out;
+}
+
 async function getPayment(env: AppEnv, id: number) {
   const row = await one<PaymentRow>(env, `SELECT ${columns} FROM payments WHERE id = ?`, id);
   if (!row) throw new AppError(404, "errors.payment_not_found");
   return payment(row);
 }
 
-export async function savePayment(env: AppEnv, input: { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; id?: number; name: string; status?: PaymentStatus }) {
+export async function savePayment(env: AppEnv, input: { address: string; assets: string[]; credentials?: Record<string, string>; driver: string; id?: number; name: string; status?: Payment["status"] }) {
   const address = String(input.address ?? "").trim();
   const assets = Array.from(new Set((input.assets ?? []).map(normalizePaymentAsset).filter(Boolean)));
-  const credentials = input.credentials ?? {};
   const payment = validatePayment({ address, assets, driver: input.driver });
+  const existing = input.id ? await getPayment(env, input.id) : null;
+  const nextCredentials = Object.fromEntries(Object.entries(input.credentials ?? {}).filter(([, value]) => String(value).trim()));
+  const credentials = existing ? { ...existing.credentials, ...nextCredentials } : nextCredentials;
+  if (payment.key && !String(credentials.key ?? "").trim()) {
+    throw new AppError(400, "errors.payment_credential_missing");
+  }
   const time = now();
   const name = input.name.trim() || payment.id;
   const status = input.status === "disabled" ? "disabled" : "enabled";

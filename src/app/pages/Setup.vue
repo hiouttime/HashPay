@@ -23,30 +23,31 @@ let setupTimer: ReturnType<typeof setTimeout> | undefined;
 let domainCheckId = 0;
 
 const loaded = computed(() => Boolean(status.value));
-const environmentReady = computed(() => Boolean(status.value?.environmentReady));
+const botReady = computed(() => ["admin", "domain", "ready"].includes(String(status.value?.bot)));
+const canSetup = computed(() => botReady.value && !status.value?.db && !status.value?.queue);
 const setupStarted = computed(() => Boolean(submittedDomain.value && submittedDomain.value === domain.value));
 const botLink = computed(() => status.value?.username ? `https://t.me/${status.value.username}?start=start` : "");
 const checks = computed(() => [
   {
     detail: botDetail(),
     label: "Telegram Bot Token",
-    ready: Boolean(status.value?.botReady),
+    ready: botReady.value,
   },
   {
-    detail: status.value?.db_ready ? t("setup.database_ready") : t("setup.database_unavailable"),
+    detail: status.value?.db || t("setup.database_ready"),
     label: t("setup.database"),
-    ready: Boolean(status.value?.db_ready),
+    ready: !status.value?.db,
   },
   {
-    detail: status.value?.queueReady ? t("setup.queue_ready") : t("setup.queue_unavailable"),
+    detail: status.value?.queue || t("setup.queue_ready"),
     label: t("setup.queue"),
-    ready: Boolean(status.value?.queueReady),
+    ready: !status.value?.queue,
   },
 ]);
 
 function botDetail() {
-  if (status.value?.botReady) return t("setup.bot_ready", { bot: status.value.username || "" });
-  if (status.value?.botStatus === "invalid") return t("setup.bot_invalid");
+  if (botReady.value) return t("setup.bot_ready", { bot: status.value?.username || "" });
+  if (status.value?.bot === "invalid") return t("setup.bot_invalid");
   return t("setup.bot_missing");
 }
 
@@ -54,13 +55,20 @@ async function load() {
   loading.value = "status";
   try {
     const next = await api.silent.state.get();
+    if (next.ready) {
+      await router.replace("/admin/overview");
+      return;
+    }
     status.value = next;
-    domain.value = next.suggestedDomain || location.origin;
+    domain.value = next.domain || location.origin;
   } catch (error) {
     status.value = {
-      db_error: error instanceof Error ? error.message : t("setup.check_failed"),
-      db_ready: false,
-      environmentReady: false,
+      bot: "invalid",
+      db: error instanceof Error ? error.message : t("setup.check_failed"),
+      domain: null,
+      queue: t("setup.queue_unavailable"),
+      ready: false,
+      username: "",
     };
   } finally {
     loading.value = "";
@@ -77,7 +85,7 @@ function scheduleSetup() {
     admin.value = null;
     stopPolling();
   }
-  if (!environmentReady.value || setupStarted.value) return;
+  if (!canSetup.value || setupStarted.value) return;
   if (!domain.value) {
     domainError.value = "";
     return;
@@ -107,7 +115,7 @@ async function checkDomain() {
 }
 
 async function submitSetup() {
-  if (!environmentReady.value || !validDomain(domain.value) || submittedDomain.value === domain.value) return;
+  if (!canSetup.value || !validDomain(domain.value) || submittedDomain.value === domain.value) return;
   loading.value = "setup";
   try {
     await api.setup.submit(domain.value);
@@ -176,9 +184,13 @@ function clearSetupTimer() {
   setupTimer = undefined;
 }
 
+function adminName(user: TelegramUser) {
+  return [user.firstName, user.lastName].filter(Boolean).join(" ") || String(user.id);
+}
+
 onMounted(load);
 watch(domain, scheduleSetup);
-watch(environmentReady, scheduleSetup);
+watch(canSetup, scheduleSetup);
 onBeforeUnmount(() => {
   stopPolling();
   clearSetupTimer();
@@ -191,9 +203,6 @@ onBeforeUnmount(() => {
     <section class="setup-panel">
       <div class="setup-logo">
         <AppIcon name="icon-hashpay" />
-      </div>
-      <div class="setup-locale">
-        <LocaleSwitch />
       </div>
       <div class="section-title">
         <h1>{{ complete ? t('setup.done') : t('setup.welcome') }}</h1>
@@ -216,7 +225,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <div v-else-if="!environmentReady" class="setup-checks">
+        <div v-else-if="!canSetup" class="setup-checks">
           <div v-for="check in checks" :key="check.label" class="setup-check" :class="{ 'is-ready': check.ready }">
             <span class="setup-check__dot"></span>
             <div>
@@ -225,8 +234,8 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <n-button v-if="loaded && !environmentReady" :loading="loading === 'status'" type="primary" @click="load">{{ t('setup.recheck') }}</n-button>
-        <template v-if="environmentReady">
+        <n-button v-if="loaded && !canSetup" :loading="loading === 'status'" type="primary" @click="load">{{ t('setup.recheck') }}</n-button>
+        <template v-if="canSetup">
           <div class="setup-steps">
             <div class="setup-step">
               <span class="setup-step__index">1</span>
@@ -255,11 +264,14 @@ onBeforeUnmount(() => {
                   </a>
                   <p class="muted">{{ polling ? t('setup.admin_send', { bot: status?.username || '' }) : t('setup.admin_waiting') }}</p>
                 </template>
-                <p v-else class="muted">{{ t('setup.admin_bound_user', { user: admin.username ? '@' + admin.username : admin.id }) }}</p>
+                <p v-else class="muted">{{ t('setup.admin_bound_user', { user: adminName(admin) }) }}</p>
               </div>
             </div>
           </div>
         </template>
+      </div>
+      <div class="setup-locale">
+        <LocaleSwitch />
       </div>
     </section>
   </main>

@@ -1,6 +1,6 @@
 import { migrateD1 } from "@/server/db/migrations";
-import { checkOrderPayment } from "@/server/services/orders/checkout";
-import { deliverNotify, dueNotifyIds, expireOrders, pendingTronOrders } from "@/server/services/orders/notifications";
+import { checkPendingPayments } from "@/server/services/orders/checkout";
+import { deliverNotify, dueNotifyIds, expireOrders } from "@/server/services/orders/notifications";
 import { syncMarketRates } from "@/server/services/app/settings";
 import type { AppEnv } from "@/server/types/env";
 
@@ -8,10 +8,7 @@ export async function runScheduledJobs(env: AppEnv) {
   await migrateD1(env);
   await syncMarketRates(env).catch(() => undefined);
   await expireOrders(env);
-  const orders = await pendingTronOrders(env);
-  for (const order of orders) {
-    await checkOrderPayment(env, order.id).catch(() => undefined);
-  }
+  await checkPendingPayments(env);
   for (const notifyId of await dueNotifyIds(env)) {
     await env.QUEUE_NOTIFY?.send({ notifyId });
   }

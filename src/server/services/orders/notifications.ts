@@ -1,6 +1,6 @@
 import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { getOrder, listPendingPaymentOrders } from "@/server/services/orders/repository";
+import { getOrder } from "@/server/services/orders/repository";
 import type { AppEnv } from "@/server/types/env";
 
 export async function createNotify(env: AppEnv, orderId: string) {
@@ -29,10 +29,6 @@ export async function resendOrderNotify(env: AppEnv, orderId: string) {
 
 export async function expireOrders(env: AppEnv) {
   await run(env, "UPDATE orders SET status = 'expired', updated_at = ? WHERE status = 'pending' AND expire_at < ?", now(), now());
-}
-
-export async function pendingTronOrders(env: AppEnv) {
-  return (await listPendingPaymentOrders(env)).filter((order) => jsonParseObject<{ network?: string }>(order.payment, {}).network === "trc20");
 }
 
 export async function dueNotifyIds(env: AppEnv) {

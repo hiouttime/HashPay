@@ -38,14 +38,18 @@ function splitAddress(value: unknown) {
     <div>
       <span>{{ t('common.network') }}</span>
       <strong class="checkout-network-title">
-        <AppIcon v-if="pay.networkIcon(payment.network)" :name="pay.networkIcon(payment.network)" :label="pay.networkName(payment.network)" />
-        <span>{{ payment.networkName || pay.networkName(payment.network) }}</span>
+        <AppIcon v-if="pay.networkIcon(payment.driver)" :name="pay.networkIcon(payment.driver)" :label="pay.networkName(payment.driver)" />
+        <span>{{ pay.networkName(payment.driver) }}</span>
       </strong>
     </div>
     <n-button size="small" text type="primary" @click="emit('change')">{{ t('checkout.change') }}</n-button>
   </div>
 
-  <div v-if="payment.address" class="checkout-copy-field checkout-copy-field--address">
+  <n-button v-if="payment.url" tag="a" :href="payment.url" target="_blank" rel="noreferrer" block type="primary">
+    {{ t('checkout.open_payment') }}
+  </n-button>
+
+  <div v-if="payment.address && !payment.url" class="checkout-copy-field checkout-copy-field--address">
       <div class="checkout-copy-head">
         <span>{{ t('checkout.address') }}</span>
         <div class="checkout-copy-actions">
@@ -68,7 +72,7 @@ function splitAddress(value: unknown) {
       <span>{{ t('checkout.amount_due') }}</span>
       <strong class="checkout-currency-title">
         <AppIcon v-if="pay.assetIcon(payment.currency)" :name="pay.assetIcon(payment.currency)" :label="pay.assetName(payment.currency)" />
-        <span>{{ formatAmount(payment.amount) }} {{ payment.currencyName || pay.assetName(payment.currency) }}</span>
+        <span>{{ formatAmount(payment.amount) }} {{ pay.assetName(payment.currency) }}</span>
       </strong>
       <small>{{ t('checkout.amount_help') }}</small>
     </div>
@@ -77,7 +81,7 @@ function splitAddress(value: unknown) {
 
   <div class="checkout-warning">
     <strong>{{ pay.paymentInstruction(payment) }}</strong>
-    <span>{{ t('checkout.network_warning') }}</span>
+    <span>{{ payment.url ? t('checkout.url_warning') : t('checkout.network_warning') }}</span>
   </div>
 
   <n-button

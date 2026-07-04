@@ -1,7 +1,8 @@
 import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import type { D1Param } from "@/server/db";
-import type { OrderStatus } from "@/shared/types/domain";
+import type { Order as ApiOrder } from "@/shared/types/api";
+import type { OrderStatus, PaymentSnapshot } from "@/shared/types/domain";
 import type { AppEnv } from "@/server/types/env";
 
 interface OrderRow {
@@ -22,7 +23,7 @@ interface OrderRow {
   updated_at: number;
 }
 
-type ListedOrderRow = OrderRow & { payway_name?: string | null };
+type ListedOrderRow = OrderRow & { channel_name?: string | null };
 type DetailedOrderRow = ListedOrderRow & {
   payway_driver?: string | null;
   payway_status?: string | null;
@@ -41,31 +42,8 @@ export interface Order {
   paidAt: number | null;
   payment: string;
   payway: number | null;
-  paywayName?: string | null;
+  channelName?: string | null;
   redirectUrl: string | null;
-  status: OrderStatus;
-  updatedAt: number;
-}
-
-export type DetailedOrder = Order & {
-  paywayDriver?: string | null;
-  paywayStatus?: string | null;
-};
-
-export interface PublicOrder {
-  amount: number;
-  createdAt: number;
-  currency: string;
-  description: string | null;
-  expireAt: number;
-  id: string;
-  merchantId: string;
-  merchantNo: string;
-  paidAt: number | null;
-  payment: Record<string, unknown>;
-  payway: number | null;
-  paywayName?: string | null;
-  returnUrl: string | null;
   status: OrderStatus;
   updatedAt: number;
 }
@@ -81,7 +59,7 @@ export async function getOrder(env: AppEnv, id: string) {
 }
 
 export async function getDetailedOrder(env: AppEnv, id: string) {
-  const row = await one<DetailedOrderRow>(env, "SELECT orders.*, payments.name AS payway_name, payments.driver AS payway_driver, payments.status AS payway_status FROM orders LEFT JOIN payments ON payments.id = orders.payway WHERE orders.id = ?", id);
+  const row = await one<DetailedOrderRow>(env, "SELECT orders.*, payments.name AS channel_name, payments.driver AS payway_driver, payments.status AS payway_status FROM orders LEFT JOIN payments ON payments.id = orders.payway WHERE orders.id = ?", id);
   if (!row) throw new AppError(404, "errors.order_not_found");
   return detailedOrder(row);
 }
@@ -116,7 +94,7 @@ function orderWhere(input: { q?: string; status?: string }) {
 export async function listOrders(env: AppEnv, input: { limit?: number; q?: string; status?: string } = {}) {
   const limit = Math.min(Math.max(Number(input.limit) || 100, 1), 200);
   const { params, where } = orderWhere(input);
-  return (await all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS payway_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ?`, ...params, limit)).map(order);
+  return (await all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS channel_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ?`, ...params, limit)).map(order);
 }
 
 export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSize?: number; q?: string; status?: string } = {}) {
@@ -126,7 +104,7 @@ export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSi
   const { params, where } = orderWhere(input);
   const [count, rows] = await Promise.all([
     one<{ count: number }>(env, `SELECT COUNT(*) AS count FROM orders LEFT JOIN payments ON payments.id = orders.payway${where}`, ...params),
-    all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS payway_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ? OFFSET ?`, ...params, pageSize, offset),
+    all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS channel_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ? OFFSET ?`, ...params, pageSize, offset),
   ]);
   return { page, pageSize, rows: rows.map(order), total: count?.count ?? 0 };
 }
@@ -139,6 +117,14 @@ export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
   )).map(order);
 }
 
+export async function listReviewOrders(env: AppEnv, limit = 5) {
+  return (await all<ListedOrderRow>(
+    env,
+    "SELECT orders.*, payments.name AS channel_name FROM review INNER JOIN orders ON orders.id = review.order_id LEFT JOIN payments ON payments.id = orders.payway WHERE review.status = 'pending' AND orders.status <> 'paid' ORDER BY review.id DESC LIMIT ?",
+    Math.min(Math.max(Number(limit) || 5, 1), 20),
+  )).map(order);
+}
+
 export async function setOrderPayment(env: AppEnv, orderId: string, payway: number, payment: unknown, ts = now()) {
   await run(env, "UPDATE orders SET payway = ?, payment = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderId);
 }
@@ -147,7 +133,9 @@ export async function refreshOrderPaymentWindow(env: AppEnv, orderId: string, pa
   await run(env, "UPDATE orders SET status = 'pending', payway = ?, payment = ?, paid_at = NULL, created_at = ?, expire_at = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderExpireAt(ts, timeoutMinutes), ts, orderId);
 }
 
-export function publicOrder(order: Order): PublicOrder {
+export function publicOrder(order: Order): ApiOrder {
+  const payment = jsonParseObject<Partial<PaymentSnapshot>>(order.payment, {});
+  delete payment.out_id;
   return {
     amount: order.amount,
     createdAt: order.createdAt,
@@ -158,9 +146,8 @@ export function publicOrder(order: Order): PublicOrder {
     merchantId: order.merchant,
     merchantNo: order.merchantNo,
     paidAt: order.paidAt,
-    payment: jsonParseObject<Record<string, unknown>>(order.payment, {}),
-    payway: order.payway,
-    paywayName: order.paywayName,
+    payment,
+    payway: order.payway ? { id: order.payway, name: order.channelName ?? null } : null,
     returnUrl: order.redirectUrl,
     status: order.status,
     updatedAt: order.updatedAt,
@@ -191,14 +178,14 @@ function order(row: ListedOrderRow): Order {
     paidAt: row.paid_at,
     payment: row.payment,
     payway: row.payway,
-    paywayName: row.payway_name,
+    channelName: row.channel_name,
     redirectUrl: row.redirect_url,
     status: row.status,
     updatedAt: row.updated_at,
   };
 }
 
-function detailedOrder(row: DetailedOrderRow): DetailedOrder {
+function detailedOrder(row: DetailedOrderRow) {
   return {
     ...order(row),
     paywayDriver: row.payway_driver,

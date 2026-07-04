@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
 import OverviewTrend from "@/app/components/OverviewTrend.vue";
-import { api, type DashboardDto, type SettingsDto } from "@/app/api";
+import { api, type Dashboard, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 
 const router = useRouter();
@@ -13,8 +13,8 @@ const { t } = useI18n();
 const view = reactive<{
   loading: boolean;
   order: string | null;
-  settings: SettingsDto | null;
-  stats: DashboardDto | null;
+  settings: Settings | null;
+  stats: Dashboard | null;
 }>({
   loading: false,
   order: null,
@@ -27,7 +27,7 @@ const hour = new Date().getHours();
 const greeting = computed(() => hour < 12 ? t("overview.greeting.morning") : hour < 18 ? t("overview.greeting.afternoon") : t("overview.greeting.evening"));
 
 const health = computed(() =>
-  (view.stats?.paymentHealth ?? [])
+  (view.stats?.health ?? [])
     .filter((item) => item.status === "warn")
     .map((item) => ({
       details: t(item.details),
@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
     <section class="overview-summary">
       <OverviewTrend
         :currency="view.settings?.currency"
-        :pending="view.stats?.orderCounts.pending ?? 0"
+        :pending="view.stats?.pending ?? 0"
         :trends="view.stats?.trends"
       />
     </section>
@@ -92,8 +92,18 @@ onBeforeUnmount(() => {
       <section class="panel overview-panel">
         <div class="section-title">
           <h2>{{ t('overview.action_required') }}</h2>
+          <n-button v-if="view.stats?.actions?.length" text type="primary" @click="router.push('/admin/orders')">{{ t('overview.view_all') }}</n-button>
         </div>
-        <n-empty class="overview-empty" :description="t('overview.no_actions')" />
+        <n-empty v-if="!view.stats?.actions?.length" class="overview-empty" :description="t('overview.no_actions')" />
+        <div v-else class="orders-table overview-orders-table">
+          <OrderRow
+            v-for="order in view.stats.actions"
+            :key="order.id"
+            compact
+            :order="order"
+            @open="view.order = $event"
+          />
+        </div>
       </section>
 
       <section class="panel overview-panel">
@@ -120,7 +130,7 @@ onBeforeUnmount(() => {
           <h2>{{ t('overview.recent_orders') }}</h2>
           <n-button text type="primary" @click="router.push('/admin/orders')">{{ t('overview.view_all') }}</n-button>
         </div>
-        <n-empty v-if="!view.stats?.recentOrders?.length" :description="t('overview.no_recent_orders')" />
+        <n-empty v-if="!view.stats?.orders?.length" :description="t('overview.no_recent_orders')" />
         <div v-else class="orders-table overview-orders-table">
           <div class="orders-table-head order-row--plain">
             <span>{{ t('orders.column.order') }}</span>
@@ -130,7 +140,7 @@ onBeforeUnmount(() => {
             <span>{{ t('orders.column.created_at') }}</span>
           </div>
           <OrderRow
-            v-for="order in view.stats.recentOrders"
+            v-for="order in view.stats.orders"
             :key="order.id"
             compact
             :order="order"

@@ -56,7 +56,7 @@ describe("app state", () => {
 
     const status = await appState(createEnv(configs), "https://hashpay.test/admin");
 
-    expect(status.installed).toBe(true);
+    expect(status.ready).toBe(true);
     expect(status.username).toBe("HashPayBot");
     expect(fetchMock).not.toHaveBeenCalled();
   });

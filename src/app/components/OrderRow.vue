@@ -3,10 +3,11 @@ import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { appT } from "@/app/i18n";
 import { formatTime } from "@/app/utils/format";
 import { assetLabel } from "@/shared/payments";
+import type { Order } from "@/shared/types/api";
 
 const props = withDefaults(defineProps<{
   compact?: boolean;
-  order: Record<string, any>;
+  order: Order;
   selectable?: boolean;
   selected?: boolean;
 }>(), {
@@ -67,8 +68,8 @@ function orderStatusClass(status: string) {
     </div>
     <div class="order-cell order-payment-cell">
       <strong class="order-payway-title">
-        <span v-if="props.order.payway" class="order-payway-id">#{{ props.order.payway }}</span>
-        <span>{{ props.order.payway ? props.order.paywayName || props.order.payment?.name || appT('payment.channel_deleted') : appT('payment.channel_not_selected') }}</span>
+        <span v-if="props.order.payway" class="order-payway-id">#{{ props.order.payway.id }}</span>
+        <span>{{ props.order.payway ? props.order.payway.name || appT('payment.channel_deleted') : appT('payment.channel_not_selected') }}</span>
       </strong>
       <span :title="props.order.payment?.address || ''">
         {{ shortAddress(props.order.payment?.address) || '-' }}

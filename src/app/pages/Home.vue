@@ -7,8 +7,8 @@ import { api } from "@/app/api";
 const router = useRouter();
 
 onMounted(async () => {
-  const state = await api.silent.state.get().catch(() => ({ installed: false }));
-  await router.replace(state.installed ? "/admin/overview" : "/setup");
+  const state = await api.silent.state.get().catch(() => ({ ready: false }));
+  await router.replace(state.ready ? "/admin/overview" : "/setup");
 });
 </script>
 

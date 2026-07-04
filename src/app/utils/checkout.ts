@@ -2,14 +2,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { MessageApi } from "naive-ui";
 import * as pay from "@/app/payments";
 import { browserTxCandidates, canProbeInBrowser } from "@/app/payments/browser";
-import { api, type CheckoutData } from "@/app/api";
+import { api, type Checkout } from "@/app/api";
 import { appT } from "@/app/i18n";
 
 const paymentProbeIntervalMs = 3000;
 const statusPollIntervalMs = 5000;
 
 export function useCheckout(orderId: string, message: MessageApi) {
-  const checkout = ref<CheckoutData | null>(null);
+  const checkout = ref<Checkout | null>(null);
   const changingPayment = ref(false);
   const paidReturnDueAt = ref(0);
   const nowMs = ref(Date.now());

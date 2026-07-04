@@ -23,6 +23,22 @@ type TelegramPaymentOption = {
   network: string;
 };
 
+type TelegramOrderRef = {
+  createdAt: number;
+  expireAt: number;
+  id: string;
+};
+
+type ReviewOrderRef = {
+  createdAt: number;
+  expireAt: number;
+};
+
+type PaidOrderRef = {
+  expireAt: number;
+  id: string;
+};
+
 export async function createBot(env: AppEnv) {
   const bot = new Bot(botToken(env));
   bot.catch((error) => {
@@ -52,10 +68,9 @@ export async function createBot(env: AppEnv) {
     const pin = typeof ctx.match === "string" ? ctx.match.trim() : "";
     try {
       await confirmLoginPin(env, pin, {
-        firstName: ctx.from.first_name,
+        firstName: ctx.from.first_name || "",
         id: ctx.from.id,
-        lastName: ctx.from.last_name,
-        username: ctx.from.username,
+        lastName: ctx.from.last_name || "",
       });
     } catch {
       await ctx.reply(t(locale, "telegram.login_invalid"));
@@ -281,7 +296,7 @@ function paymentAssets(options: TelegramPaymentOption[]) {
   return [...new Set(options.map((option) => normalizePaymentAsset(option.asset)).filter(Boolean))].sort();
 }
 
-async function renderSelectedPaymentKeyboard(env: AppEnv, order: Pick<Order, "createdAt" | "expireAt" | "id">, locale: Locale) {
+async function renderSelectedPaymentKeyboard(env: AppEnv, order: TelegramOrderRef, locale: Locale) {
   const keyboard = new InlineKeyboard()
     .text(t(locale, "telegram.done_button"), `check:${order.id}`)
     .row();
@@ -305,7 +320,7 @@ async function refreshReviewKeyboardIfNeeded(ctx: GrammyContext, env: AppEnv, or
   }
 }
 
-function shouldShowReviewButton(order: Pick<Order, "createdAt" | "expireAt">) {
+function shouldShowReviewButton(order: ReviewOrderRef) {
   const createdAt = Number(order.createdAt);
   const expireAt = Number(order.expireAt);
   if (!createdAt || !expireAt || expireAt <= createdAt) return false;
@@ -333,14 +348,14 @@ function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, local
     t(locale, "telegram.order_id"),
     `<pre>${escapeHtml(orderId)}</pre>`,
   ];
-  const url = paymentExplorerUrl(snapshot.network, tx.txid);
+  const url = paymentExplorerUrl(snapshot.driver, tx.txid);
   if (url) lines.push(`<a href="${escapeHtml(url)}">${escapeHtml(t(locale, "telegram.tx_link"))}</a>`);
   return lines.join("\n");
 }
 
-function renderPaymentSnapshotText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot, locale: Locale) {
+function renderPaymentSnapshotText(order: PaidOrderRef, snapshot: PaymentSnapshot, locale: Locale) {
   return [
-    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.network)), asset: assetLabel(snapshot.currency) })),
+    escapeHtml(t(locale, "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetLabel(snapshot.currency) })),
     escapeHtml(t(locale, "telegram.network_warning")),
     "",
     t(locale, "telegram.address", { address: escapeHtml(snapshot.address ?? "") }),

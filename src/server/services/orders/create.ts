@@ -75,6 +75,7 @@ async function createOrder(env: AppEnv, input: { amount: number; callback: strin
 export async function deleteOrder(env: AppEnv, orderId: string) {
   await batch(env, [
     ["DELETE FROM notify WHERE order_id = ?", orderId],
+    ["DELETE FROM review WHERE order_id = ?", orderId],
     ["DELETE FROM orders WHERE id = ?", orderId],
   ]);
   return { ok: true };

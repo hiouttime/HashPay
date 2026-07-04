@@ -1,6 +1,7 @@
 import { all, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { generateRsaKeyPair, verifyRsaSha256 } from "@/server/utils/crypto";
+import type { Merchant as ApiMerchant } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
 
 interface MerchantRow {
@@ -14,16 +15,7 @@ interface MerchantRow {
   updated_at: number;
 }
 
-export interface Merchant {
-  callback: string | null;
-  createdAt: number;
-  id: string;
-  name: string;
-  publicKey: string;
-  status: string;
-  type: string;
-  updatedAt: number;
-}
+export type Merchant = ApiMerchant;
 
 function merchant(row: MerchantRow): Merchant {
   return {
@@ -32,8 +24,8 @@ function merchant(row: MerchantRow): Merchant {
     id: row.id,
     name: row.name,
     publicKey: row.public_key,
-    status: row.status,
-    type: row.type,
+    status: row.status as Merchant["status"],
+    type: row.type as Merchant["type"],
     updatedAt: row.updated_at,
   };
 }
@@ -53,7 +45,7 @@ export async function saveMerchant(env: AppEnv, input: { callback?: string; id?:
   const name = input.name.trim();
   const type = input.type === "telegram" ? "telegram" : "website";
   const callback = input.callback?.trim() || null;
-  const status = input.status === "paused" ? "paused" : "active";
+  const status = input.status === "disabled" ? "disabled" : "enabled";
   if (!name) throw new AppError(400, "errors.merchant_name_missing");
   if (input.id) {
     const row = await one<MerchantRow>(env, "UPDATE merchants SET type = ?, name = ?, callback = ?, status = ?, updated_at = ? WHERE id = ? RETURNING *", type, name, callback, status, time, input.id);
@@ -94,7 +86,7 @@ export async function requireSignedMerchant(
     throw new AppError(401, "errors.timestamp_invalid");
   }
   const merchant = await getMerchant(env, merchantId);
-  if (merchant.status !== "active") throw new AppError(401, "errors.merchant_disabled");
+  if (merchant.status !== "enabled") throw new AppError(401, "errors.merchant_disabled");
   if (!merchant.publicKey.trim()) throw new AppError(401, "errors.merchant_public_key_missing");
   const url = new URL(request.url);
   const signedPayload = [request.method.toUpperCase(), `${url.pathname}${url.search}`, timestamp, body].join("\n");

@@ -32,9 +32,13 @@ describe("frontend payment module", () => {
   });
 
   it("exposes per-network frontend abilities", () => {
-    expect(payment.txUrl({ network: "trc20", tx: { txid: "abc" } })).toBe("https://nile.tronscan.org/#/transaction/abc");
-    expect(payment.txUrl({ network: "ton", tx: { txid: "abc" } })).toBe("");
+    expect(payment.txUrl({ driver: "trc20", tx: { txid: "abc" } })).toBe("https://nile.tronscan.org/#/transaction/abc");
+    expect(payment.txUrl({ driver: "ton", tx: { txid: "abc" } })).toBe("https://tonviewer.com/transaction/abc");
+    expect(payment.txUrl({ driver: "aptos", tx: { txid: "123" } })).toBe("https://explorer.aptoslabs.com/txn/123?network=mainnet");
+    expect(payment.txUrl({ driver: "base", tx: { txid: "0xabc" } })).toBe("https://basescan.org/tx/0xabc");
     expect(canProbeInBrowser({ address: "TAddress", driver: "trc20" })).toBe(true);
-    expect(canProbeInBrowser({ address: "EQAddress", driver: "ton" })).toBe(false);
+    expect(canProbeInBrowser({ address: "EQAddress", driver: "ton" })).toBe(true);
+    expect(canProbeInBrowser({ address: "0x123", driver: "aptos" })).toBe(true);
+    expect(canProbeInBrowser({ address: "0x123", driver: "base" })).toBe(true);
   });
 });

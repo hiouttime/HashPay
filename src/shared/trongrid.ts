@@ -1,5 +1,5 @@
 import { normalizePaymentAsset, trc20Assets } from "@/shared/payments";
-import type { TxCandidate } from "@/shared/types/api";
+import type { TxCandidate } from "@/shared/types/domain";
 
 export interface TronGridTokenTx {
   block_timestamp?: number;

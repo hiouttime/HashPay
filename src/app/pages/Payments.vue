@@ -5,7 +5,7 @@ import AppIcon from "@/app/components/AppIcon.vue";
 import NSegmented from "@/app/components/NSegmented.vue";
 import { useI18n } from "@/app/i18n";
 import * as payment from "@/app/payments";
-import { api, type PaymentMethod, type PaymentMethodInput } from "@/app/api";
+import { api, type Payment } from "@/app/api";
 
 interface PaymentForm {
   address: string;
@@ -19,9 +19,9 @@ interface PaymentForm {
 const message = useMessage();
 const { t } = useI18n();
 const saving = ref(false);
-const methods = ref<PaymentMethod[]>([]);
+const methods = ref<Payment[]>([]);
 const dialog = reactive({
-  method: null as PaymentMethod | null,
+  method: null as Payment | null,
   mode: "" as "" | "edit" | "new",
 });
 const selection = reactive({
@@ -38,6 +38,7 @@ const editableFields = computed(() => {
   const driver = payment.isEvm(currentDriver.value) ? payment.evmDriver(payment.drivers, payment.evmIconNetwork) : currentDriver.value;
   return [payment.fieldFor(driver)];
 });
+const keyField = computed(() => currentDriver.value.key);
 const selectedAssets = computed(() => form.assets);
 const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
@@ -68,14 +69,14 @@ async function save() {
   }
 }
 
-function payload(driverId: string, network: string, assets: string[]): PaymentMethodInput {
+function payload(driverId: string, network: string, assets: string[]) {
   return {
     address: form.address.trim(),
     assets,
     credentials: { ...form.credentials },
     driver: driverId,
     name: selectedNetworks.value.length > 1 && payment.isEvmDriver(payment.drivers, driverId) ? `${form.name.trim()} · ${networkName(network)}` : form.name.trim(),
-    status: isEdit.value && !form.enabled ? "disabled" : "enabled",
+    status: isEdit.value && !form.enabled ? "disabled" as const : "enabled" as const,
   };
 }
 
@@ -100,6 +101,11 @@ function validate() {
   const addressError = payment.addressError(currentDriver.value, form.address.trim());
   if (addressError) {
     message.error(addressError);
+    return false;
+  }
+
+  if (!isEdit.value && keyField.value && !form.credentials.key?.trim()) {
+    message.error(t("payment.validation.field_required", { field: t(keyField.value.nameKey) }));
     return false;
   }
 
@@ -144,7 +150,7 @@ function fillForm() {
   Object.assign(form, {
     address: method.address,
     assets: [...method.assets],
-    credentials: { ...method.credentials },
+    credentials: {},
     driver: method.driver,
     enabled: method.status !== "disabled",
     name: method.name,
@@ -162,7 +168,7 @@ function add() {
   fillForm();
 }
 
-function edit(method: PaymentMethod) {
+function edit(method: Payment) {
   dialog.mode = "edit";
   dialog.method = method;
   fillForm();
@@ -239,7 +245,7 @@ function driverByNetwork(network: string) {
   return payment.drivers.find((driver) => driver.network === network);
 }
 
-function methodDriver(method: PaymentMethod) {
+function methodDriver(method: Payment) {
   return payment.drivers.find((driver) => driver.id === method.driver);
 }
 
@@ -414,6 +420,17 @@ onMounted(load);
               <small v-if="field.help" class="field-help">{{ field.help }}</small>
             </div>
           </template>
+          <div v-if="keyField" class="form-field-block">
+            <n-form-item :show-label="false" class="field-form-item">
+              <n-input
+                v-model:value="form.credentials.key"
+                type="password"
+                show-password-on="click"
+                :placeholder="t(keyField.nameKey)"
+              />
+            </n-form-item>
+            <small v-if="keyField.helpKey" class="field-help">{{ t(keyField.helpKey) }}</small>
+          </div>
         </div>
       </div>
 

@@ -44,9 +44,8 @@ export async function validateWebAppInitData(initData: string, token: string): P
   const id = Number(user.id);
   if (!Number.isFinite(id)) throw new AppError(401, "errors.telegram_user_invalid");
   return {
-    firstName: typeof user.first_name === "string" ? user.first_name : undefined,
+    firstName: typeof user.first_name === "string" ? user.first_name : "",
     id,
-    lastName: typeof user.last_name === "string" ? user.last_name : undefined,
-    username: typeof user.username === "string" ? user.username : undefined,
+    lastName: typeof user.last_name === "string" ? user.last_name : "",
   };
 }

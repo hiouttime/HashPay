@@ -7,7 +7,7 @@ import PaymentSelector from "@/app/components/PaymentSelector.vue";
 import ReviewModal from "@/app/components/ReviewModal.vue";
 import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import { useCheckout } from "@/app/utils/checkout";
-import type { OrderDto } from "@/app/api";
+import type { Order } from "@/app/api";
 import * as pay from "@/app/payments";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
@@ -36,21 +36,21 @@ function shortText(value: unknown, start = 10, end = 8) {
   return text.length > start + end + 3 ? `${text.slice(0, start)}...${text.slice(-end)}` : text;
 }
 
-function expired(order: OrderDto) {
+function expired(order: Order) {
   return order.status === "expired" || Number(order.expireAt) * 1000 <= nowMs.value;
 }
 
-function statusText(order: OrderDto) {
+function statusText(order: Order) {
   return order.status === "pending" && expired(order) ? t("status.expired") : t(`status.${order.status}`);
 }
 
-function statusType(order: OrderDto) {
+function statusType(order: Order) {
   if (order.status === "paid") return "success";
   if (expired(order)) return "warning";
   return order.status === "invalid" ? "error" : "default";
 }
 
-function remainingText(order: OrderDto) {
+function remainingText(order: Order) {
   const seconds = Math.max(0, Math.floor((Number(order.expireAt) * 1000 - nowMs.value) / 1000));
   if (!seconds) return t("checkout.expired_title");
   return t("checkout.remaining_value", {
@@ -59,21 +59,21 @@ function remainingText(order: OrderDto) {
   });
 }
 
-function remainingPercentage(order: OrderDto) {
+function remainingPercentage(order: Order) {
   const createdAt = Number(order.createdAt) * 1000;
   const expireAt = Number(order.expireAt) * 1000;
   if (!createdAt || !expireAt || expireAt <= createdAt) return 0;
   return Math.ceil((Math.max(0, expireAt - nowMs.value) / (expireAt - createdAt)) * 100);
 }
 
-function showPaymentReview(order: OrderDto) {
+function showPaymentReview(order: Order) {
   if (order.status !== "pending" || expired(order) || !order.payment?.driver) return false;
   const createdAt = Number(order.createdAt) * 1000;
   const expireAt = Number(order.expireAt) * 1000;
   return Boolean(createdAt && expireAt > createdAt && nowMs.value - createdAt >= (expireAt - createdAt) / 2);
 }
 
-function hasReturnUrl(order: OrderDto) {
+function hasReturnUrl(order: Order) {
   return Boolean(order.returnUrl?.trim());
 }
 </script>
@@ -148,11 +148,11 @@ function hasReturnUrl(order: OrderDto) {
           <dl class="checkout-paid-meta">
             <div>
               <dt>{{ t('orders.column.payment') }}</dt>
-              <dd>{{ checkout.order.payment.networkName || pay.networkName(checkout.order.payment.network) }} / {{ checkout.order.payment.currencyName || pay.assetName(checkout.order.payment.currency) }}</dd>
+              <dd>{{ pay.networkName(checkout.order.payment.driver) }} / {{ pay.assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div>
               <dt>{{ t('checkout.amount_due') }}</dt>
-              <dd>{{ formatAmount(checkout.order.payment.amount) }} {{ checkout.order.payment.currencyName || pay.assetName(checkout.order.payment.currency) }}</dd>
+              <dd>{{ formatAmount(checkout.order.payment.amount) }} {{ pay.assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div v-if="checkout.order.payment.tx?.txid">
               <dt>{{ t('order.tx_hash') }}</dt>

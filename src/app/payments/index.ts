@@ -1,17 +1,20 @@
-import { assetLabel, normalizeAssetCsv, normalizeNetworkKey, normalizePaymentAsset } from "@/shared/payments";
 import { appT } from "@/app/i18n";
 import {
+  assetLabel,
   defaultPayment,
   evmPayments,
+  normalizeAssetCsv,
+  normalizeNetworkKey,
+  normalizePaymentAsset,
   paymentAssetIcon,
+  paymentById,
   paymentByNetwork,
   paymentExplorerUrl,
-  paymentFieldHelpKey,
-  paymentFieldLabelKey,
   payments,
   type Payment,
   type PaymentKind,
 } from "@/shared/payments";
+import type { PaymentSnapshot } from "@/shared/types/domain";
 
 export type Kind = PaymentKind;
 export type PaymentField = {
@@ -57,7 +60,7 @@ export function assetKey(value: unknown) {
 
 export const drivers = payments;
 
-export function isEvm(driver: Pick<Payment, "evm" | "id"> | string | undefined) {
+export function isEvm(driver: Payment | DriverChoice | string | undefined) {
   return typeof driver === "string" ? driver === evmId : driver?.id === evmId || driver?.evm === true;
 }
 
@@ -109,12 +112,12 @@ export function assetIcon(asset: unknown) {
 }
 
 export function networkName(network: unknown) {
-  const definition = paymentByNetwork(network);
+  const definition = paymentById(network) ?? paymentByNetwork(network);
   return definition ? appT(definition.nameKey) : String(network || "");
 }
 
 export function networkIcon(network: unknown) {
-  return paymentByNetwork(network)?.icon || "";
+  return (paymentById(network) ?? paymentByNetwork(network))?.icon || "";
 }
 
 export function checkoutOptions(options: Array<{
@@ -166,15 +169,21 @@ export function addressError(driver: Payment, address: string) {
   return appT("payment.validation.address_invalid", { field: appT(driver.address.nameKey) });
 }
 
-export function txUrl(payment: Record<string, any>) {
+export function txUrl(payment: { driver?: string; tx?: { txid?: string } }) {
   const txid = String(payment?.tx?.txid || "").trim();
-  return paymentExplorerUrl(payment?.network, txid);
+  return paymentExplorerUrl(payment?.driver, txid);
 }
 
-export function paymentInstruction(payment: Record<string, any>) {
+export function paymentInstruction(payment: Partial<PaymentSnapshot>) {
+  if (payment.url) {
+    return appT("checkout.pay_with_platform", {
+      asset: assetName(payment.currency),
+      platform: networkName(payment.driver),
+    });
+  }
   return appT("checkout.pay_with_network", {
     asset: assetName(payment.currency),
-    network: networkName(payment.network),
+    network: networkName(payment.driver),
   });
 }
 
@@ -184,9 +193,9 @@ export function choiceNetwork(driver: DriverChoice) {
 
 export function fieldFor(driver: Payment): PaymentField {
   return {
-    help: paymentFieldHelpKey(driver) ? appT(paymentFieldHelpKey(driver)) : undefined,
+    help: driver.address.helpKey ? appT(driver.address.helpKey) : undefined,
     key: "address",
-    label: appT(paymentFieldLabelKey(driver)),
+    label: appT(driver.address.nameKey),
     pattern: driver.address.pattern,
     required: true,
     type: "text",

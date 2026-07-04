@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
-import { api, type SettingsDto } from "@/app/api";
+import { api, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 
 const message = useMessage();
@@ -22,13 +22,13 @@ const bannerRules = {
   minWidth: 600,
 };
 
-const settings = ref<SettingsDto>({} as SettingsDto);
+const settings = ref<Settings>({} as Settings);
 const bannerUploading = ref(false);
 const bannerRestoring = ref(false);
 const bannerVersion = ref(Date.now());
 
 const bannerSrc = computed(() => `/banner.webp?v=${bannerVersion.value}`);
-const usdtRate = computed(() => settings.value.rate_preview?.items?.find((item) => item.currency === "USDT"));
+const usdtRate = computed(() => settings.value.ratePreview?.items?.find((item) => item.currency === "USDT"));
 
 async function load() {
   settings.value = await api.settings.get();
@@ -39,8 +39,8 @@ async function save() {
   const saved = await api.settings.save({
     currency: settings.value.currency,
     domain: settings.value.domain,
-    fast_confirm: settings.value.fast_confirm,
-    rate_adjust: settings.value.rate_adjust,
+    fastConfirm: settings.value.fastConfirm,
+    rateAdjust: settings.value.rateAdjust,
     timeout: settings.value.timeout,
   });
   settings.value = saved;
@@ -50,9 +50,9 @@ async function save() {
 
 async function refreshPreview() {
   if (!settings.value.currency) return;
-  settings.value.rate_preview = await api.settings.rates({
+  settings.value.ratePreview = await api.settings.rates({
     currency: settings.value.currency,
-    rate_adjust: settings.value.rate_adjust,
+    rateAdjust: settings.value.rateAdjust,
   });
 }
 
@@ -127,7 +127,7 @@ async function toWebp(file: File) {
 }
 
 watch(
-  () => [settings.value.currency, settings.value.rate_adjust] as const,
+  () => [settings.value.currency, settings.value.rateAdjust] as const,
   (_value, _oldValue, cleanup) => {
     const timer = setTimeout(() => {
       void refreshPreview();
@@ -161,7 +161,7 @@ onMounted(load);
         </label>
         <label class="field-stack">
           <span>{{ t('settings.rate_adjust') }}</span>
-          <n-input-number v-model:value="settings.rate_adjust" :max="200" :min="-99" :placeholder="t('settings.rate_adjust_placeholder')" :step="0.1">
+          <n-input-number v-model:value="settings.rateAdjust" :max="200" :min="-99" :placeholder="t('settings.rate_adjust_placeholder')" :step="0.1">
             <template #suffix>%</template>
           </n-input-number>
           <small>{{ t('settings.rate_adjust_help') }}</small>
@@ -170,12 +170,12 @@ onMounted(load);
       <div class="rate-preview-box">
         <div>
           <span class="muted">{{ t('settings.rate_preview') }}</span>
-          <strong>{{ rateText(usdtRate?.effective_rate) }} {{ settings.currency || 'CNY' }} ≈ 1 USDT</strong>
+          <strong>{{ rateText(usdtRate?.effectiveRate) }} {{ settings.currency || 'CNY' }} ≈ 1 USDT</strong>
         </div>
-        <p v-if="Number(settings.rate_adjust)" class="muted">
-          {{ t('settings.original_rate', { rate: rateText(usdtRate?.market_rate), currency: settings.currency || 'CNY' }) }}
+        <p v-if="Number(settings.rateAdjust)" class="muted">
+          {{ t('settings.original_rate', { rate: rateText(usdtRate?.marketRate), currency: settings.currency || 'CNY' }) }}
         </p>
-        <p v-if="settings.rate_preview?.message_key" class="muted">{{ t(settings.rate_preview.message_key) }}</p>
+        <p v-if="settings.ratePreview?.messageKey" class="muted">{{ t(settings.ratePreview.messageKey) }}</p>
       </div>
     </div>
     <div class="panel grid">
@@ -190,10 +190,10 @@ onMounted(load);
               <small>{{ t('settings.timeout_help') }}</small>
             </div>
           </n-form-item-gi>
-          <n-form-item-gi :label="t('settings.fast_confirm')" path="fast_confirm" :show-feedback="false">
+          <n-form-item-gi :label="t('settings.fast_confirm')" path="fastConfirm" :show-feedback="false">
             <div class="setting-form-control">
               <div class="setting-switch-control">
-                <n-switch v-model:value="settings.fast_confirm" />
+                <n-switch v-model:value="settings.fastConfirm" />
               </div>
               <small>{{ t('settings.fast_confirm_help') }}</small>
             </div>

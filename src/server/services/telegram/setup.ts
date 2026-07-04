@@ -20,10 +20,9 @@ export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
   if (!user?.id) return false;
   await setConfig(env, "admin_id", String(user.id));
   await setConfig(env, "admin_user", JSON.stringify({
-    firstName: user.first_name,
+    firstName: user.first_name || "",
     id: user.id,
-    lastName: user.last_name,
-    username: user.username,
+    lastName: user.last_name || "",
   }));
   const locale = normalizeLocale(user.language_code);
   await ctx.reply("🎉");
