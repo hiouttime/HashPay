@@ -48,7 +48,7 @@ export interface MarketRates {
   syncedAt: number;
 }
 
-export interface ConversionContext {
+export interface RateContext {
   rateAdjust: number;
   rates: MarketRates;
   settings: SystemSettings;
@@ -107,15 +107,7 @@ export async function systemSettings(env: AppEnv): Promise<SystemSettings> {
   };
 }
 
-export async function convertAmount(env: AppEnv, amount: number, fromCurrency: string, toCurrency: string) {
-  const from = fromCurrency.trim().toUpperCase();
-  const to = toCurrency.trim().toUpperCase();
-  if (from && to && from === to) return ceilAmount(amount);
-  const context = await conversionContext(env);
-  return convertAmountWithContext(amount, fromCurrency, toCurrency, context);
-}
-
-export async function conversionContext(env: AppEnv): Promise<ConversionContext> {
+export async function rateContext(env: AppEnv): Promise<RateContext> {
   const settings = await systemSettings(env);
   return {
     rateAdjust: settings.rateAdjust,
@@ -124,10 +116,14 @@ export async function conversionContext(env: AppEnv): Promise<ConversionContext>
   };
 }
 
-export function convertAmountWithContext(amount: number, fromCurrency: string, toCurrency: string, context: ConversionContext) {
-  const rate = quoteRate(context.rates, fromCurrency || context.settings.currency, toCurrency, context.rateAdjust);
-  if (!rate || rate <= 0) return ceilAmount(amount);
-  return ceilAmount(new Decimal(amount).div(rate));
+export function marketAmount(amount: number, from: string, to: string, rate: RateContext) {
+  return convert(amount, from || rate.settings.currency, to, rate).toNumber();
+}
+
+export function payAmount(amount: number, from: string, to: string, rate: RateContext) {
+  const adjusted = convert(amount, from || rate.settings.currency, to, rate)
+    .div(new Decimal(1).plus(new Decimal(rate.rateAdjust).div(100)));
+  return ceilAmount(adjusted);
 }
 
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
@@ -258,27 +254,17 @@ async function fetchCryptoRates() {
   return rates;
 }
 
-function quoteRate(snapshot: MarketRates, fromCurrency: string, toCurrency: string, adjustPercent: number) {
-  const from = fromCurrency.trim().toUpperCase();
-  const to = toCurrency.trim().toUpperCase();
-  if (!from || !to || from === to) return 1;
-  const fromUSD = currencyUSDValue(snapshot, from);
-  const toUSD = currencyUSDValue(snapshot, to);
-  if (fromUSD <= 0 || toUSD <= 0) return 1;
-  return applyAdjust(toUSD / fromUSD, adjustPercent);
+function convert(amount: number, from: string, to: string, rate: RateContext) {
+  const source = from.trim().toUpperCase();
+  const target = to.trim().toUpperCase();
+  if (source === target) return new Decimal(amount);
+  return new Decimal(amount).mul(usd(rate.rates, source)).div(usd(rate.rates, target));
 }
 
-function currencyUSDValue(snapshot: MarketRates, currency: string) {
-  if (snapshot.assetUSD[currency] > 0) return snapshot.assetUSD[currency];
-  if (snapshot.fiatPerUSD[currency] > 0) return 1 / snapshot.fiatPerUSD[currency];
-  if (currency === "USD") return 1;
-  return 0;
-}
-
-function applyAdjust(rate: number, adjustPercent: number) {
-  if (!Number.isFinite(rate) || rate <= 0) return 0;
-  if (!adjustPercent) return rate;
-  return rate * (1 + adjustPercent / 100);
+function usd(snapshot: MarketRates, currency: string) {
+  if (currency === "USD") return new Decimal(1);
+  if (snapshot.assetUSD[currency] > 0) return new Decimal(snapshot.assetUSD[currency]);
+  return new Decimal(1).div(snapshot.fiatPerUSD[currency]);
 }
 
 function timeoutSignal(ms: number) {

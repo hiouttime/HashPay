@@ -156,13 +156,13 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 ### 收银台支付
 
 1. `/api/checkout/:orderId` 读取订单、商户、启用的支付通道和当前汇率缓存。
-2. `checkoutData()` 用一次 `conversionContext()` 为所有通道生成候选金额。
+2. `checkoutData()` 用一次 `rateContext()` 为所有通道生成候选金额。
 3. 用户选择资产/网络后，`selectCheckoutPayment()` 随机选择可用通道，并写入 `orders.payment` 快照。
 4. 已写入的 `payment.amount` 是固定应付金额；除非用户重新选择网络/币种，不应随汇率变化。
 5. `uniqueAmount()` 会避开同一通道、同一地址、同一资产网络下其他未过期订单的相同金额。
 6. 前端 `Pay.vue` 展示订单状态、二维码/地址、倒计时、支付成功返回和人工审核入口。
 
-不要在打开收银台或生成候选项时重新请求外部汇率。汇率同步归 `syncMarketRates()`，收银台读取归 `currentMarketRates()` / `conversionContext()`。
+不要在打开收银台或生成候选项时重新请求外部汇率。汇率同步归 `syncMarketRates()`，收银台读取归 `currentMarketRates()` / `rateContext()`。
 
 ### 支付确认
 
@@ -243,8 +243,9 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 - `systemSettings()` 读取基础货币、超时时间、汇率微调和快速确认。
 - `syncMarketRates()` 是唯一会请求外部汇率 API 的同步路径。
 - `currentMarketRates()` 只读取缓存或默认值，并带内存 60 秒缓存。
-- `conversionContext()` 将设置和汇率快照合并，供一次 checkout 计算复用。
-- `convertAmountWithContext()` 使用 Decimal 并向上保留两位，避免用户少付。
+- `rateContext()` 将设置和汇率快照合并，供一次 checkout 或统计计算复用。
+- `marketAmount()` 使用市场汇率做统计/展示换算，不使用汇率微调。
+- `payAmount()` 使用汇率微调并向上保留两位，用于收银台应付金额，避免用户少付。
 - Cron 每分钟运行，但汇率只在每个整点同步；初始化完成时也同步一次。
 
 收银台性能敏感。不要在每个支付选项、每次打开收银台或每次选择网络时重复外部汇率请求。

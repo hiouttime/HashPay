@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { convertAmountWithContext, currentMarketRates, syncMarketRates } from "@/server/services/app/settings";
+import { currentMarketRates, marketAmount, payAmount, syncMarketRates } from "@/server/services/app/settings";
 import type { AppEnv } from "@/server/types/env";
 
 afterEach(() => {
@@ -25,9 +25,9 @@ describe("market rates", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(rates.fiatPerUSD.CNY).toBe(7.18);
     expect(rates.assetUSD.ETH).toBe(3200);
-    expect(convertAmountWithContext(71.8, "CNY", "USDT", context(rates))).toBe(10);
-    expect(convertAmountWithContext(71.8, "CNY", "USDC", context(rates))).toBe(10);
-    expect(convertAmountWithContext(6400, "USD", "ETH", context(rates))).toBe(2);
+    expect(payAmount(71.8, "CNY", "USDT", rate(rates))).toBe(10);
+    expect(payAmount(71.8, "CNY", "USDC", rate(rates))).toBe(10);
+    expect(payAmount(6400, "USD", "ETH", rate(rates))).toBe(2);
     expect(JSON.parse(configs.get("market_rates") || "{}")).toEqual({
       assetUSD: { BNB: 610, ETH: 3200, GRAM: 3, MATIC: 0.9, TRX: 0.12, USDC: 1, USDT: 1 },
       fiatPerUSD: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5, USD: 1 },
@@ -73,6 +73,18 @@ describe("market rates", () => {
       syncedAt: 1_783_148_400,
     });
   });
+
+  it("keeps market conversion separate from payable amount adjustment", () => {
+    const rates = {
+      assetUSD: { BNB: 610, ETH: 3200, GRAM: 3, MATIC: 0.9, TRX: 0.12, USDC: 1, USDT: 1 },
+      fiatPerUSD: { CNY: 7.2, EUR: 0.93, GBP: 0.79, TWD: 32, USD: 1 },
+      syncedAt: 0,
+    };
+    const adjusted = rate(rates, 2);
+
+    expect(marketAmount(1, "USD", "CNY", adjusted)).toBe(7.2);
+    expect(payAmount(72, "CNY", "USDT", adjusted)).toBe(9.81);
+  });
 });
 
 function env(configs: Map<string, string | null>) {
@@ -102,14 +114,14 @@ function env(configs: Map<string, string | null>) {
   } as unknown as AppEnv;
 }
 
-function context(rates: Awaited<ReturnType<typeof syncMarketRates>>) {
+function rate(rates: Awaited<ReturnType<typeof syncMarketRates>>, rateAdjust = 0) {
   return {
-    rateAdjust: 0,
+    rateAdjust,
     rates,
     settings: {
       currency: "CNY",
       fastConfirm: true,
-      rateAdjust: 0,
+      rateAdjust,
       timeout: 5,
     },
   };

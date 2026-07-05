@@ -1,9 +1,17 @@
 import { all, getConfig, one } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
 import { listPayments, paymentHealth } from "@/server/payments/channels";
+import { marketAmount, rateContext, type RateContext } from "@/server/services/app/settings";
 import { listOrders, listReviewOrders, publicOrder } from "@/server/services/orders/repository";
 import { getBotInfo, refreshBotInfo } from "@/server/services/telegram/api";
 import type { AppEnv } from "@/server/types/env";
+
+type Range = {
+  count: number;
+  label: (timestamp: number) => string;
+  size: number;
+  start: number;
+};
 
 export async function appState(env: AppEnv, _requestUrl: string) {
   let db: string | null = null;
@@ -46,56 +54,63 @@ export async function appState(env: AppEnv, _requestUrl: string) {
 }
 
 export async function dashboard(env: AppEnv) {
-  const startOfDay = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-  const [pending, paymentList, trends, actions, orders] = await Promise.all([
+  const today = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  const rate = await rateContext(env);
+  const [pending, payments, trends, actions, orders] = await Promise.all([
     one<{ count: number }>(env, "SELECT COUNT(*) AS count FROM orders WHERE status = 'pending'"),
     listPayments(env),
-    dashboardTrends(env, startOfDay),
+    trendData(env, today, rate),
     listReviewOrders(env).then((orders) => orders.map(publicOrder)),
     listOrders(env, { limit: 5, status: "all" }).then((orders) => orders.map(publicOrder)),
   ]);
   return {
     actions,
-    health: paymentList.filter((payment) => payment.status !== "disabled").map(paymentHealth),
+    health: payments.filter((payment) => payment.status !== "disabled").map(paymentHealth),
     orders,
     pending: pending?.count ?? 0,
     trends,
   };
 }
 
-async function dashboardTrends(env: AppEnv, startOfDay: number) {
+async function trendData(env: AppEnv, today: number, rate: RateContext) {
   const day = 86400;
+  const [td, yd, d7, d15, d30] = await Promise.all([
+    trend(env, { count: 24, label: hourLabel, size: 3600, start: today }, rate),
+    trend(env, { count: 24, label: hourLabel, size: 3600, start: today - day }, rate),
+    trend(env, { count: 7, label: dayLabel, size: day, start: today - 6 * day }, rate),
+    trend(env, { count: 15, label: dayLabel, size: day, start: today - 14 * day }, rate),
+    trend(env, { count: 30, label: dayLabel, size: day, start: today - 29 * day }, rate),
+  ]);
   return {
-    "15d": await dailyTrend(env, startOfDay - 14 * day, 15),
-    "30d": await dailyTrend(env, startOfDay - 29 * day, 30),
-    "7d": await dailyTrend(env, startOfDay - 6 * day, 7),
-    td: await hourlyTrend(env, startOfDay),
-    yd: await hourlyTrend(env, startOfDay - day),
+    "15d": d15,
+    "30d": d30,
+    "7d": d7,
+    td,
+    yd,
   };
 }
 
-async function hourlyTrend(env: AppEnv, start: number) {
-  return trend(env, start, start + 86400, 3600, (timestamp) => `${String(new Date(timestamp * 1000).getHours()).padStart(2, "0")}:00`);
+function hourLabel(timestamp: number) {
+  return `${String(new Date(timestamp * 1000).getHours()).padStart(2, "0")}:00`;
 }
 
-async function dailyTrend(env: AppEnv, start: number, days: number) {
-  return trend(env, start, start + days * 86400, 86400, (timestamp) => {
-    const date = new Date(timestamp * 1000);
-    return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
-  });
+function dayLabel(timestamp: number) {
+  const date = new Date(timestamp * 1000);
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
 }
 
-async function trend(env: AppEnv, start: number, end: number, bucketSize: number, label: (timestamp: number) => string) {
-  const points = Array.from({ length: Math.ceil((end - start) / bucketSize) }, (_, bucket) => ({
+async function trend(env: AppEnv, range: Range, rate: RateContext) {
+  const end = range.start + range.size * range.count;
+  const points = Array.from({ length: range.count }, (_, bucket) => ({
     amount: 0,
-    label: label(start + bucket * bucketSize),
+    label: range.label(range.start + bucket * range.size),
     orders: 0,
     paidOrders: 0,
-    timestamp: start + bucket * bucketSize,
+    timestamp: range.start + bucket * range.size,
   }));
   const [orders, paid] = await Promise.all([
-    all<{ bucket: number; count: number }>(env, "SELECT CAST((created_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY bucket", start, bucketSize, start, end),
-    all<{ amount: number; bucket: number; count: number }>(env, "SELECT CAST((paid_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount FROM orders WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? GROUP BY bucket", start, bucketSize, start, end),
+    all<{ bucket: number; count: number }>(env, "SELECT CAST((created_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY bucket", range.start, range.size, range.start, end),
+    all<{ amount: number; bucket: number; currency: string }>(env, "SELECT CAST((paid_at - ?) / ? AS INTEGER) AS bucket, amount, currency FROM orders WHERE status = 'paid' AND paid_at >= ? AND paid_at < ?", range.start, range.size, range.start, end),
   ]);
   for (const row of orders) {
     const point = points[Number(row.bucket)];
@@ -104,8 +119,8 @@ async function trend(env: AppEnv, start: number, end: number, bucketSize: number
   for (const row of paid) {
     const point = points[Number(row.bucket)];
     if (point) {
-      point.amount = Number(row.amount) || 0;
-      point.paidOrders = Number(row.count) || 0;
+      point.amount += marketAmount(Number(row.amount), row.currency, rate.settings.currency, rate);
+      point.paidOrders += 1;
     }
   }
   return points;

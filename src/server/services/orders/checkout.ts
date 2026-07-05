@@ -7,7 +7,7 @@ import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/p
 import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
 import { imageData, resolveReview, saveReview } from "@/server/services/orders/review";
-import { conversionContext, convertAmount, convertAmountWithContext, systemSettings } from "@/server/services/app/settings";
+import { payAmount, rateContext, systemSettings } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
 import { ceilAmount, sameAmount } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
@@ -24,19 +24,19 @@ export async function checkoutData(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
   const merchant = order.merchant === "INLINE" ? { id: "INLINE", name: "Telegram" } : await getMerchant(env, order.merchant);
   const channels = (await listPayments(env)).filter((item) => item.status === "enabled");
-  const rateContext = await conversionContext(env);
+  const rate = await rateContext(env);
   const options = [];
   for (const channel of channels) {
     for (const option of paymentOptions(channel)) {
       options.push({
-        amount: convertAmountWithContext(order.amount, order.currency, option.asset, rateContext),
+        amount: payAmount(order.amount, order.currency, option.asset, rate),
         asset: option.asset,
         network: option.network,
       });
     }
   }
   return {
-    fastConfirm: rateContext.settings.fastConfirm,
+    fastConfirm: rate.settings.fastConfirm,
     merchant: { id: merchant.id, name: merchant.name },
     options,
     order: publicOrder(order),
@@ -86,11 +86,12 @@ async function selectPayment(env: AppEnv, order: Order, asset: string, network: 
   }
   if (!channels.length) throw new AppError(400, "errors.payment_network_unavailable");
   const channel = channels[randomIndex(channels.length)];
-  const payAmount = await uniqueAmount(env, channel, order.id, targetAsset, await convertAmount(env, order.amount, order.currency, targetAsset));
-  const snapshot = await createPayment(channel, order, assignPayment(channel, payAmount, targetAsset));
+  const rate = await rateContext(env);
+  const amount = await uniqueAmount(env, channel, order.id, targetAsset, payAmount(order.amount, order.currency, targetAsset, rate));
+  const snapshot = await createPayment(channel, order, assignPayment(channel, amount, targetAsset));
   const ts = now();
   if (refreshWindow) {
-    await refreshOrderPaymentWindow(env, order.id, channel.id, snapshot, (await systemSettings(env)).timeout, ts);
+    await refreshOrderPaymentWindow(env, order.id, channel.id, snapshot, rate.settings.timeout, ts);
   } else {
     await setOrderPayment(env, order.id, channel.id, snapshot, ts);
   }
