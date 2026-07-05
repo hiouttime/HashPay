@@ -36,11 +36,9 @@ HashPay 是一款运行在 Cloudflare Wokers 上的加密货币收款网关。
 ## 🚀 快速预览
 
 <img src="https://github.com/TGDash/HashPay/raw/main/images/index.png" alt="Index" width="100%">
+<img src="https://github.com/TGDash/HashPay/raw/main/images/web.png" alt="Index" width="100%">
 
 ### 支持支付方式/网络
-
-<img src="https://github.com/TGDash/HashPay/raw/main/images/network.png" alt="Index" width="40%">
-<img src="https://github.com/TGDash/HashPay/raw/main/images/exchange.png" alt="Index" width="40%">
 
 | 类型 | 通道 | 支持资产 |
 | --- | --- | --- |
@@ -51,19 +49,9 @@ HashPay 是一款运行在 Cloudflare Wokers 上的加密货币收款网关。
 | 链上网络 | Polygon | USDT、USDC、MATIC |
 | 链上网络 | TON | USDT、GRAM |
 | 链上网络 | Aptos | USDT、USDC |
-| 交易所 | Binance Pay | USDT、USDC |
-| 交易所 | OKX | USDT、USDC |
+| 交易所 | Binance 币安 | USDT、USDC |
+| 交易所 | 欧易 OKX | USDT、USDC |
 | 钱包 | OKPay | USDT、TRX |
-
-
-### 典型使用场景
-
-| 场景 | 用法 |
-| --- | --- |
-| 网站 / 网店 | 通过商户 API 创建订单，引导用户打开收银台付款 |
-| Telegram 私域收款 | 管理员通过 inline query 发起收款 |
-| 动态收款码 | 用户打开固定入口后自行选择网络和资产完成付款 |
-| 交易所内部转账 | 使用 Binance Pay / OKX API 读取收款流水并匹配订单 |
 
 ## 🧩 技术栈
 
@@ -158,15 +146,46 @@ npm run build
 npm run deploy:dry
 ```
 
-## 🔐 商户接入
+## 🔌 支付接入
+
+### API 文档
 
 后台新增商户后，系统会生成 RSA 密钥对：
 
-- 公钥保存在 HashPay，用于验证商户请求签名。
-- 私钥只在创建或轮换时返回一次，由商户系统自行保存。
-- 回调密钥只在创建或轮换时返回一次，用于验证 HashPay 的 callback 通知签名。
+- **公钥**保存在 HashPay，用于验证商户请求签名和加密回调通知。
+- **私钥**只在创建或轮换时显示一次，由商户自行保存，用于请求签名和回调解密。
 
-### 创建订单
+#### 签名方式
+
+所有 API 请求需携带以下 Headers：
+
+| Header | 说明 |
+| --- | --- |
+| `X-Merchant-Id` | 商户 ID |
+| `X-Timestamp` | 当前 Unix 秒时间戳，与服务器时间偏差不超过 5 分钟 |
+| `X-Signature` | RSA-SHA256 签名（Base64） |
+
+签名原文由以下部分以换行符 `\n` 拼接：
+
+```text
+method
+path
+timestamp
+body
+```
+
+例如创建订单时签名原文为：
+
+```text
+POST
+/api/merchant/new
+1782000000
+{"merchantNo":"ORDER-10001","amount":1,"currency":"USD"}
+```
+
+使用商户私钥以 `RSASSA-PKCS1-v1_5 SHA-256` 对原文签名，将签名结果 Base64 编码后放入 `X-Signature`。
+
+#### 创建订单
 
 ```http
 POST /api/merchant/new
@@ -180,50 +199,29 @@ Content-Type: application/json
   "amount": 1,
   "currency": "USD",
   "description": "Test order",
-  "callback": "https://merchant.example.com/callback",
   "return_url": "https://merchant.example.com/return"
 }
 ```
 
-签名原文：
+**请求参数：**
 
-```text
-METHOD
-pathname + search
-timestamp
-body
-```
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `merchantNo` | ✅ | 商户系统唯一订单号，相同 `merchantNo` 会复用已有订单 |
+| `amount` | ✅ | 订单金额，必须大于 0 |
+| `currency` | ❌ | 货币类型，默认使用系统设置的基础货币 |
+| `description` | ❌ | 订单描述 |
+| `return_url` | ❌ | 支付完成后用户跳转地址 |
 
-例如：
-
-```text
-POST
-/api/merchant/new
-1782000000
-{"merchantNo":"ORDER-10001","amount":1,"currency":"USD"}
-```
-
-响应包含：
+**响应：**
 
 | 字段 | 说明 |
 | --- | --- |
-| `checkout` | 用户访问的收银台地址 |
-| `order` | 订单摘要 |
+| `checkoutUrl` | 用户访问的收银台地址 |
+| `order` | 订单摘要（`id`、`amount`、`currency`、`expiresAt`、`status`） |
 | `reused` | 同一商户、同一 `merchantNo` 重复请求时为 `true` |
 
-### 回调签名
-
-HashPay 投递 callback 时会附带以下请求头：
-
-| Header | 说明 |
-| --- | --- |
-| `X-HashPay-Merchant` | 商户 ID |
-| `X-HashPay-Timestamp` | 投递时的 Unix 秒时间戳 |
-| `X-HashPay-Signature` | `HMAC-SHA256(callbackSecret, timestamp + "\\n" + body)` 的 hex 结果 |
-
-商户系统应先校验时间戳窗口，再使用创建/轮换商户时返回的回调密钥验签。
-
-### 查询订单
+#### 查询订单
 
 ```http
 GET /api/order/:orderId
@@ -232,13 +230,71 @@ X-Timestamp: <unix-seconds>
 X-Signature: <base64-rsa-sha256-signature>
 ```
 
-## 🔄 更新
+返回订单完整信息，包括支付状态、金额、支付快照等。GET 请求签名时 body 为空字符串。
 
-通过本仓库创建的实例可以在 GitHub Actions 中运行 **Update HashPay** workflow，从上游 `tgdash/HashPay` 同步应用代码。
+#### 回调通知
+
+订单支付成功后，HashPay 会向商户 `callback` 地址发送 POST 请求。
+
+**请求头：**
+
+| Header | 说明 |
+| --- | --- |
+| `X-HashPay-Merchant` | 商户 ID |
+| `X-HashPay-Timestamp` | 投递时的 Unix 秒时间戳 |
+| `X-HashPay-Encryption` | 加密算法，固定为 `RSA-OAEP-256+A256GCM` |
+
+**请求体**为 JSON 格式的加密信封：
+
+```json
+{
+  "alg": "RSA-OAEP-256+A256GCM",
+  "key": "<base64-encrypted-aes-key>",
+  "iv": "<base64-iv>",
+  "data": "<base64-encrypted-data>"
+}
+```
+
+**解密流程：**
+
+1. 使用商户私钥以 RSA-OAEP (SHA-256) 解密 `key` 字段，得到 AES-256 内容密钥。
+2. 使用内容密钥和 `iv` 以 AES-256-GCM 解密 `data` 字段。
+3. 解密后的明文是 JSON，包含 `timestamp` 和 `payload`。
+4. `payload` 包含 `orderId`、`merchantNo`、`amount`、`currency`、`status` 和 `payment` 快照。
+
+商户系统应校验时间戳窗口，并在处理成功后返回 HTTP 2xx。失败时 HashPay 最多重试 8 次，间隔逐次递增。
+
+---
+
+### 交给 AI
+
+可以直接将下面的 prompt 发给 AI，让它为你的项目生成 HashPay 支付接入模块。
+
+> 帮我的项目接入 HashPay 加密货币支付网关，生成一个可复用的支付模块，包含：创建订单、查询订单、接收回调通知的完整实现。
+>
+> 配置项使用环境变量或配置文件，包括：
+> - `HASHPAY_BASE_URL` — HashPay 服务地址
+> - `HASHPAY_MERCHANT_ID` — 商户 ID
+> - `HASHPAY_PRIVATE_KEY` — 商户 RSA 私钥（PEM 格式）
+>
+> API 文档：https://raw.githubusercontent.com/TGDash/HashPay/refs/heads/main/README.md
+
+---
+
+### 已适配平台
+
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+
+## 🔧 维护
+
+### 更新
+
+访问 [Update HashPay](actions/workflows/update-hashpay.yml)，点击 **Run workflow** 即可从上游 `tgdash/HashPay` 同步最新代码并自动部署。
 
 更新流程会保留当前实例的 `wrangler.jsonc` 部署资源配置，但自定义代码可能被覆盖。
 
-## 🛡 安全注意
+### 安全注意
 
 - 不要提交 `.dev.vars`、Bot Token、`APP_SECRET`、商户私钥或交易所 API 密钥。
 - 交易所 API Key 只需要读取权限，不要开启提现权限。

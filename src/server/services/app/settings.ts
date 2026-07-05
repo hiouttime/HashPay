@@ -1,6 +1,9 @@
 import Decimal from "decimal.js";
 import { getConfig, setConfig, setConfigs } from "@/server/db";
+import { AppError } from "@/server/http/api";
+import { configureBotMiniApp } from "@/server/services/telegram/api";
 import { ceilAmount } from "@/shared/amount";
+import { toHttpsSiteUrl } from "@/shared/domain";
 import type { AppEnv } from "@/server/types/env";
 
 const defaultFiatPerUSD: Record<string, number> = {
@@ -63,7 +66,8 @@ export async function adminSettings(env: AppEnv) {
 
 export async function saveAdminSettings(env: AppEnv, input: Record<string, unknown>) {
   const settings = normalizeSettingsPayload(input);
-  const domain = String(input.domain ?? "").trim();
+  const domain = normalizeDomain(input.domain);
+  const previousDomain = await getConfig(env, "domain") || "";
   await setConfigs(env, {
     currency: settings.currency,
     domain,
@@ -71,6 +75,7 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
     rate_adjust: String(settings.rateAdjust),
     timeout: String(settings.timeout),
   });
+  if (domain !== previousDomain) await configureBotMiniApp(env);
   return {
     ...settings,
     domain,
@@ -150,6 +155,14 @@ function normalizeTimeoutMinutes(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return defaultTimeoutMinutes;
   return Math.min(Math.max(Math.round(parsed), 1), 30);
+}
+
+function normalizeDomain(value: unknown) {
+  try {
+    return toHttpsSiteUrl(value);
+  } catch {
+    throw new AppError(400, "errors.domain_invalid");
+  }
 }
 
 export async function currentMarketRates(env: AppEnv): Promise<MarketRates> {

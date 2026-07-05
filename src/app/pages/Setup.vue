@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "@/app/components/AppIcon.vue";
+import DomainInput from "@/app/components/DomainInput.vue";
 import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import { api, type AppState } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { isDomain, toDomain } from "@/shared/domain";
 
 type Loading = "" | "status" | "setup";
 
@@ -22,7 +24,7 @@ const loaded = computed(() => Boolean(status.value));
 const botReady = computed(() => ["admin", "domain", "ready"].includes(String(status.value?.bot)));
 const canSetup = computed(() => botReady.value && !status.value?.db && !status.value?.queue);
 const setupUrl = computed(() => domain.value ? `https://${domain.value}` : "");
-const domainError = computed(() => domain.value && !validDomain(domain.value) ? t("setup.domain_invalid") : "");
+const domainError = computed(() => domain.value && !isDomain(domain.value) ? t("setup.domain_invalid") : "");
 const setupStarted = computed(() => Boolean(submittedDomain.value && submittedDomain.value === domain.value));
 const botLink = computed(() => status.value?.username ? `https://t.me/${status.value.username}?start=start` : "");
 const checks = computed(() => [
@@ -55,12 +57,12 @@ async function load() {
     const next = await api.silent.state.get();
     if (next.ready) {
       status.value = next;
-      domain.value = normalizeDomain(next.domain || location.hostname);
+      domain.value = toDomain(next.domain || location.hostname);
       complete.value = true;
       return;
     }
     status.value = next;
-    domain.value = normalizeDomain(next.domain || location.hostname);
+    domain.value = toDomain(next.domain || location.hostname);
     if (next.domain) {
       submittedDomain.value = domain.value;
       startPolling();
@@ -80,7 +82,7 @@ async function load() {
 }
 
 async function submitSetup() {
-  if (complete.value || !canSetup.value || loading.value === "setup" || !validDomain(domain.value) || setupStarted.value) return;
+  if (complete.value || !canSetup.value || loading.value === "setup" || !isDomain(domain.value) || setupStarted.value) return;
   loading.value = "setup";
   try {
     await api.setup.submit(setupUrl.value);
@@ -93,24 +95,11 @@ async function submitSetup() {
   }
 }
 
-function validDomain(host: string) {
-  const domainPattern = /^(?=.{1,253}$)(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z][a-z0-9-]{1,62}$/;
-  return domainPattern.test(host)
-    && host !== "localhost"
-    && !host.endsWith(".local")
-    && !/^(\d{1,3}\.){3}\d{1,3}$/.test(host);
-}
-
 function updateDomain(value: string) {
-  domain.value = normalizeDomain(value);
+  domain.value = toDomain(value);
   submittedDomain.value = "";
   complete.value = false;
   stopPolling();
-}
-
-function normalizeDomain(value: string) {
-  const raw = value.trim().replace(/^(?:https?:\/\/)+/i, "").replace(/^\/+/, "");
-  return raw.split(/[/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
 }
 
 function startPolling() {
@@ -215,10 +204,7 @@ onBeforeUnmount(() => {
               <span class="setup-step__index">2</span>
               <div>
                 <strong>{{ t('setup.domain') }}</strong>
-                <n-input-group>
-                  <n-input-group-label>https://</n-input-group-label>
-                  <n-input :value="domain" :disabled="loading === 'setup'" placeholder="hashpay.example.com" @update:value="updateDomain" />
-                </n-input-group>
+                <DomainInput :model-value="domain" :disabled="loading === 'setup'" @update:model-value="updateDomain" />
                 <p v-if="domainError" class="muted is-error">{{ domainError }}</p>
                 <p v-else-if="loading === 'setup'" class="muted">{{ t('setup.domain_configuring') }}</p>
               </div>

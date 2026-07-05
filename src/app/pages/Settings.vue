@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useMessage } from "naive-ui";
+import DomainInput from "@/app/components/DomainInput.vue";
 import { api, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { isDomain, toDomain, toSiteUrl } from "@/shared/domain";
 import { formatTime } from "@/app/utils/format";
 
 const message = useMessage();
@@ -29,6 +31,8 @@ const bannerRestoring = ref(false);
 const bannerVersion = ref(Date.now());
 
 const bannerSrc = computed(() => `/banner.webp?v=${bannerVersion.value}`);
+const domainError = computed(() => settings.value.domain && !isDomain(settings.value.domain) ? t("setup.domain_invalid") : "");
+const siteUrl = computed(() => settings.value.domain ? toSiteUrl(settings.value.domain) : "");
 const usdtRate = computed(() => {
   const marketRate = marketUSDT(settings.value.currency || "CNY");
   return {
@@ -39,18 +43,24 @@ const usdtRate = computed(() => {
 
 async function load() {
   settings.value = await api.settings.get();
+  settings.value.domain = toDomain(settings.value.domain);
   bannerVersion.value = Date.now();
 }
 
 async function save() {
+  if (!isDomain(settings.value.domain)) {
+    message.error(t("setup.domain_invalid"));
+    return;
+  }
   const saved = await api.settings.save({
     currency: settings.value.currency,
-    domain: settings.value.domain,
+    domain: siteUrl.value,
     fastConfirm: settings.value.fastConfirm,
     rateAdjust: settings.value.rateAdjust,
     timeout: settings.value.timeout,
   });
   settings.value = saved;
+  settings.value.domain = toDomain(settings.value.domain);
   message.success(t("settings.saved"));
 }
 
@@ -141,7 +151,8 @@ onMounted(load);
       <div class="form-grid two">
         <label class="field-stack">
           <span>{{ t('settings.domain') }}</span>
-          <n-input v-model:value="settings.domain" placeholder="https://example.com" />
+          <DomainInput v-model="settings.domain" />
+          <small v-if="domainError" class="muted is-error">{{ domainError }}</small>
         </label>
       </div>
     </div>

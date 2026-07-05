@@ -3,7 +3,6 @@ import { AppError } from "@/server/http/api";
 import { randomBase62 } from "@/server/utils/crypto";
 import { systemSettings } from "@/server/services/app/settings";
 import { findExistingMerchantOrder, insertOrder, orderExpireAt } from "@/server/services/orders/repository";
-import { normalizeCallbackUrl } from "@/server/utils/url";
 import type { Merchant } from "@/server/services/merchants";
 import type { Order } from "@/server/services/orders/repository";
 import type { AppEnv } from "@/server/types/env";
@@ -16,7 +15,7 @@ export async function createMerchantOrder(env: AppEnv, merchant: Merchant, input
   const settings = await systemSettings(env);
   return createOrder(env, {
     amount,
-    callback: normalizeCallbackUrl(input.callback ?? merchant.callback),
+    callback: merchant.callback,
     currency: String(input.currency ?? settings.currency).trim().toUpperCase(),
     description: String(input.description ?? "").trim() || null,
     merchant: merchant.id,
