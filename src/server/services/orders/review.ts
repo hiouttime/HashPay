@@ -6,7 +6,6 @@ export interface Review {
   id: number;
   image: string | null;
   imageUrl: string | null;
-  status: "pending" | "resolved";
 }
 
 interface ReviewRow {
@@ -14,17 +13,15 @@ interface ReviewRow {
   id: number;
   image: ArrayBuffer | null;
   image_url: string | null;
-  status: "pending" | "resolved";
 }
 
 export async function saveReview(env: AppEnv, orderId: string, answer: string, image: ArrayBuffer) {
   await run(
     env,
     `
-      INSERT INTO review(order_id, status, answer, image, image_url)
-      VALUES(?, 'pending', ?, ?, NULL)
+      INSERT INTO review(order_id, answer, image, image_url)
+      VALUES(?, ?, ?, NULL)
       ON CONFLICT(order_id) DO UPDATE SET
-        status = 'pending',
         answer = excluded.answer,
         image = excluded.image,
         image_url = NULL
@@ -37,12 +34,12 @@ export async function saveReview(env: AppEnv, orderId: string, answer: string, i
 }
 
 export async function getReview(env: AppEnv, orderId: string) {
-  const row = await one<ReviewRow>(env, "SELECT id, answer, image, image_url, status FROM review WHERE order_id = ?", orderId);
+  const row = await one<ReviewRow>(env, "SELECT id, answer, image, image_url FROM review WHERE order_id = ?", orderId);
   return row ? review(row) : null;
 }
 
-export async function resolveReview(env: AppEnv, orderId: string) {
-  await run(env, "UPDATE review SET status = 'resolved' WHERE order_id = ? AND status = 'pending'", orderId);
+export async function clearReviewImage(env: AppEnv, orderId: string) {
+  await run(env, "UPDATE review SET image = NULL, image_url = NULL WHERE order_id = ?", orderId);
 }
 
 export function imageData(input: string) {
@@ -60,7 +57,6 @@ function review(row: ReviewRow): Review {
     id: row.id,
     image: row.image ? dataUrl(row.image) : null,
     imageUrl: row.image_url,
-    status: row.status,
   };
 }
 

@@ -6,7 +6,7 @@ import { listPayments, recordCheck, type PaymentChannel } from "@/server/payment
 import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/payments/providers/okpay";
 import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
-import { imageData, resolveReview, saveReview } from "@/server/services/orders/review";
+import { clearReviewImage, imageData, saveReview } from "@/server/services/orders/review";
 import { payAmount, rateContext, systemSettings } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
 import { ceilAmount, sameAmount } from "@/shared/amount";
@@ -121,6 +121,7 @@ async function uniqueAmount(env: AppEnv, channel: PaymentChannel, orderId: strin
 
 export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
+  const manual = tx.confirmedBy === "admin";
   const paidPayment = {
     ...snapshot,
     tx: {
@@ -130,9 +131,19 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
     },
   };
   const ts = now();
-  const result = await run(env, "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'", JSON.stringify(paidPayment), ts, ts, order.id);
+  const sql = manual
+    ? "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired')"
+    : "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'";
+  const result = await run(
+    env,
+    sql,
+    JSON.stringify(paidPayment),
+    ts,
+    ts,
+    order.id,
+  );
   if (!result.meta.changes) return jsonParseObject<PaymentSnapshot>((await getOrder(env, order.id)).payment, {} as PaymentSnapshot);
-  await resolveReview(env, order.id);
+  if (manual) await clearReviewImage(env, order.id);
   await createNotify(env, order.id);
   return paidPayment;
 }
@@ -216,7 +227,7 @@ function checkOrder(order: Order, snapshot: PaymentSnapshot) {
 
 export async function confirmOrder(env: AppEnv, orderId: string, input: Record<string, unknown>) {
   const order = await getOrder(env, orderId);
-  if (order.status !== "pending" || now() > order.expireAt) throw new AppError(400, "errors.order_unavailable");
+  if (order.status !== "pending" && order.status !== "expired") throw new AppError(400, "errors.order_unavailable");
   const tx: PaymentTxEvidence = {
     confirmedBy: "admin",
     timestamp: Number(input.timestamp ?? now()),

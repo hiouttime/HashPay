@@ -121,7 +121,7 @@ export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
 export async function listReviewOrders(env: AppEnv, limit = 5) {
   return (await all<ListedOrderRow>(
     env,
-    "SELECT orders.*, payments.name AS channel_name FROM review INNER JOIN orders ON orders.id = review.order_id LEFT JOIN payments ON payments.id = orders.payway WHERE review.status = 'pending' AND orders.status <> 'paid' ORDER BY review.id DESC LIMIT ?",
+    "SELECT orders.*, payments.name AS channel_name FROM review INNER JOIN orders ON orders.id = review.order_id LEFT JOIN payments ON payments.id = orders.payway WHERE (review.image IS NOT NULL OR review.image_url IS NOT NULL) AND orders.status <> 'paid' ORDER BY review.id DESC LIMIT ?",
     Math.min(Math.max(Number(limit) || 5, 1), 20),
   )).map(order);
 }

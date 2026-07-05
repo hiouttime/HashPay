@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkOrderPayment, checkPendingPayments, markPaid, selectCheckoutPayment } from "@/server/services/orders/checkout";
+import { checkOrderPayment, checkPendingPayments, confirmOrder, markPaid, selectCheckoutPayment } from "@/server/services/orders/checkout";
 import { trc20Assets } from "@/shared/payments";
 import type { AppEnv } from "@/server/types/env";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -92,6 +92,41 @@ describe("checkout payment check", () => {
     await markPaid(env, orderFromRow(order), { txid: "tx" });
 
     expect(inserts).toEqual([]);
+  });
+});
+
+describe("admin payment confirmation", () => {
+  it("allows expired orders to be confirmed and clears review images", async () => {
+    const ts = Math.floor(Date.now() / 1000) - 3600;
+    const order = orderRow("expired-order", {
+      payment: JSON.stringify(trc20Snapshot),
+      payway: 1,
+      ts,
+    });
+    order.expire_at = ts + 60;
+    order.status = "expired";
+    let paidSql = "";
+    let reviewCleared = false;
+
+    const env = {
+      DB: db({
+        first(sql) {
+          if (sql.includes("SELECT * FROM orders WHERE id = ?")) return order;
+          return null;
+        },
+        run(sql) {
+          if (sql.startsWith("UPDATE orders SET status = 'paid'")) paidSql = sql;
+          if (sql.startsWith("UPDATE review SET image = NULL")) reviewCleared = true;
+          return { meta: { changes: 1, last_row_id: 1 } };
+        },
+      }),
+    } as unknown as AppEnv;
+
+    const payment = await confirmOrder(env, "expired-order", {});
+
+    expect(payment.tx).toMatchObject({ confirmedBy: "admin" });
+    expect(paidSql).toContain("status IN ('pending', 'expired')");
+    expect(reviewCleared).toBe(true);
   });
 });
 

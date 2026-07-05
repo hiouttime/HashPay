@@ -1,21 +1,26 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
+import { useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
 import OverviewTrend from "@/app/components/OverviewTrend.vue";
 import { api, type Dashboard, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { formatTime } from "@/app/utils/format";
 
 const router = useRouter();
+const message = useMessage();
 const { t } = useI18n();
 
 const view = reactive<{
+  checking: string;
   loading: boolean;
   order: string | null;
   settings: Settings | null;
   stats: Dashboard | null;
 }>({
+  checking: "",
   loading: false,
   order: null,
   settings: null,
@@ -57,6 +62,19 @@ async function load() {
   }
 }
 
+async function checkOrder(id: string) {
+  view.checking = id;
+  try {
+    await api.orders.check(id);
+    message.success(t("order.check_done"));
+    await load();
+  } catch {
+    // API layer displays the error.
+  } finally {
+    view.checking = "";
+  }
+}
+
 onMounted(() => {
   void load();
   autoLoad = setInterval(() => void load(), 3000);
@@ -95,14 +113,26 @@ onBeforeUnmount(() => {
           <n-button v-if="view.stats?.actions?.length" text type="primary" @click="router.push('/admin/orders')">{{ t('overview.view_all') }}</n-button>
         </div>
         <n-empty v-if="!view.stats?.actions?.length" class="overview-empty" :description="t('overview.no_actions')" />
-        <div v-else class="orders-table overview-orders-table">
-          <OrderRow
+        <div v-else class="overview-action-list">
+          <div
             v-for="order in view.stats.actions"
             :key="order.id"
-            compact
-            :order="order"
-            @open="view.order = $event"
-          />
+            class="overview-action-item"
+          >
+            <button class="overview-action-order" type="button" @click="view.order = order.id">
+              <strong>{{ order.id }}</strong>
+              <small>{{ formatTime(order.createdAt) }}</small>
+            </button>
+            <n-button
+              :loading="view.checking === order.id"
+              secondary
+              size="small"
+              type="primary"
+              @click="checkOrder(order.id)"
+            >
+              {{ t('common.check') }}
+            </n-button>
+          </div>
         </div>
       </section>
 

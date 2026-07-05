@@ -4,9 +4,8 @@ import { useMessage } from "naive-ui";
 import { txUrl } from "@/app/payments";
 import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { formatDisplayAmount as formatAmount, formatTime } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
-import { formatTime } from "@/app/utils/format";
 import { assetName } from "@/shared/payments";
 import type { OrderDetail, Order } from "@/shared/types/api";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -32,6 +31,8 @@ const visible = computed({
   get: () => props.show,
   set: (show) => emit("update:show", show),
 });
+
+const reviewImage = computed(() => detail.value?.review?.image || detail.value?.review?.imageUrl || "");
 
 watch(
   () => [props.show, props.orderId] as const,
@@ -109,18 +110,6 @@ function statusClass(status: Order["status"]) {
   }[status];
 }
 
-function merchantName(value: OrderDetail) {
-  return value.merchantName || value.order.merchantId || "--";
-}
-
-function channelName(value: OrderDetail) {
-  return value.order.payway?.name || t("payment.channel_not_selected");
-}
-
-function paymentTarget(payment: Partial<PaymentSnapshot>) {
-  return payment.address || "";
-}
-
 function payAmount(payment: Partial<PaymentSnapshot>) {
   return payment.amount ? `${formatAmount(payment.amount)} ${assetName(payment.currency)}` : "--";
 }
@@ -132,19 +121,6 @@ function rateText(value: OrderDetail) {
   return `1 ${assetName(value.order.payment.currency)} = ${formatAmount(rate)} ${assetName(value.order.currency)}`;
 }
 
-function confirmMethod(payment: Partial<PaymentSnapshot>) {
-  return payment.tx?.confirmedBy === "admin" ? t("order.confirm_manual") : t("order.confirm_auto");
-}
-
-function notifyText(status: string) {
-  const labels: Record<string, string> = {
-    done: t("notify.done"),
-    failed: t("notify.failed"),
-    pending: t("notify.pending"),
-    retry: t("notify.retry"),
-  };
-  return labels[status] ?? status;
-}
 </script>
 
 <template>
@@ -180,7 +156,7 @@ function notifyText(status: string) {
               </span>
             </n-button>
             <n-popconfirm
-              v-if="detail.order.status === 'pending'"
+              v-if="detail.order.status === 'pending' || detail.order.status === 'expired'"
               :negative-text="t('common.cancel')"
               :positive-text="t('order.confirm_payment')"
               @positive-click="confirmPayment"
@@ -230,9 +206,16 @@ function notifyText(status: string) {
                   <n-button size="small" secondary @click="copyText(detail.order.id, { message })">{{ t('common.copy') }}</n-button>
                 </div>
               </div>
+              <div v-if="detail.order.merchantNo" class="detail-item">
+                <span>{{ t('order.merchant_no') }}</span>
+                <div class="detail-copy-row">
+                  <strong>{{ detail.order.merchantNo }}</strong>
+                  <n-button size="small" secondary @click="copyText(detail.order.merchantNo, { message })">{{ t('common.copy') }}</n-button>
+                </div>
+              </div>
               <div class="detail-item">
                 <span>{{ t('order.merchant') }}</span>
-                <strong>{{ merchantName(detail) }}</strong>
+                <strong>{{ detail.merchantName || detail.order.merchantId || '--' }}</strong>
               </div>
               <div class="detail-item detail-item-wide">
                 <span>{{ t('order.info') }}</span>
@@ -262,11 +245,11 @@ function notifyText(status: string) {
               </div>
               <div class="detail-item">
                 <span>{{ t('order.channel') }}</span>
-                <strong>{{ channelName(detail) }}</strong>
+                <strong>{{ detail.order.payway?.name || t('payment.channel_not_selected') }}</strong>
               </div>
               <div class="detail-item detail-item-wide">
                 <span>{{ t('order.address') }}</span>
-                <strong>{{ paymentTarget(detail.order.payment) || '--' }}</strong>
+                <strong>{{ detail.order.payment.address || '--' }}</strong>
               </div>
               <div v-if="detail.order.status === 'paid'" class="detail-item detail-item-wide">
                 <span>{{ t('order.tx_hash') }}</span>
@@ -283,7 +266,7 @@ function notifyText(status: string) {
               </div>
               <div v-if="detail.order.status === 'paid'" class="detail-item">
                 <span>{{ t('order.confirm_method') }}</span>
-                <strong>{{ confirmMethod(detail.order.payment) }}</strong>
+                <strong>{{ detail.order.payment.tx?.confirmedBy === 'admin' ? t('order.confirm_manual') : t('order.confirm_auto') }}</strong>
               </div>
               <div v-if="detail.order.status === 'paid'" class="detail-item">
                 <span>{{ t('order.confirm_time') }}</span>
@@ -297,15 +280,15 @@ function notifyText(status: string) {
             <div class="detail-grid">
               <div class="detail-item">
                 <span>{{ t('common.status') }}</span>
-                <strong>{{ t('order.review_pending') }}</strong>
+                <strong>{{ reviewImage ? t('order.review_pending') : t('order.review_done') }}</strong>
               </div>
               <div class="detail-item detail-item-wide">
                 <span>{{ t('order.payment_confirm') }}</span>
                 <strong class="detail-review-answer">{{ detail.review.answer }}</strong>
               </div>
-              <div v-if="detail.review.image || detail.review.imageUrl" class="detail-item detail-item-wide">
+              <div v-if="reviewImage" class="detail-item detail-item-wide">
                 <span>{{ t('order.payment_image') }}</span>
-                <img class="detail-review-image" :src="detail.review.image || detail.review.imageUrl || ''" :alt="t('order.payment_image')" />
+                <n-image class="detail-review-image" :src="reviewImage" :alt="t('order.payment_image')" object-fit="contain" />
               </div>
             </div>
           </section>
@@ -315,8 +298,12 @@ function notifyText(status: string) {
             <n-empty v-if="!detail.notify.length" :description="t('order.notify_empty')" />
             <div v-else class="notify-list">
               <div v-for="item in detail.notify" :key="item.id" class="notify-item">
-                <strong>{{ notifyText(item.status) }}</strong>
-                <span>{{ t('order.notify_attempt', { attempts: item.attempts, time: formatTime(item.nextRunAt) }) }}</span>
+                <strong>{{ t(`notify.${item.status}`) }}</strong>
+                <span>
+                  {{ item.status === 'done'
+                    ? t('order.notify_done', { attempts: item.attempts })
+                    : t('order.notify_attempt', { attempts: item.attempts, time: formatTime(item.nextRunAt) }) }}
+                </span>
                 <small v-if="item.lastError">{{ item.lastError }}</small>
               </div>
             </div>
