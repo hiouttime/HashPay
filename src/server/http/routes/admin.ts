@@ -81,7 +81,7 @@ app.get("/orders", json((c) =>
 app.get("/orders/:id", json((c) => getOrderDetail(c.env, c.req.param("id")!)));
 app.delete("/orders/:id", json((c) => deleteOrder(c.env, c.req.param("id")!)));
 app.post("/orders/:id/check", json((c) => checkOrderPayment(c.env, c.req.param("id")!)));
-app.post("/orders/:id/confirm", json(async (c) => confirmOrder(c.env, c.req.param("id")!, await reqJson(c))));
+app.post("/orders/:id/confirm", json((c) => confirmOrder(c.env, c.req.param("id")!, {})));
 app.post("/orders/:id/notify", json((c) => resendNotify(c.env, c.req.param("id")!)));
 
 // Settings

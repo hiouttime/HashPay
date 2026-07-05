@@ -206,13 +206,6 @@ function rateText(value: OrderDetail) {
                   <n-button size="small" secondary @click="copyText(detail.order.id, { message })">{{ t('common.copy') }}</n-button>
                 </div>
               </div>
-              <div v-if="detail.order.merchantNo" class="detail-item">
-                <span>{{ t('order.merchant_no') }}</span>
-                <div class="detail-copy-row">
-                  <strong>{{ detail.order.merchantNo }}</strong>
-                  <n-button size="small" secondary @click="copyText(detail.order.merchantNo, { message })">{{ t('common.copy') }}</n-button>
-                </div>
-              </div>
               <div class="detail-item">
                 <span>{{ t('order.merchant') }}</span>
                 <strong>{{ detail.merchantName || detail.order.merchantId || '--' }}</strong>
@@ -224,6 +217,13 @@ function rateText(value: OrderDetail) {
               <div class="detail-item">
                 <span>{{ t('order.created_at') }}</span>
                 <strong>{{ formatTime(detail.order.createdAt) }}</strong>
+              </div>
+              <div v-if="detail.order.merchantNo" class="detail-item">
+                <span>{{ t('order.merchant_no') }}</span>
+                <div class="detail-copy-row">
+                  <strong>{{ detail.order.merchantNo }}</strong>
+                  <n-button size="small" secondary @click="copyText(detail.order.merchantNo, { message })">{{ t('common.copy') }}</n-button>
+                </div>
               </div>
             </div>
           </section>
