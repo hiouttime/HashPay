@@ -2,8 +2,7 @@ import { createDiscreteApi } from "naive-ui";
 import { appT } from "@/app/i18n";
 import type { I18nParams } from "@/shared/i18n";
 
-interface ApiEnvelope<T> {
-  data?: T;
+interface ApiErrorPayload {
   error?: {
     key?: string;
     params?: I18nParams;
@@ -41,11 +40,11 @@ export async function request<T>(url: string, options: ApiRequestOptions = {}): 
   const { silent, ...init } = options;
   try {
     const response = await fetch(url, buildRequest(init));
-    const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
+    const payload = await response.json().catch(() => null) as T | ApiErrorPayload | null;
     if (!response.ok) {
-      throw apiError(response.status, payload);
+      throw apiError(response.status, payload as ApiErrorPayload | null);
     }
-    return payload && "data" in payload ? payload.data as T : payload as T;
+    return payload as T;
   } catch (error) {
     const apiError = error instanceof ApiError
       ? error
@@ -100,7 +99,7 @@ function buildBody(body: unknown, headers: Headers): BodyInit | null | undefined
   return JSON.stringify(body);
 }
 
-function apiError(status: number, payload: ApiEnvelope<unknown> | null) {
+function apiError(status: number, payload: ApiErrorPayload | null) {
   const error = payload?.error;
   const key = error?.key || "errors.http";
   const params = error?.params || { status };

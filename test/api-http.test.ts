@@ -9,8 +9,8 @@ describe("frontend api http client", () => {
     setLocale("zh-CN");
   });
 
-  it("returns data from api envelopes", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ data: { ok: true } }));
+  it("returns json responses directly", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ ok: true }));
 
     await expect(request("/api/example")).resolves.toEqual({ ok: true });
   });
@@ -47,7 +47,7 @@ describe("frontend api http client", () => {
   });
 
   it("sends json bodies with credentials", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ data: { ok: true } }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ ok: true }));
 
     await post("/api/example", { name: "HashPay" });
 
@@ -59,7 +59,7 @@ describe("frontend api http client", () => {
   });
 
   it("uploads binary bodies with explicit content type", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ data: { url: "/banner.webp" } }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ url: "/banner.webp" }));
     const body = new ArrayBuffer(8);
 
     await upload("/api/banner", body, "image/webp");

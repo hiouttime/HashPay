@@ -83,7 +83,7 @@ HashPay/
 
 - `src/index.ts` 是唯一 Worker 入口，导出 `fetch`、`scheduled`、`queue`。
 - `fetch` 进入 `createApp()`，Hono 在 `src/server/http/app.ts` 装配中间件、路由和 Assets 回退。
-- API 响应由 `apiEnvelope` 包装为 `{ data: ... }`；错误统一走 `{ error: { key, params } }`，前端负责按当前语言翻译。
+- API 成功响应直接返回业务 JSON，不包 `{ data }`；错误统一走 `{ error: { key, params } }`，前端负责按当前语言翻译。
 - `/api/*` 请求会先执行 `migrateD1(c.env)`，但 `/api/state` 例外；`appState()` 自行尝试迁移并把 DB 错误转成状态字段。
 - 未命中后端路由时回落到 `ASSETS.fetch()`，用于服务 SPA。
 - Cron 每分钟执行 `runJobs()`：迁移、整点同步汇率、过期订单、检查待支付订单、把到期通知放入队列。
@@ -262,7 +262,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 ## API 和错误约定
 
 - 服务端业务错误使用 `AppError(status, key, params?)`。
-- 前端 `request()` 会解包 `{ data }`，并把 `{ error: { key, params } }` 翻译成当前语言的 `ApiError.message`。
+- 前端 `request()` 直接返回成功响应 JSON，并把 `{ error: { key, params } }` 翻译成当前语言的 `ApiError.message`。
 - 轮询、后台刷新、用户触发查账等非阻塞请求使用 `{ silent: true }`。
 - Admin API 在 `src/server/http/routes/admin.ts`，公开收银台和状态接口在 `public.ts`，商户签名 API 在 `auth.ts`。
 - 新增 API 时同步更新 `src/shared/types/api.ts`、`src/app/api/index.ts`；新增错误 key 时同步更新 `src/shared/i18n.ts`。
@@ -304,7 +304,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 ## 关键文件
 
-- `README.md`：项目对外说明、部署、本地开发、初始化和商户接入文档。
+- `README.md`：项目对外说明、部署、本地开发、初始化和支付接入文档。
 - `src/index.ts`：Worker 总入口。
 - `src/server/http/app.ts`：Hono 应用装配和中间件。
 - `src/server/http/routes/public.ts`：健康检查、收银台、状态、Telegram webhook。

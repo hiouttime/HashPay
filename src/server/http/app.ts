@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { apiEnvelope, errorBody } from "@/server/http/api";
+import { errorBody } from "@/server/http/api";
 import { getConfig } from "@/server/db";
 import routes from "@/server/http/routes";
 import { migrateD1 } from "@/server/db/migrations";
@@ -22,7 +22,6 @@ export function createApp() {
   });
   app.use("/api/*", secureHeaders());
   app.use("/api/*", cors({ credentials: true, origin: apiCorsOrigin }));
-  app.use("/api/*", apiEnvelope);
   app.use("/api/*", async (c, next) => {
     if (!c.req.path.startsWith("/api/state")) await migrateD1(c.env);
     await next();
