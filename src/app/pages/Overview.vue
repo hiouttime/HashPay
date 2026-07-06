@@ -16,19 +16,18 @@ const { t } = useI18n();
 const view = reactive<{
   checkingHealth: boolean;
   checking: string;
-  loading: boolean;
   order: string | null;
   settings: Settings | null;
   stats: Dashboard | null;
 }>({
   checkingHealth: false,
   checking: "",
-  loading: false,
   order: null,
   settings: null,
   stats: null,
 });
 let autoLoad: ReturnType<typeof setInterval> | undefined;
+let loading = false;
 
 const hour = new Date().getHours();
 const greeting = computed(() => hour < 12 ? t("overview.greeting.morning") : hour < 18 ? t("overview.greeting.afternoon") : t("overview.greeting.evening"));
@@ -50,8 +49,8 @@ const orderVisible = computed({
 });
 
 async function load() {
-  if (view.loading) return;
-  view.loading = true;
+  if (loading) return;
+  loading = true;
   try {
     const [nextStats, nextConfig] = await Promise.all([
       api.dashboard.get(),
@@ -60,7 +59,7 @@ async function load() {
     view.stats = nextStats;
     view.settings = nextConfig;
   } finally {
-    view.loading = false;
+    loading = false;
   }
 }
 
@@ -105,10 +104,7 @@ onBeforeUnmount(() => {
         <h2>{{ greeting }}</h2>
         <p class="muted">{{ t('overview.welcome') }}</p>
       </div>
-      <n-space align="end" vertical :size="4">
-        <n-button :loading="view.loading" secondary type="primary" @click="load">{{ t('overview.refresh') }}</n-button>
-        <small class="muted">{{ t('overview.auto_refresh') }}</small>
-      </n-space>
+      <small class="muted">{{ t('overview.auto_refresh') }}</small>
     </div>
 
     <section class="overview-summary">

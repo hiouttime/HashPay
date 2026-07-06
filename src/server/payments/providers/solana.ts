@@ -5,7 +5,7 @@ import { sameAmount } from "@/shared/amount";
 import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
-const endpoint = "https://api.mainnet-beta.solana.com";
+const endpoint = "https://solana-rpc.publicnode.com";
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
@@ -125,10 +125,29 @@ async function rpc<T>(method: string, params: unknown[]) {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (!response.ok) throw new Error(`Solana request failed: ${response.status}`);
-  const payload = await response.json() as { error?: { message?: string }; result?: T };
-  if (payload.error || payload.result === undefined) throw new Error(payload.error?.message ?? "Solana response is invalid");
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Solana ${host(endpoint)} ${method}: HTTP ${response.status} ${reason(text || response.statusText)}`.trim());
+  const payload = parseRpc<T>(text, method);
+  if (payload.error || payload.result === undefined) {
+    throw new Error(`Solana ${host(endpoint)} ${method}: ${reason(payload.error?.message ?? "response is invalid")}`);
+  }
   return payload.result;
+}
+
+function parseRpc<T>(text: string, method: string) {
+  try {
+    return JSON.parse(text || "{}") as { error?: { message?: string }; result?: T };
+  } catch {
+    throw new Error(`Solana ${host(endpoint)} ${method}: invalid JSON ${reason(text)}`);
+  }
+}
+
+function reason(value: unknown) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function host(url: string) {
+  return new URL(url).host;
 }
 
 function tokenAmount(info: Record<string, unknown>, decimals: number) {

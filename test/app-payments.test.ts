@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as payment from "@/app/payments";
+import { browserMatches, canProbeInBrowser } from "@/app/payments/browser";
 import { setLocale } from "@/app/i18n";
+import { trc20Assets } from "@/shared/payments";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("frontend payment module", () => {
   it("keeps asset display helpers frontend-only", () => {
@@ -41,6 +48,50 @@ describe("frontend payment module", () => {
 
   it("uses exchange transfer wording for exchange drivers", () => {
     setLocale("zh-CN");
-    expect(payment.paymentInstruction({ currency: "usdt", driver: "binance" })).toBe("请通过 Binance 币安 转账 USDT");
+    expect(payment.networkName("binance")).toBe("Binance 币安 内部");
+    expect(payment.networkName("okx")).toBe("OKX 欧易 内部");
+    expect(payment.networkName("trc20")).toBe("TRC20 (TRON)");
+    expect(payment.paymentInstruction({ currency: "usdt", driver: "binance" })).toBe("请通过 Binance 币安 内部转账 USDT");
+  });
+
+  it("probes browser-supported TRC20 payments before server checks", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      data: [
+        trc20Tx({ hash: "too-small", value: "9900000" }),
+        trc20Tx({ hash: "paid", value: "10000000" }),
+      ],
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const matches = await browserMatches(
+      { address: tronAddress, amount: 10, currency: "usdt", driver: "trc20" },
+      { createdAt: 100, expireAt: 200 },
+      false,
+    );
+
+    expect(canProbeInBrowser({ address: tronAddress, driver: "trc20" })).toBe(true);
+    expect(matches.map((item) => item.hash)).toEqual(["paid"]);
+    expect(String((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0])).toContain("https://api.trongrid.io/v1/accounts/");
+  });
+
+  it("does not probe unsupported browser payment drivers", async () => {
+    expect(canProbeInBrowser({ address: "2itEPQiRbuLQZzdubQFgx2P9M9mpREoNdPKng3M7sf5o", driver: "solana" })).toBe(false);
+    await expect(browserMatches(
+      { address: "2itEPQiRbuLQZzdubQFgx2P9M9mpREoNdPKng3M7sf5o", amount: 1, currency: "usdt", driver: "solana" },
+      { createdAt: 100, expireAt: 200 },
+      false,
+    )).resolves.toEqual([]);
   });
 });
+
+const tronAddress = "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2";
+
+function trc20Tx(input: { hash: string; value: string }) {
+  return {
+    block_timestamp: 120_000,
+    to: tronAddress,
+    token_info: { address: trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },
+    transaction_id: input.hash,
+    value: input.value,
+  };
+}

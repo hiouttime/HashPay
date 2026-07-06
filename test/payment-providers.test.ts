@@ -221,19 +221,21 @@ describe("Solana provider", () => {
   const snapshot = payment({ address, amount: 5.25, currency: "usdc", driver: "solana" });
 
   it("matches Solana SPL token transfers by mint and token account", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
       if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
       if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, signature: "solana-paid" }] });
       if (body.method === "getTransaction") return json({ result: solanaTx({ account }) });
       return json({ result: null });
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     await expect(checkPayment({
       channel: channel({ address, driver: "solana" }),
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "solana-paid" }], status: "ok" });
+    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://solana-rpc.publicnode.com"]));
   });
 
   it("rejects Solana transfers with a different mint", async () => {
@@ -250,6 +252,21 @@ describe("Solana provider", () => {
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("returns readable Solana endpoint errors", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("forbidden", { status: 403 })));
+
+    const result = await checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("solana-rpc.publicnode.com");
+    expect(result.error).toContain("getTokenAccountsByOwner");
+    expect(result.error).toContain("HTTP 403 forbidden");
   });
 });
 

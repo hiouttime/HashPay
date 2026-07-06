@@ -129,14 +129,13 @@ export function checkoutOptions(options: Array<{
     const key = `${asset}:${itemNetwork}`;
     if (!asset || !itemNetwork || seen.has(key)) return [];
     seen.add(key);
-    const definition = paymentByNetwork(itemNetwork);
     const next = {
       amount: option.amount,
       asset,
       network: itemNetwork,
       value: key,
     };
-    return [{ ...next, label: `${definition ? appT(definition.nameKey) : itemNetwork} / ${assetName(asset)}` }];
+    return [{ ...next, label: `${networkName(itemNetwork)} / ${assetName(asset)}` }];
   });
 }
 
