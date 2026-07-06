@@ -235,7 +235,7 @@ describe("Solana provider", () => {
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "solana-paid" }], status: "ok" });
-    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://api.mainnet-beta.solana.com"]));
+    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://public.rpc.solanavibestation.com/"]));
   });
 
   it("rejects Solana transfers with a different mint", async () => {
@@ -264,7 +264,7 @@ describe("Solana provider", () => {
     });
 
     expect(result.status).toBe("error");
-    expect(result.error).toContain("api.mainnet-beta.solana.com");
+    expect(result.error).toContain("public.rpc.solanavibestation.com");
     expect(result.error).toContain("getTokenAccountsByOwner");
     expect(result.error).toContain("HTTP 403 forbidden");
   });
@@ -284,7 +284,7 @@ describe("Solana provider", () => {
 
     const result = await pending;
     expect(result.status).toBe("error");
-    expect(result.error).toContain("api.mainnet-beta.solana.com request timed out");
+    expect(result.error).toContain("public.rpc.solanavibestation.com request timed out");
   });
 });
 

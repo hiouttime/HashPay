@@ -6,7 +6,7 @@ import { sameAmount } from "@/shared/amount";
 import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
-const endpoint = "https://api.mainnet-beta.solana.com";
+const endpoint = "https://public.rpc.solanavibestation.com/";
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
