@@ -1,6 +1,7 @@
 import { key, trc20Assets } from "@/shared/payments";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchJson } from "@/server/utils/http";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import { sameAmount } from "@/shared/amount";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
@@ -54,7 +55,7 @@ async function scanAsset(address: string, asset: string, from: number, fast: boo
 
 async function tronGrid<T>(address: string, path: string, params: URLSearchParams) {
   const url = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(address)}/${path}?${params}`;
-  const result = await fetch(url).then((res) => res.json() as Promise<{ data?: T[] }>);
+  const result = await fetchJson<{ data?: T[] }>(url);
   if (!Array.isArray(result.data)) throw new Error("TronGrid response is invalid");
   return result.data;
 }

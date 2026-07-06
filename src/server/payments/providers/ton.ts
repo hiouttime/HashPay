@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchJson } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key, tonAssets } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -78,9 +79,7 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
 }
 
 async function json<T>(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`TON request failed: ${res.status}`);
-  return res.json() as Promise<T>;
+  return fetchJson<T>(url);
 }
 
 function amount(value: unknown, decimals: number) {

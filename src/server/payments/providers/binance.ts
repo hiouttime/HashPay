@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import { fetchText } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -66,26 +67,33 @@ async function signedGet<T>(url: string, apiKey: string, secretKey: string, data
   if (!apiKey || !secretKey) throw new AppError(400, "errors.payment_credential_missing");
   const query = new URLSearchParams({ ...data, timestamp: String(Date.now()) }).toString();
   const signature = createHmac("sha256", secretKey).update(query).digest("hex");
-  const res = await fetch(`${url}?${query}&signature=${signature}`, {
+  const { res, text } = await fetchText(`${url}?${query}&signature=${signature}`, {
     headers: { accept: "application/json", "X-MBX-APIKEY": apiKey },
   });
   if (!res.ok) {
-    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: await responseReason(res) });
+    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: responseReason(res, text) });
   }
-  return res.json() as Promise<T>;
+  return JSON.parse(text || "{}") as T;
 }
 
-async function responseReason(res: Response) {
+function responseReason(res: Response, text: string) {
   const fallback = `HTTP ${res.status}`;
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const body = await res.clone().json().catch(() => null) as { code?: unknown; msg?: unknown } | null;
-    const code = String(body?.code ?? "").trim();
-    const msg = String(body?.msg ?? "").trim();
+    const body = parseJson(text) as { code?: unknown; msg?: unknown };
+    const code = String(body.code ?? "").trim();
+    const msg = String(body.msg ?? "").trim();
     return ([code, msg].filter(Boolean).join(" ") || fallback).replace(/\s+/g, " ").trim();
   }
-  const text = await res.text().catch(() => "");
   return (text || fallback).replace(/\s+/g, " ").trim();
+}
+
+function parseJson(text: string) {
+  try {
+    return JSON.parse(text || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 function match(snapshot: PaymentSnapshot, row: BinancePayRow, created: number, expire: number) {

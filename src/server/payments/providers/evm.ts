@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchJson, fetchText, host, reason } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -126,19 +127,16 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
 }
 
 async function json<T>(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Explorer request failed: ${res.status}`);
-  return res.json() as Promise<T>;
+  return fetchJson<T>(url);
 }
 
 async function rpc<T>(chain: Chain, method: string, params: unknown[]) {
   if (!chain.rpc) throw new Error("RPC is not configured");
-  const res = await fetch(chain.rpc, {
+  const { res, text } = await fetchText(chain.rpc, {
     body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const text = await res.text();
   if (!res.ok) throw new Error(`${host(chain.rpc)} ${method}: HTTP ${res.status} ${reason(text || res.statusText)}`.trim());
   const payload = parseRpc<T>(text, chain.rpc, method);
   if (payload.error || payload.result === undefined) {
@@ -174,10 +172,6 @@ function parseRpc<T>(text: string, url: string, method: string) {
   }
 }
 
-function reason(value: unknown) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
 function time(value: unknown) {
   return Math.floor(Date.parse(String(value)) / 1000);
 }
@@ -188,8 +182,4 @@ function hex(value: number) {
 
 function topicAddress(address: string) {
   return `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
-}
-
-function host(url: string) {
-  return new URL(url).host;
 }

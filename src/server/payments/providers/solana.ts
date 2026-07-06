@@ -1,11 +1,12 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchText, host, reason } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
-const endpoint = "https://solana-rpc.publicnode.com";
+const endpoint = "https://api.mainnet-beta.solana.com";
 
 export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   try {
@@ -120,13 +121,12 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
 }
 
 async function rpc<T>(method: string, params: unknown[]) {
-  const response = await fetch(endpoint, {
+  const { res, text } = await fetchText(endpoint, {
     body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Solana ${host(endpoint)} ${method}: HTTP ${response.status} ${reason(text || response.statusText)}`.trim());
+  if (!res.ok) throw new Error(`Solana ${host(endpoint)} ${method}: HTTP ${res.status} ${reason(text || res.statusText)}`.trim());
   const payload = parseRpc<T>(text, method);
   if (payload.error || payload.result === undefined) {
     throw new Error(`Solana ${host(endpoint)} ${method}: ${reason(payload.error?.message ?? "response is invalid")}`);
@@ -140,14 +140,6 @@ function parseRpc<T>(text: string, method: string) {
   } catch {
     throw new Error(`Solana ${host(endpoint)} ${method}: invalid JSON ${reason(text)}`);
   }
-}
-
-function reason(value: unknown) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
-function host(url: string) {
-  return new URL(url).host;
 }
 
 function tokenAmount(info: Record<string, unknown>, decimals: number) {

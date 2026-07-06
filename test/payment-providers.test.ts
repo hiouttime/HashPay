@@ -235,7 +235,7 @@ describe("Solana provider", () => {
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "solana-paid" }], status: "ok" });
-    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://solana-rpc.publicnode.com"]));
+    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://api.mainnet-beta.solana.com"]));
   });
 
   it("rejects Solana transfers with a different mint", async () => {
@@ -264,9 +264,27 @@ describe("Solana provider", () => {
     });
 
     expect(result.status).toBe("error");
-    expect(result.error).toContain("solana-rpc.publicnode.com");
+    expect(result.error).toContain("api.mainnet-beta.solana.com");
     expect(result.error).toContain("getTokenAccountsByOwner");
     expect(result.error).toContain("HTTP 403 forbidden");
+  });
+
+  it("times out stalled Solana RPC requests", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal | undefined)?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })));
+
+    const pending = checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    });
+    await vi.advanceTimersByTimeAsync(8000);
+
+    const result = await pending;
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("api.mainnet-beta.solana.com request timed out");
   });
 });
 

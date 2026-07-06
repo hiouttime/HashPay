@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchText } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -70,7 +71,7 @@ async function signedGet<T>(path: string, data: Record<string, string>, query: R
   const requestPath = `${path}${search ? `?${search}` : ""}`;
   const timestamp = new Date().toISOString();
   const sign = createHmac("sha256", secretKey).update(`${timestamp}GET${requestPath}`).digest("base64");
-  const res = await fetch(`${origin}${requestPath}`, {
+  const { res, text } = await fetchText(`${origin}${requestPath}`, {
     headers: {
       accept: "application/json",
       "OK-ACCESS-KEY": apiKey,
@@ -80,26 +81,33 @@ async function signedGet<T>(path: string, data: Record<string, string>, query: R
     },
   });
   if (!res.ok) {
-    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: await responseReason(res) });
+    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: responseReason(res, text) });
   }
-  const payload = await res.json() as OkxResponse<T>;
+  const payload = JSON.parse(text || "{}") as OkxResponse<T>;
   if (payload.code && payload.code !== "0") {
     throw new AppError(400, "errors.payment_api_credential_invalid", { detail: `${payload.code} ${payload.msg ?? ""}`.replace(/\s+/g, " ").trim() });
   }
   return payload.data ?? [];
 }
 
-async function responseReason(res: Response) {
+function responseReason(res: Response, text: string) {
   const fallback = `HTTP ${res.status}`;
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
-    const body = await res.clone().json().catch(() => null) as { code?: unknown; msg?: unknown } | null;
-    const code = String(body?.code ?? "").trim();
-    const msg = String(body?.msg ?? "").trim();
+    const body = parseJson(text);
+    const code = String(body.code ?? "").trim();
+    const msg = String(body.msg ?? "").trim();
     return ([code, msg].filter(Boolean).join(" ") || fallback).replace(/\s+/g, " ").trim();
   }
-  const text = await res.text().catch(() => "");
   return (text || fallback).replace(/\s+/g, " ").trim();
+}
+
+function parseJson(text: string) {
+  try {
+    return JSON.parse(text || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 function match(snapshot: PaymentSnapshot, row: OkxBill, created: number, expire: number) {

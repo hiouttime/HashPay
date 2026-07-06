@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
+import { fetchJson } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { aptosAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -80,13 +81,11 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
 }
 
 async function graphql<T>(query: string, variables: Record<string, unknown>) {
-  const res = await fetch(endpoint, {
+  const payload = await fetchJson<{ data?: T; errors?: Array<{ message?: string }> }>(endpoint, {
     body: JSON.stringify({ query, variables }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  if (!res.ok) throw new Error(`Aptos request failed: ${res.status}`);
-  const payload = await res.json() as { data?: T; errors?: Array<{ message?: string }> };
   if (payload.errors?.length || !payload.data) throw new Error(payload.errors?.[0]?.message ?? "Aptos response is invalid");
   return payload.data;
 }

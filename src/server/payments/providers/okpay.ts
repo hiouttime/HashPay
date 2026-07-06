@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import { fetchJson } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { Order } from "@/server/services/orders/repository";
@@ -70,13 +71,11 @@ export function notifyData(input: Record<string, unknown>) {
 
 async function post(channel: PaymentChannel, path: string, data: Record<string, unknown>) {
   const body = sign(channel, data);
-  const res = await fetch(`${api}/${path}`, {
+  return fetchJson<Record<string, unknown>>(`${api}/${path}`, {
     body: new URLSearchParams(body),
     headers: { "content-type": "application/x-www-form-urlencoded" },
     method: "POST",
   });
-  if (!res.ok) throw new Error(`OKPay request failed: ${res.status}`);
-  return res.json() as Promise<Record<string, unknown>>;
 }
 
 function sign(channel: PaymentChannel, input: Record<string, unknown>) {
