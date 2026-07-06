@@ -2,6 +2,7 @@ import { all, getConfig, one } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
 import { listPayments, paymentHealth } from "@/server/payments/channels";
 import { marketAmount, rateContext, type RateContext } from "@/server/services/app/settings";
+import { checkPendingPayments } from "@/server/services/orders/checkout";
 import { listOrders, listReviewOrders, publicOrder } from "@/server/services/orders/repository";
 import { getBotInfo, refreshBotInfo } from "@/server/services/telegram/api";
 import type { AppEnv } from "@/server/types/env";
@@ -70,6 +71,11 @@ export async function dashboard(env: AppEnv) {
     pending: pending?.count ?? 0,
     trends,
   };
+}
+
+export async function checkDashboard(env: AppEnv) {
+  await checkPendingPayments(env);
+  return dashboard(env);
 }
 
 async function trendData(env: AppEnv, today: number, rate: RateContext) {

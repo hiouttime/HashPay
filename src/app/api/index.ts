@@ -42,6 +42,7 @@ function endpoints(options: ApiRequestOptions = {}) {
     },
     dashboard: {
       get: () => get<Dashboard>("/api/admin/dashboard", options),
+      check: () => post<Dashboard>("/api/admin/dashboard/check", undefined, options),
     },
     orders: {
       list: (input: { page: number; pageSize: number; q?: string; status: string }) =>

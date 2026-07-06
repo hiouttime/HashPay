@@ -14,12 +14,14 @@ const message = useMessage();
 const { t } = useI18n();
 
 const view = reactive<{
+  checkingHealth: boolean;
   checking: string;
   loading: boolean;
   order: string | null;
   settings: Settings | null;
   stats: Dashboard | null;
 }>({
+  checkingHealth: false,
   checking: "",
   loading: false,
   order: null,
@@ -59,6 +61,17 @@ async function load() {
     view.settings = nextConfig;
   } finally {
     view.loading = false;
+  }
+}
+
+async function checkHealth() {
+  if (view.checkingHealth) return;
+  view.checkingHealth = true;
+  try {
+    view.stats = await api.dashboard.check();
+    message.success(t("order.check_done"));
+  } finally {
+    view.checkingHealth = false;
   }
 }
 
@@ -139,7 +152,7 @@ onBeforeUnmount(() => {
       <section class="panel overview-panel">
         <div class="section-title">
           <h2>{{ t('overview.system_health') }}</h2>
-          <n-button text type="primary" @click="load">{{ t('setup.recheck') }}</n-button>
+          <n-button :loading="view.checkingHealth" text type="primary" @click="checkHealth">{{ t('setup.recheck') }}</n-button>
         </div>
         <n-empty v-if="!health.length" class="overview-empty" :description="t('overview.no_health')" />
         <div v-else class="overview-health-list">

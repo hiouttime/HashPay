@@ -168,6 +168,29 @@ describe("scheduled checkout payment checks", () => {
     expect(env.paidOrders).toEqual(new Set(["order-a", "order-b"]));
     expect(env.paymentChecks).toBe(1);
   });
+
+  it("rechecks errored payment channels", async () => {
+    const env = scheduledCheckEnv("error");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      data: [trc20Tx({ hash: "tx-a", value: "10000000" })],
+    }))));
+
+    await checkPendingPayments(env);
+
+    expect(env.paidOrders).toEqual(new Set(["order-a"]));
+    expect(env.paymentChecks).toBe(1);
+  });
+
+  it("skips healthy channels when only errored channels should be checked", async () => {
+    const env = scheduledCheckEnv("enabled");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await checkPendingPayments(env, "error");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(env.paymentChecks).toBe(0);
+  });
 });
 
 function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
@@ -220,7 +243,7 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: bool
   return env;
 }
 
-function scheduledCheckEnv() {
+function scheduledCheckEnv(paymentStatus = "enabled") {
   const orders = new Map<string, Record<string, unknown>>([
     ["order-a", orderRow("order-a", { amount: 20, payment: JSON.stringify({ ...trc20Snapshot, amount: 10 }), payway: 1, ts: 100 })],
     ["order-b", orderRow("order-b", { amount: 20, payment: JSON.stringify({ ...trc20Snapshot, amount: 10.01 }), payway: 1, ts: 100 })],
@@ -231,7 +254,7 @@ function scheduledCheckEnv() {
     paymentChecks: 0,
     DB: db({
       all(sql) {
-        if (sql.includes("FROM payments")) return [paymentRow(100)];
+        if (sql.includes("FROM payments")) return [paymentRow(100, trc20Snapshot, paymentStatus)];
         if (sql.includes("FROM orders WHERE status = 'pending'")) return Array.from(orders.values());
         return [];
       },
@@ -327,7 +350,7 @@ function orderFromRow(row: Record<string, unknown>) {
   };
 }
 
-function paymentRow(ts: number, payment: PaymentSnapshot = trc20Snapshot) {
+function paymentRow(ts: number, payment: PaymentSnapshot = trc20Snapshot, status = "enabled") {
   return {
     address: payment.address,
     assets: JSON.stringify([payment.currency]),
@@ -336,7 +359,7 @@ function paymentRow(ts: number, payment: PaymentSnapshot = trc20Snapshot) {
     driver: payment.driver,
     id: 1,
     name: payment.driver,
-    status: "enabled",
+    status,
     updatedAt: ts,
   };
 }

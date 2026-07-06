@@ -142,6 +142,7 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "bsc-order", txid: "0xbsc-paid" }], status: "ok" });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
   });
 
   it("returns readable BSC RPC errors", async () => {

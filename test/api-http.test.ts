@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, post, request, setApiMessage, upload } from "@/app/api";
+import { api, ApiError, post, request, setApiMessage, upload } from "@/app/api";
 import { setLocale } from "@/app/i18n";
 
 describe("frontend api http client", () => {
@@ -56,6 +56,22 @@ describe("frontend api http client", () => {
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(init?.body).toBe(JSON.stringify({ name: "HashPay" }));
+  });
+
+  it("posts dashboard rechecks", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({
+      actions: [],
+      health: [],
+      orders: [],
+      pending: 0,
+      trends: { "15d": [], "30d": [], "7d": [], td: [], yd: [] },
+    }));
+
+    await api.dashboard.check();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/admin/dashboard/check");
+    expect(init?.method).toBe("POST");
   });
 
   it("uploads binary bodies with explicit content type", async () => {

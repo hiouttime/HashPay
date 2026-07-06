@@ -1,7 +1,7 @@
 import { Bot, InlineKeyboard, webhookCallback } from "grammy";
 import type { Context as GrammyContext } from "grammy";
 import type { Context } from "hono";
-import { getConfig, now } from "@/server/db";
+import { getConfig, jsonParseObject, now } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { confirmLoginPin } from "@/server/services/auth/pin";
 import { createTelegramOrder } from "@/server/services/orders/create";
@@ -31,22 +31,6 @@ type TelegramPaymentOption = {
   network: string;
 };
 
-type TelegramOrderRef = {
-  createdAt: number;
-  expireAt: number;
-  id: string;
-};
-
-type ReviewOrderRef = {
-  createdAt: number;
-  expireAt: number;
-};
-
-type PaidOrderRef = {
-  expireAt: number;
-  id: string;
-};
-
 export async function createBot(env: AppEnv) {
   const bot = new Bot(botToken(env));
   bot.catch((error) => {
@@ -60,25 +44,24 @@ export async function createBot(env: AppEnv) {
 
   bot.command("start", async (ctx) => {
     const locale = telegramLocale(ctx);
-    const adminId = Number(await getConfig(env, "admin_id"));
-    if (!adminId || ctx.from?.id !== adminId) return;
-    const domain = await getConfig(env, "domain");
-    if (!domain) return;
+    if (!await isAdmin(env, ctx.from?.id)) return;
+    const url = await siteUrl(env, "/admin");
+    if (!url) return;
     await ctx.reply(t(locale, "telegram.start"), {
-      reply_markup: new InlineKeyboard().webApp(t(locale, "telegram.open_app"), `${domain.replace(/\/$/, "")}/admin`),
+      reply_markup: new InlineKeyboard().webApp(t(locale, "telegram.open_app"), url),
     });
   });
 
   bot.command("login", async (ctx) => {
     const locale = telegramLocale(ctx);
-    const adminId = Number(await getConfig(env, "admin_id"));
-    if (!adminId || ctx.from?.id !== adminId) return;
+    const from = ctx.from;
+    if (!from || !await isAdmin(env, from.id)) return;
     const pin = typeof ctx.match === "string" ? ctx.match.trim() : "";
     try {
       await confirmLoginPin(env, pin, {
-        firstName: ctx.from.first_name || "",
-        id: ctx.from.id,
-        lastName: ctx.from.last_name || "",
+        firstName: from.first_name || "",
+        id: from.id,
+        lastName: from.last_name || "",
       });
     } catch {
       await ctx.reply(t(locale, "telegram.login_invalid"));
@@ -93,7 +76,7 @@ export async function createBot(env: AppEnv) {
     await answerCallback(ctx, t(locale, "telegram.checking"));
     try {
       const snapshot = await checkOrderPayment(env, orderId);
-      await editPaidPaymentMessage(ctx, env, renderPaidPaymentText(orderId, snapshot, locale));
+      await editMessage(ctx, paidText(orderId, snapshot, locale), new InlineKeyboard(), await siteUrl(env, "/banner.webp"), "telegram:paid_banner_edit_failed");
     } catch (error) {
       await refreshReviewKeyboardIfNeeded(ctx, env, orderId, locale);
       await answerCallback(ctx, { show_alert: true, text: t(locale, "telegram.not_confirmed") });
@@ -109,37 +92,36 @@ export async function createBot(env: AppEnv) {
   });
 
   bot.callbackQuery(/^payways:(.+)$/, async (ctx) => {
-    const locale = telegramLocale(ctx);
-    const orderId = ctx.match[1];
-    const checkout = await checkoutData(env, orderId);
-    if (checkout.options.length === 0) {
-      await editPaymentMessage(ctx, t(locale, "telegram.no_channels"));
+    await paymentAction(ctx, async (locale) => {
+      const orderId = ctx.match[1];
+      const checkout = await checkoutData(env, orderId);
+      if (checkout.options.length === 0) {
+        await editText(ctx, t(locale, "telegram.no_channels"));
+        await answerCallback(ctx);
+        return;
+      }
+      await editMessage(ctx, payMenuText(checkout.order, locale), assetMenu(orderId, checkout.options), await siteUrl(env, "/banner.webp"));
       await answerCallback(ctx);
-      return;
-    }
-    await editMenuMessage(ctx, env, renderPaymentMenuText(checkout.order, locale), renderAssetMenu(orderId, checkout.options));
-    await answerCallback(ctx);
+    });
   });
 
   bot.callbackQuery(/^payasset:([^:]+):([A-Za-z0-9_-]+)$/, async (ctx) => {
-    const locale = telegramLocale(ctx);
-    const [, orderId, asset] = ctx.match;
-    const checkout = await checkoutData(env, orderId);
-    await editMenuMessage(ctx, env, renderNetworkMenuText(checkout.order, checkout.options, asset, locale), renderNetworkMenu(orderId, checkout.options, asset, locale));
-    await answerCallback(ctx);
+    await paymentAction(ctx, async (locale) => {
+      const [, orderId, asset] = ctx.match;
+      const checkout = await checkoutData(env, orderId);
+      await editMessage(ctx, networkMenuText(checkout.order, checkout.options, asset, locale), networkMenu(orderId, checkout.options, asset, locale), await siteUrl(env, "/banner.webp"));
+      await answerCallback(ctx);
+    });
   });
 
   bot.callbackQuery(/^paynet:([^:]+):([A-Za-z0-9_-]+):([A-Za-z0-9_-]+)$/, async (ctx) => {
-    const locale = telegramLocale(ctx);
-    const [, orderId, asset, network] = ctx.match;
-    try {
+    await paymentAction(ctx, async (locale) => {
+      const [, orderId, asset, network] = ctx.match;
       const snapshot = await selectTelegramPayment(env, orderId, asset, network);
       const order = await getOrder(env, orderId);
-      await editSelectedPaymentMessage(ctx, env, orderId, renderPaymentSnapshotText(order, snapshot, locale), await renderSelectedPaymentKeyboard(env, order, locale), snapshot);
+      await editMessage(ctx, paymentText(order, snapshot, locale), await paymentKeyboard(env, order, locale), await qrUrl(env, orderId, snapshot), "telegram:qr_edit_failed");
       await answerCallback(ctx, t(locale, "telegram.network_selected"));
-    } catch (error) {
-      await answerCallback(ctx, { show_alert: true, text: telegramPaymentErrorText(error, locale) });
-    }
+    });
   });
 
   bot.callbackQuery("noop", async (ctx) => {
@@ -147,10 +129,8 @@ export async function createBot(env: AppEnv) {
   });
 
   bot.on("inline_query", async (ctx) => {
-    const adminId = Number(await getConfig(env, "admin_id"));
     const from = ctx.inlineQuery.from;
-    console.log("telegram:inline_query", { from: from.id, query: ctx.inlineQuery.query });
-    if (!adminId || from.id !== adminId) return;
+    if (!await isAdmin(env, from.id)) return;
     const locale = normalizeLocale(from.language_code);
     const parsed = parseInlinePaymentQuery(ctx.inlineQuery.query);
     if (!parsed) {
@@ -179,13 +159,7 @@ export async function createBot(env: AppEnv) {
   bot.on("chosen_inline_result", async (ctx) => {
     const result = ctx.chosenInlineResult;
     const locale = normalizeLocale(result?.from.language_code);
-    const adminId = Number(await getConfig(env, "admin_id"));
-    console.log("telegram:chosen_inline_result", {
-      from: result?.from.id,
-      hasInlineMessageId: Boolean(result?.inline_message_id),
-      resultId: result?.result_id,
-    });
-    if (!result || !adminId || result.from.id !== adminId || !result.inline_message_id) return;
+    if (!result?.inline_message_id || !await isAdmin(env, result.from.id)) return;
     const parsed = parseInlineResultId(result.result_id);
     if (!parsed) return;
     const { order } = await createTelegramOrder(env, {
@@ -196,10 +170,10 @@ export async function createBot(env: AppEnv) {
     });
     const checkout = await checkoutData(env, order.id);
     if (checkout.options.length === 0) {
-      await editInlinePaymentMessage(ctx, env, result.inline_message_id, t(locale, "telegram.no_channels"));
+      await editInline(ctx, result.inline_message_id, t(locale, "telegram.no_channels"), undefined, await siteUrl(env, "/banner.webp"));
       return;
     }
-    await editInlinePaymentMessage(ctx, env, result.inline_message_id, renderPaymentMenuText(order, locale), renderAssetMenu(order.id, checkout.options));
+    await editInline(ctx, result.inline_message_id, payMenuText(order, locale), assetMenu(order.id, checkout.options), await siteUrl(env, "/banner.webp"));
   });
 
   bot.on("message:text", async (ctx) => {
@@ -236,11 +210,29 @@ function formatInlineAmount(amount: number) {
   return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 }
 
-function renderPaymentMenuText(order: { amount: number; currency: string }, locale: Locale) {
+async function isAdmin(env: AppEnv, userId?: number) {
+  return Boolean(userId && Number(await getConfig(env, "admin_id")) === userId);
+}
+
+async function paymentAction(ctx: GrammyContext, action: (locale: Locale) => Promise<void>) {
+  const locale = telegramLocale(ctx);
+  try {
+    await action(locale);
+  } catch (error) {
+    await answerCallback(ctx, { show_alert: true, text: payError(error, locale) });
+  }
+}
+
+async function siteUrl(env: AppEnv, path: string) {
+  const domain = await getConfig(env, "domain");
+  return domain ? `${domain.replace(/\/$/, "")}${path}` : "";
+}
+
+function payMenuText(order: { amount: number; currency: string }, locale: Locale) {
   return t(locale, "telegram.payment_menu", { amount: formatInlineAmount(order.amount), asset: assetName(order.currency) });
 }
 
-function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
+function assetMenu(orderId: string, options: TelegramPaymentOption[]) {
   const keyboard = new InlineKeyboard();
   for (const asset of paymentAssets(options)) {
     keyboard.text(emojiButton(assetName(asset), paymentAssetTelegramEmojiId(asset)), `payasset:${orderId}:${asset}`).row();
@@ -248,7 +240,7 @@ function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
   return keyboard;
 }
 
-function renderNetworkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale) {
+function networkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale) {
   const targetAsset = key(asset);
   const payAmount = options.find((option) => key(option.asset) === targetAsset)?.amount ?? order.amount;
   return t(locale, "telegram.network_menu", {
@@ -259,7 +251,7 @@ function renderNetworkMenuText(order: { amount: number; currency: string }, opti
   });
 }
 
-function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
+function networkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
   const keyboard = new InlineKeyboard();
   const targetAsset = key(asset);
   const networks = [...new Set(
@@ -284,14 +276,13 @@ function paymentAssets(options: TelegramPaymentOption[]) {
   return [...new Set(options.map((option) => key(option.asset)).filter(Boolean))].sort();
 }
 
-async function renderSelectedPaymentKeyboard(env: AppEnv, order: TelegramOrderRef, locale: Locale) {
+async function paymentKeyboard(env: AppEnv, order: Pick<Order, "createdAt" | "expireAt" | "id">, locale: Locale) {
   const keyboard = new InlineKeyboard()
     .text(t(locale, "telegram.done_button"), `check:${order.id}`)
     .row();
   if (shouldShowReviewButton(order)) {
     keyboard.text(t(locale, "telegram.review_button"), `review:${order.id}`).row();
-    const domain = await getConfig(env, "domain");
-    const url = domain ? `${domain.replace(/\/$/, "")}/pay/${encodeURIComponent(order.id)}` : "";
+    const url = await siteUrl(env, `/pay/${encodeURIComponent(order.id)}`);
     if (url) keyboard.url(t(locale, "telegram.review_link"), url).row();
   }
   return keyboard.text(t(locale, "telegram.change_asset"), `payways:${order.id}`);
@@ -301,30 +292,22 @@ async function refreshReviewKeyboardIfNeeded(ctx: GrammyContext, env: AppEnv, or
   try {
     const order = await getOrder(env, orderId);
     if (!shouldShowReviewButton(order)) return;
-    const snapshot = orderPaymentSnapshot(order.payment);
+    const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
     if (!snapshot.driver) return;
-    await editPaymentMessage(ctx, renderPaymentSnapshotText(order, snapshot, locale), await renderSelectedPaymentKeyboard(env, order, locale));
+    await editText(ctx, paymentText(order, snapshot, locale), await paymentKeyboard(env, order, locale));
   } catch (error) {
     console.warn("telegram:review_keyboard_refresh_failed", error);
   }
 }
 
-function shouldShowReviewButton(order: ReviewOrderRef) {
+function shouldShowReviewButton(order: Pick<Order, "createdAt" | "expireAt">) {
   const createdAt = Number(order.createdAt);
   const expireAt = Number(order.expireAt);
   if (!createdAt || !expireAt || expireAt <= createdAt) return false;
   return now() - createdAt >= (expireAt - createdAt) / 2;
 }
 
-function orderPaymentSnapshot(raw: string) {
-  try {
-    return JSON.parse(raw || "{}") as PaymentSnapshot;
-  } catch {
-    return {} as PaymentSnapshot;
-  }
-}
-
-function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, locale: Locale) {
+function paidText(orderId: string, snapshot: PaymentSnapshot, locale: Locale) {
   const tx = snapshot.tx!;
   const lines = [
     t(locale, "telegram.paid"),
@@ -337,7 +320,7 @@ function renderPaidPaymentText(orderId: string, snapshot: PaymentSnapshot, local
   return lines.join("\n");
 }
 
-function renderPaymentSnapshotText(order: PaidOrderRef, snapshot: PaymentSnapshot, locale: Locale) {
+function paymentText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot, locale: Locale) {
   const exchange = paymentById(snapshot.driver)?.kind === "exchange";
   const address = escapeHtml(snapshot.address ?? "");
   return [
@@ -372,11 +355,12 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;");
 }
 
-function telegramPaymentErrorText(error: unknown, locale: Locale) {
-  if (error instanceof AppError && error.key === "errors.order_paid") return t(locale, "telegram.error.order_paid");
-  if (error instanceof AppError && error.key === "errors.order_unavailable") return t(locale, "telegram.error.order_unavailable");
-  if (error instanceof AppError && error.key === "errors.payment_network_unavailable") return t(locale, "telegram.error.network_unavailable");
-  if (error instanceof AppError && error.key === "errors.payment_disabled") return t(locale, "telegram.error.payment_disabled");
+function payError(error: unknown, locale: Locale) {
+  const errorKey = error instanceof AppError ? error.key : "";
+  if (errorKey === "errors.order_paid") return t(locale, "telegram.error.order_paid");
+  if (errorKey === "errors.order_not_found" || errorKey === "errors.order_unavailable") return t(locale, "telegram.error.order_unavailable");
+  if (errorKey === "errors.payment_network_unavailable") return t(locale, "telegram.error.network_unavailable");
+  if (errorKey === "errors.payment_disabled") return t(locale, "telegram.error.payment_disabled");
   return t(locale, "telegram.error.payment_unavailable");
 }
 
@@ -396,31 +380,26 @@ async function answerCallback(ctx: GrammyContext, options?: string | { show_aler
   }
 }
 
-async function siteBannerUrl(env: AppEnv) {
-  const domain = await getConfig(env, "domain");
-  return domain ? `${domain.replace(/\/$/, "")}/banner.webp` : "";
-}
-
-async function editInlinePaymentMessage(ctx: GrammyContext, env: AppEnv, inlineMessageId: string, text: string, replyMarkup?: InlineKeyboard) {
-  const bannerUrl = await siteBannerUrl(env);
-  if (bannerUrl) {
+async function editInline(ctx: GrammyContext, inlineMessageId: string, text: string, keyboard?: InlineKeyboard, mediaUrl = "") {
+  if (mediaUrl) {
     try {
-      await ctx.api.editMessageMediaInline(
-        inlineMessageId,
-        photoMedia(bannerUrl, text),
-        markup(replyMarkup),
-      );
+      await ctx.api.editMessageMediaInline(inlineMessageId, photoMedia(mediaUrl, text), mediaExtra(keyboard));
       return;
     } catch (error) {
-      console.warn("telegram:inline_banner_edit_failed", error);
+      console.warn("telegram:inline_media_edit_failed", error);
     }
   }
-  await ctx.api.editMessageTextInline(inlineMessageId, text, { parse_mode: "HTML", ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
+  await ctx.api.editMessageTextInline(inlineMessageId, text, textExtra(keyboard));
 }
 
-async function editPaymentMessage(ctx: GrammyContext, text: string, replyMarkup?: InlineKeyboard) {
+async function editMessage(ctx: GrammyContext, text: string, keyboard?: InlineKeyboard, mediaUrl = "", logLabel = "telegram:media_edit_failed") {
+  if (mediaUrl && await editMedia(ctx, mediaUrl, text, keyboard, logLabel)) return;
+  await editText(ctx, text, keyboard);
+}
+
+async function editText(ctx: GrammyContext, text: string, keyboard?: InlineKeyboard) {
   const inlineMessageId = ctx.callbackQuery?.inline_message_id;
-  const extra = html(replyMarkup);
+  const extra = textExtra(keyboard);
   if (inlineMessageId) {
     try {
       await ctx.api.editMessageCaptionInline(inlineMessageId, { caption: text, ...extra });
@@ -443,30 +422,11 @@ async function editPaymentMessage(ctx: GrammyContext, text: string, replyMarkup?
   await ctx.api.editMessageText(message.chat.id, message.message_id, text, extra);
 }
 
-async function editMenuMessage(ctx: GrammyContext, env: AppEnv, text: string, replyMarkup?: InlineKeyboard) {
-  const bannerUrl = await siteBannerUrl(env);
-  if (bannerUrl && await editMediaMessage(ctx, bannerUrl, text, replyMarkup, "telegram:menu_banner_edit_failed")) return;
-  await editPaymentMessage(ctx, text, replyMarkup);
-}
-
-async function editPaidPaymentMessage(ctx: GrammyContext, env: AppEnv, text: string) {
-  const bannerUrl = await siteBannerUrl(env);
-  const clearMarkup = new InlineKeyboard();
-  if (bannerUrl && await editMediaMessage(ctx, bannerUrl, text, clearMarkup, "telegram:paid_banner_edit_failed")) return;
-  await editPaymentMessage(ctx, text, clearMarkup);
-}
-
-async function editSelectedPaymentMessage(ctx: GrammyContext, env: AppEnv, orderId: string, text: string, replyMarkup: InlineKeyboard, snapshot: PaymentSnapshot) {
-  const imageUrl = await orderQrUrl(env, orderId, snapshot);
-  if (imageUrl && await editMediaMessage(ctx, imageUrl, text, replyMarkup, "telegram:qr_edit_failed")) return;
-  await editPaymentMessage(ctx, text, replyMarkup);
-}
-
-async function editMediaMessage(ctx: GrammyContext, mediaUrl: string, text: string, replyMarkup: InlineKeyboard | undefined, logLabel: string) {
+async function editMedia(ctx: GrammyContext, mediaUrl: string, text: string, keyboard: InlineKeyboard | undefined, logLabel: string) {
   const inlineMessageId = ctx.callbackQuery?.inline_message_id;
   if (inlineMessageId) {
     try {
-      await ctx.api.editMessageMediaInline(inlineMessageId, photoMedia(mediaUrl, text), markup(replyMarkup));
+      await ctx.api.editMessageMediaInline(inlineMessageId, photoMedia(mediaUrl, text), mediaExtra(keyboard));
       return true;
     } catch (error) {
       console.warn(`${logLabel}:inline`, error);
@@ -475,7 +435,7 @@ async function editMediaMessage(ctx: GrammyContext, mediaUrl: string, text: stri
   const message = ctx.callbackQuery?.message;
   if (!message) return false;
   try {
-    await ctx.api.editMessageMedia(message.chat.id, message.message_id, photoMedia(mediaUrl, text), markup(replyMarkup));
+    await ctx.api.editMessageMedia(message.chat.id, message.message_id, photoMedia(mediaUrl, text), mediaExtra(keyboard));
     return true;
   } catch (error) {
     console.warn(logLabel, error);
@@ -487,19 +447,18 @@ function photoMedia(media: string, caption: string) {
   return { caption, media, parse_mode: "HTML" as const, type: "photo" as const };
 }
 
-function html(replyMarkup?: InlineKeyboard) {
-  return { parse_mode: "HTML" as const, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) };
+function textExtra(keyboard?: InlineKeyboard) {
+  return { parse_mode: "HTML" as const, ...(keyboard ? { reply_markup: keyboard } : {}) };
 }
 
-function markup(replyMarkup?: InlineKeyboard) {
-  return replyMarkup ? { reply_markup: replyMarkup } : undefined;
+function mediaExtra(keyboard?: InlineKeyboard) {
+  return keyboard ? { reply_markup: keyboard } : undefined;
 }
 
-async function orderQrUrl(env: AppEnv, orderId: string, snapshot: PaymentSnapshot) {
+async function qrUrl(env: AppEnv, orderId: string, snapshot: PaymentSnapshot) {
   if (!snapshot.address?.trim()) return "";
   if (paymentById(snapshot.driver)?.kind === "exchange") return "";
-  const domain = await getConfig(env, "domain");
-  return domain ? `${domain.replace(/\/$/, "")}/order/${encodeURIComponent(orderId)}/qr.png` : "";
+  return siteUrl(env, `/order/${encodeURIComponent(orderId)}/qr.png`);
 }
 
 export async function handleTelegramWebhook(c: Context<HonoEnv>) {

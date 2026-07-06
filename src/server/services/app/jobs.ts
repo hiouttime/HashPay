@@ -12,7 +12,7 @@ export async function runJobs(env: AppEnv, time = new Date()) {
   if (isTopOfHour(time)) await syncMarketRates(env).catch(() => undefined);
   const ts = now();
   await run(env, "UPDATE orders SET status = 'expired', updated_at = ? WHERE status = 'pending' AND expire_at < ?", ts, ts);
-  await checkPendingPayments(env);
+  await checkPendingPayments(env, "error");
   const dueNotify = await all<{ id: number }>(env, "SELECT id FROM notify WHERE status IN ('pending', 'retry') AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 20", ts);
   for (const { id: notifyId } of dueNotify) {
     await env.QUEUE_NOTIFY?.send({ notifyId });

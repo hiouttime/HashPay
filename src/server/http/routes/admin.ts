@@ -6,7 +6,7 @@ import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
 import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "@/server/services/merchants";
 import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
-import { dashboard } from "@/server/services/app";
+import { checkDashboard, dashboard } from "@/server/services/app";
 import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
 import { startSetup } from "@/server/services/app/setup";
 import type { HonoEnv } from "@/server/types/env";
@@ -43,6 +43,7 @@ app.use("*", async (c, next) => {
 
 // Dashboard
 app.get("/dashboard", json((c) => dashboard(c.env)));
+app.post("/dashboard/check", json((c) => checkDashboard(c.env)));
 
 // Payments
 app.get("/payment", json(async (c) => (await listPayments(c.env)).map(publicPayment)));

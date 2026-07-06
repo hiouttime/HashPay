@@ -179,13 +179,17 @@ export async function checkOrderPayment(env: AppEnv, orderId: string) {
   throw new AppError(404, "errors.tx_not_found");
 }
 
-export async function checkPendingPayments(env: AppEnv) {
-  const [orders, channels, settings] = await Promise.all([
-    listPendingPaymentOrders(env, 200),
+export async function checkPendingPayments(env: AppEnv, scope: "all" | "error" = "all") {
+  const orders = await listPendingPaymentOrders(env, 200);
+  if (!orders.length) return;
+  const [channels, settings] = await Promise.all([
     listPayments(env),
     systemSettings(env),
   ]);
-  const channelById = new Map(channels.filter((channel) => channel.status === "enabled").map((channel) => [channel.id, channel]));
+  const channelById = new Map(channels
+    .filter((channel) => channel.status !== "disabled")
+    .filter((channel) => scope === "all" || channel.status === "error")
+    .map((channel) => [channel.id, channel]));
   const groups = new Map<number, Array<{ order: Order; snapshot: PaymentSnapshot }>>();
   for (const order of orders) {
     const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);

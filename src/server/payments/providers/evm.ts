@@ -20,7 +20,7 @@ const chains: Record<string, Chain> = {
   bep20: {
     blockSeconds: 0.4,
     native: "bnb",
-    rpc: "https://bnb.api.onfinality.io/public",
+    rpc: "https://bsc.rpc.blxrbdn.com",
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
   polygon: { blockSeconds: 2, explorer: "https://polygon.blockscout.com", native: "matic" },
