@@ -169,7 +169,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 - 自动检查入口：`checkOrderPayment()` 和 Cron 扫描待支付订单。
 - 浏览器和 Telegram 的“我已完成付款/检查付款”只触发一次服务端查账，不提交或信任浏览器交易候选。
 - 服务端查账：`server/payments/driver.ts` 根据 `snapshot.driver` 派发 provider，并只使用 provider 从链上、交易所或钱包 API 拉取的数据匹配订单。
-- 当前自动查账 provider 包括 TRC20、EVM、TON、Aptos、Binance Pay、OKX；OKPay 主要走回调/创建返回流程。
+- 当前自动查账 provider 包括 TRC20、EVM、TON、Aptos、Solana、Binance Pay、OKX；OKPay 主要走回调/创建返回流程。
 - 交易所查账以收款通道的 `address` 作为 Binance ID / OKX UID，API Key、Secret、Passphrase 等细节放在 `PaymentData` / `credentials` 内。
 - 确认支付统一调用 `markPaid()`，写入 `payment.tx`，更新订单为 `paid`，并创建 notify。
 - 人工确认入口在后台订单详情，`confirmedBy` 为 `admin`。

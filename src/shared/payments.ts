@@ -8,6 +8,7 @@ export type NetworkKey =
   | "okpay"
   | "okx"
   | "polygon"
+  | "solana"
   | "ton"
   | "trc20";
 
@@ -112,6 +113,19 @@ export const aptosAssets: Record<string, TokenAsset> = {
   },
   usdt: {
     contract: "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b",
+    decimals: 6,
+    symbol: "USDT",
+  },
+};
+
+export const solanaAssets: Record<string, TokenAsset> = {
+  usdc: {
+    contract: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    decimals: 6,
+    symbol: "USDC",
+  },
+  usdt: {
+    contract: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     decimals: 6,
     symbol: "USDT",
   },
@@ -261,6 +275,23 @@ export const aptos: Payment = {
   network: "aptos",
 };
 
+export const solana: Payment = {
+  address: {
+    helpKey: "payment.help.solana",
+    nameKey: "payment.address.solana",
+    pattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  },
+  assets: ["usdt", "usdc"],
+  explorer: {
+    transaction: "https://solscan.io/tx/{hash}",
+  },
+  icon: "icon-solana",
+  id: "solana",
+  kind: "chain",
+  nameKey: "network.solana",
+  network: "solana",
+};
+
 export const binance: Payment = {
   address: {
     helpKey: "payment.binance.id_help",
@@ -325,6 +356,7 @@ export const payments: Payment[] = [
   polygon,
   ton,
   aptos,
+  solana,
   binance,
   okx,
   okpay,

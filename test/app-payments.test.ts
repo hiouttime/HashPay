@@ -35,6 +35,7 @@ describe("frontend payment module", () => {
     expect(payment.txUrl({ driver: "trc20", tx: { txid: "abc" } })).toBe("https://tronscan.org/#/transaction/abc");
     expect(payment.txUrl({ driver: "ton", tx: { txid: "abc" } })).toBe("https://tonviewer.com/transaction/abc");
     expect(payment.txUrl({ driver: "aptos", tx: { txid: "123" } })).toBe("https://explorer.aptoslabs.com/txn/123?network=mainnet");
+    expect(payment.txUrl({ driver: "solana", tx: { txid: "sig" } })).toBe("https://solscan.io/tx/sig");
     expect(payment.txUrl({ driver: "base", tx: { txid: "0xabc" } })).toBe("https://basescan.org/tx/0xabc");
   });
 

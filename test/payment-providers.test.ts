@@ -4,7 +4,7 @@ import { validate as validateBinance } from "@/server/payments/providers/binance
 import { validate as validateOkx } from "@/server/payments/providers/okx";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { Order } from "@/server/services/orders/repository";
-import { aptosAssets, evmAssets, tonAssets, trc20Assets } from "@/shared/payments";
+import { aptosAssets, evmAssets, solanaAssets, tonAssets, trc20Assets } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 afterEach(() => {
@@ -189,6 +189,44 @@ describe("Aptos provider", () => {
 
     await expect(checkPayment({
       channel: channel({ address, driver: "aptos" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+});
+
+describe("Solana provider", () => {
+  const address = "9xQeWvG816bUx9EPfM4DRhWSYFxmM2GiwjL6jS6qQW2";
+  const account = "TokenAccount11111111111111111111111111111111";
+  const snapshot = payment({ address, amount: 5.25, currency: "usdc", driver: "solana" });
+
+  it("matches Solana SPL token transfers by mint and token account", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, signature: "solana-paid" }] });
+      if (body.method === "getTransaction") return json({ result: solanaTx({ account }) });
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "solana-paid" }], status: "ok" });
+  });
+
+  it("rejects Solana transfers with a different mint", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, signature: "solana-fake" }] });
+      if (body.method === "getTransaction") return json({ result: solanaTx({ account, mint: solanaAssets.usdt.contract }) });
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [], status: "ok" });
@@ -533,6 +571,27 @@ function aptosTx(input: { address: string; asset?: string }) {
     transaction_timestamp: "1970-01-01T00:02:00Z",
     transaction_version: "12345",
     type: "deposit",
+  };
+}
+
+function solanaTx(input: { account: string; mint?: string }) {
+  return {
+    blockTime: 120,
+    meta: { innerInstructions: [] },
+    transaction: {
+      message: {
+        instructions: [{
+          parsed: {
+            info: {
+              destination: input.account,
+              mint: input.mint ?? solanaAssets.usdc.contract,
+              tokenAmount: { amount: "5250000", decimals: 6, uiAmountString: "5.25" },
+            },
+            type: "transferChecked",
+          },
+        }],
+      },
+    },
   };
 }
 

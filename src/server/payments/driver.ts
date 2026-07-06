@@ -5,6 +5,7 @@ import { check as checkBinance, validate as validateBinance } from "@/server/pay
 import { check as checkEvm } from "@/server/payments/providers/evm";
 import { check as checkOkpay, create as createOkpay } from "@/server/payments/providers/okpay";
 import { check as checkOkx, validate as validateOkx } from "@/server/payments/providers/okx";
+import { check as checkSolana } from "@/server/payments/providers/solana";
 import { check as checkTon } from "@/server/payments/providers/ton";
 import { check as checkTrc20 } from "@/server/payments/providers/trc20";
 import {
@@ -72,6 +73,7 @@ const providers: Partial<Record<string, Provider>> = {
   okpay: { check: checkOkpay },
   okx: { check: checkOkx, scheduled: true, validate: validateOkx },
   polygon: { check: checkEvm, scheduled: true },
+  solana: { check: checkSolana, scheduled: true },
   ton: { check: checkTon, scheduled: true },
   trc20: { check: checkTrc20, scheduled: true },
 };

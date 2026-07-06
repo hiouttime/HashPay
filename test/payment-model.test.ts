@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assignPayment, paymentExplorerUrl, paymentOptions, payments, validateChannel } from "@/server/payments/driver";
-import { assetName, networkLabel, key, paymentById } from "@/shared/payments";
+import { assetName, networkLabel, key, paymentById, solanaAssets } from "@/shared/payments";
 
 describe("payment model", () => {
   it("keeps TON as network and gram as the payment asset", () => {
@@ -151,6 +151,34 @@ describe("payment model", () => {
     ]);
     expect(() => validateChannel({ address: "0x1", assets: ["usdt"], driver: "aptos" })).toThrow("errors.payment_address_invalid");
     expect(() => validateChannel({ address, assets: ["apt"], driver: "aptos" })).toThrow("errors.payment_asset_invalid");
+  });
+
+  it("supports Solana USDT and USDC payments", () => {
+    const address = "9xQeWvG816bUx9EPfM4DRhWSYFxmM2GiwjL6jS6qQW2";
+    expect(paymentById("solana")).toMatchObject({
+      address: { nameKey: "payment.address.solana" },
+      assets: ["usdt", "usdc"],
+      icon: "icon-solana",
+    });
+    expect(paymentOptions({
+      address,
+      assets: ["usdt", "usdc", "sol"],
+      createdAt: 1,
+      data: {},
+      driver: "solana",
+      id: 12,
+      name: "Solana",
+      status: "enabled",
+      updatedAt: 1,
+    })).toEqual([
+      { asset: "usdt", channelId: 12, network: "solana" },
+      { asset: "usdc", channelId: 12, network: "solana" },
+    ]);
+    expect(() => validateChannel({ address: "0x1", assets: ["usdt"], driver: "solana" })).toThrow("errors.payment_address_invalid");
+    expect(() => validateChannel({ address, assets: ["sol"], driver: "solana" })).toThrow("errors.payment_asset_invalid");
+    expect(paymentExplorerUrl("solana", "sig")).toBe("https://solscan.io/tx/sig");
+    expect(solanaAssets.usdc.contract).toBe("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+    expect(solanaAssets.usdt.contract).toBe("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB");
   });
 
   it("supports Base as an EVM payment driver", () => {

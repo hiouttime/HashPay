@@ -49,6 +49,7 @@ HashPay 是一款运行在 Cloudflare Wokers 上的加密货币收款网关。
 | 链上网络 | Polygon | USDT、USDC、MATIC |
 | 链上网络 | TON | USDT、GRAM |
 | 链上网络 | Aptos | USDT、USDC |
+| 链上网络 | Solana | USDT、USDC |
 | 交易所 | Binance 币安 | USDT、USDC |
 | 交易所 | 欧易 OKX | USDT、USDC |
 | 钱包 | OKPay | USDT、TRX |
