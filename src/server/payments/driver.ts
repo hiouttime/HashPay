@@ -117,7 +117,7 @@ export async function validateData(driver: string, address: string, data: Record
   await providers[driver]?.validate?.({ address, data });
 }
 
-export function checkPayment(input: PaymentCheckInput) {
+export function checkPayment(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   const driver = input.orders[0]?.snapshot.driver;
   if (!driver) return Promise.resolve({ matches: [], status: "ok" } satisfies PaymentCheckResult);
   byId(driver);

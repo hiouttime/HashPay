@@ -16,6 +16,13 @@ const trc20Snapshot: PaymentSnapshot = {
   driver: "trc20",
 };
 
+const bscSnapshot: PaymentSnapshot = {
+  address: "0x78235da44022c614cbf25a26200cca47e2a61752",
+  amount: 0.01,
+  currency: "usdt",
+  driver: "bep20",
+};
+
 describe("checkout payment selection", () => {
   it("bumps the payable amount when an active order already uses the same amount", async () => {
     const env = checkoutEnv();
@@ -64,6 +71,20 @@ describe("checkout payment check", () => {
     await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.order_unavailable" });
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns provider error details on manual checks", async () => {
+    const env = checkoutEnv({
+      currentPayment: bscSnapshot,
+      includeExisting: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({
+      key: "errors.payment_check_failed",
+      params: { detail: expect.stringContaining("HTTP 502 bad gateway") },
+      status: 502,
+    });
   });
 
   it("does not create duplicate notifications when the paid update loses a race", async () => {
@@ -172,7 +193,7 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: bool
     updatedPayment: "",
     DB: db({
       all(sql, values) {
-        if (sql.includes("FROM payments")) return [paymentRow(ts)];
+        if (sql.includes("FROM payments")) return [paymentRow(ts, options.currentPayment ?? trc20Snapshot)];
         if (sql.includes("FROM orders WHERE status = 'pending'")) {
           const [currentTime, payway, orderId] = values;
           return Array.from(orders.values())
@@ -306,15 +327,15 @@ function orderFromRow(row: Record<string, unknown>) {
   };
 }
 
-function paymentRow(ts: number) {
+function paymentRow(ts: number, payment: PaymentSnapshot = trc20Snapshot) {
   return {
-    address: trc20Snapshot.address,
-    assets: JSON.stringify(["usdt"]),
+    address: payment.address,
+    assets: JSON.stringify([payment.currency]),
     createdAt: ts,
     credentials: "{}",
-    driver: "trc20",
+    driver: payment.driver,
     id: 1,
-    name: "TRON",
+    name: payment.driver,
     status: "enabled",
     updatedAt: ts,
   };

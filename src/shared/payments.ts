@@ -58,16 +58,24 @@ export interface Payment {
   kind: PaymentKind;
   nameKey: string;
   network: string;
+  telegramEmojiId?: string;
 }
 
-export const paymentAssets: Record<PaymentAssetKey, { icon: string; name: string; symbol: string }> = {
+export interface PaymentAsset {
+  icon: string;
+  name: string;
+  symbol: string;
+  telegramEmojiId?: string;
+}
+
+export const paymentAssets: Record<PaymentAssetKey, PaymentAsset> = {
   bnb: { icon: "icon-bnb", name: "BNB", symbol: "BNB" },
-  eth: { icon: "icon-ethereum", name: "ETH", symbol: "ETH" },
+  eth: { icon: "icon-ethereum", name: "ETH", symbol: "ETH", telegramEmojiId: "6221781623185088657" },
   gram: { icon: "icon-ton", name: "GRAM (ex TON)", symbol: "GRAM" },
   matic: { icon: "icon-polygon", name: "MATIC", symbol: "MATIC" },
   trx: { icon: "icon-tron", name: "TRX", symbol: "TRX" },
-  usdc: { icon: "icon-usdc", name: "USDC", symbol: "USDC" },
-  usdt: { icon: "icon-usdt", name: "USDT", symbol: "USDT" },
+  usdc: { icon: "icon-usdc", name: "USDC", symbol: "USDC", telegramEmojiId: "6222075845624734726" },
+  usdt: { icon: "icon-usdt", name: "USDT", symbol: "USDT", telegramEmojiId: "6222280715564752360" },
 };
 
 export const trc20Assets: Record<string, Trc20Asset> = {
@@ -167,6 +175,7 @@ export const trc20: Payment = {
   kind: "chain",
   nameKey: "network.trc20",
   network: "trc20",
+  telegramEmojiId: "6221973857331323093",
 };
 
 export const erc20: Payment = {
@@ -185,6 +194,7 @@ export const erc20: Payment = {
   kind: "chain",
   nameKey: "network.erc20",
   network: "erc20",
+  telegramEmojiId: "6221781623185088657",
 };
 
 export const base: Payment = {
@@ -221,6 +231,7 @@ export const bep20: Payment = {
   kind: "chain",
   nameKey: "network.bep20",
   network: "bep20",
+  telegramEmojiId: "6221954916525558708",
 };
 
 export const polygon: Payment = {
@@ -256,6 +267,7 @@ export const ton: Payment = {
   kind: "chain",
   nameKey: "network.ton",
   network: "ton",
+  telegramEmojiId: "6222235515328928786",
 };
 
 export const aptos: Payment = {
@@ -290,6 +302,7 @@ export const solana: Payment = {
   kind: "chain",
   nameKey: "network.solana",
   network: "solana",
+  telegramEmojiId: "6221755831906475362",
 };
 
 export const binance: Payment = {
@@ -312,6 +325,7 @@ export const binance: Payment = {
   kind: "exchange",
   nameKey: "network.binance",
   network: "binance",
+  telegramEmojiId: "6222038930380823799",
 };
 
 export const okx: Payment = {
@@ -331,6 +345,7 @@ export const okx: Payment = {
   kind: "exchange",
   nameKey: "network.okx",
   network: "okx",
+  telegramEmojiId: "6224164522580516460",
 };
 
 export const okpay: Payment = {
@@ -389,4 +404,13 @@ export function paymentExplorerUrl(network: unknown, hash: unknown) {
 
 export function paymentAssetIcon(asset: unknown) {
   return assetInfo(asset)?.icon ?? "";
+}
+
+export function paymentAssetTelegramEmojiId(asset: unknown) {
+  return assetInfo(asset)?.telegramEmojiId ?? "";
+}
+
+export function paymentNetworkTelegramEmojiId(network: unknown) {
+  const value = key(network);
+  return (paymentByNetwork(value) ?? paymentById(value))?.telegramEmojiId ?? paymentAssets.eth.telegramEmojiId ?? "";
 }

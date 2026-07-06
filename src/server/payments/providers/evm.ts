@@ -8,9 +8,20 @@ import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-const chains: Record<string, { blockSeconds: number; explorer?: string; native: string; rpc?: string }> = {
+type Chain = {
+  blockSeconds: number;
+  explorer?: string;
+  native: string;
+  rpc?: string;
+};
+
+const chains: Record<string, Chain> = {
   base: { blockSeconds: 2, explorer: "https://base.blockscout.com", native: "eth" },
-  bep20: { blockSeconds: 3, native: "bnb", rpc: "https://bsc-dataseed.binance.org" },
+  bep20: {
+    blockSeconds: 0.4,
+    native: "bnb",
+    rpc: "https://bnb.api.onfinality.io/public",
+  },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
   polygon: { blockSeconds: 2, explorer: "https://polygon.blockscout.com", native: "matic" },
 };
@@ -37,7 +48,8 @@ async function scan(input: PaymentCheckInput) {
   const assets = Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)));
   const txs = [];
   for (const asset of assets) {
-    txs.push(...(chain.explorer ? await blockscout(chain.explorer, address, asset, network) : await rpcScan(chain, address, asset, network, from)));
+    if (chain.explorer) txs.push(...await blockscout(chain.explorer, address, asset, network));
+    else txs.push(...await rpcScan(chain, address, asset, network, from));
   }
   return txs;
 }
@@ -75,15 +87,15 @@ async function blockscout(baseUrl: string, address: string, asset: string, netwo
   });
 }
 
-async function rpcScan(chain: { blockSeconds: number; native: string; rpc?: string }, address: string, asset: string, network: string, createdAt: number) {
+async function rpcScan(chain: Chain, address: string, asset: string, network: string, createdAt: number) {
   const token = evmAssets[network]?.[asset];
   return token ? tokenLogs(chain, address, asset, token.contract, token.decimals, createdAt) : [];
 }
 
-async function tokenLogs(chain: { blockSeconds: number; rpc?: string }, address: string, asset: string, contract: string, decimals: number, createdAt: number) {
+async function tokenLogs(chain: Chain, address: string, asset: string, contract: string, decimals: number, createdAt: number) {
   const latest = Number.parseInt(await rpc<string>(chain, "eth_blockNumber", []), 16);
   const checkedAt = Math.floor(Date.now() / 1000);
-  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / chain.blockSeconds));
+  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / chain.blockSeconds) - 1000);
   const logs = await rpc<Array<Record<string, unknown>>>(chain, "eth_getLogs", [{
     address: contract,
     fromBlock: hex(fromBlock),
@@ -119,15 +131,19 @@ async function json<T>(url: string) {
   return res.json() as Promise<T>;
 }
 
-async function rpc<T>(chain: { rpc?: string }, method: string, params: unknown[]) {
+async function rpc<T>(chain: Chain, method: string, params: unknown[]) {
   if (!chain.rpc) throw new Error("RPC is not configured");
   const res = await fetch(chain.rpc, {
     body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const payload = await res.json() as { error?: { message?: string }; result?: T };
-  if (payload.error || payload.result === undefined) throw new Error(payload.error?.message ?? "RPC response is invalid");
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${host(chain.rpc)} ${method}: HTTP ${res.status} ${reason(text || res.statusText)}`.trim());
+  const payload = parseRpc<T>(text, chain.rpc, method);
+  if (payload.error || payload.result === undefined) {
+    throw new Error(`${host(chain.rpc)} ${method}: ${reason(payload.error?.message ?? "RPC response is invalid")}`);
+  }
   return payload.result;
 }
 
@@ -146,18 +162,34 @@ function contract(raw: unknown) {
   return row.contract ?? row.address ?? row.contractAddress ?? token?.address_hash ?? "";
 }
 
-function hex(value: number) {
-  return `0x${value.toString(16)}`;
-}
-
 function lower(value: unknown) {
   return String(value ?? "").toLowerCase();
+}
+
+function parseRpc<T>(text: string, url: string, method: string) {
+  try {
+    return JSON.parse(text || "{}") as { error?: { message?: string }; result?: T };
+  } catch {
+    throw new Error(`${host(url)} ${method}: invalid JSON ${reason(text)}`);
+  }
+}
+
+function reason(value: unknown) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function time(value: unknown) {
   return Math.floor(Date.parse(String(value)) / 1000);
 }
 
+function hex(value: number) {
+  return `0x${value.toString(16)}`;
+}
+
 function topicAddress(address: string) {
   return `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
+}
+
+function host(url: string) {
+  return new URL(url).host;
 }

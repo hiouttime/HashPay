@@ -121,7 +121,7 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xbase-paid" }], status: "ok" });
   });
 
-  it("checks BSC token payments through RPC without block timestamp calls", async () => {
+  it("checks BSC token payments through public RPC", async () => {
     const now = Math.floor(Date.now() / 1000);
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
@@ -142,6 +142,25 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "bsc-order", txid: "0xbsc-paid" }], status: "ok" });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns readable BSC RPC errors", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+
+    const result = await checkPayment({
+      channel: channel({ address, driver: "bep20", id: 5, name: "BSC" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: 0.01, driver: "bep20" }), {
+        createdAt: now - 10,
+        expireAt: now + 100,
+        id: "bsc-order",
+      })],
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("eth_blockNumber");
+    expect(result.error).toContain("HTTP 502 bad gateway");
   });
 });
 

@@ -13,7 +13,7 @@ export function createApp() {
 
   app.onError((error, c) => {
     const { body, status } = errorBody(error);
-    if (status === 500) console.error(error);
+    if (status >= 500) console.error(error);
     return c.json(body, status as never);
   });
   app.use("*", async (c, next) => {

@@ -25,7 +25,7 @@ export async function createMerchantOrder(env: AppEnv, merchant: Merchant, input
   });
 }
 
-export async function createTelegramOrder(env: AppEnv, input: { amount: number; currency?: string; description?: string; orderNo?: string }) {
+export async function createTelegramOrder(env: AppEnv, input: { amount: number; currency?: string; description?: string; timestamp: string }) {
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new AppError(400, "errors.amount_invalid");
   const settings = await systemSettings(env);
@@ -35,7 +35,7 @@ export async function createTelegramOrder(env: AppEnv, input: { amount: number; 
     currency: String(input.currency || "USDT").trim().toUpperCase(),
     description: String(input.description || "").trim() || null,
     merchant: "INLINE",
-    merchantNo: String(input.orderNo || "").trim() || `telegram-${now()}-${crypto.randomUUID().slice(0, 8)}`,
+    merchantNo: input.timestamp.trim(),
     redirectUrl: null,
     timeout: settings.timeout,
   });

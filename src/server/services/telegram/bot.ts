@@ -10,7 +10,14 @@ import { getOrder } from "@/server/services/orders/repository";
 import { botToken } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
 import { timingSafeEqualString } from "@/server/utils/crypto";
-import { assetName, networkLabel, key, paymentById } from "@/shared/payments";
+import {
+  assetName,
+  networkLabel,
+  key,
+  paymentAssetTelegramEmojiId,
+  paymentById,
+  paymentNetworkTelegramEmojiId,
+} from "@/shared/payments";
 import { paymentExplorerUrl } from "@/server/payments/driver";
 import { normalizeLocale, t, type Locale } from "@/shared/i18n";
 import { ceilAmount } from "@/shared/amount";
@@ -185,7 +192,7 @@ export async function createBot(env: AppEnv) {
       amount: parsed.amount,
       currency: parsed.currency,
       description: t(locale, "telegram.inline_order_desc"),
-      orderNo: `inline:${result.inline_message_id}`,
+      timestamp: parsed.timestamp,
     });
     const checkout = await checkoutData(env, order.id);
     if (checkout.options.length === 0) {
@@ -219,10 +226,10 @@ function parseInlinePaymentQuery(query: string) {
 
 function parseInlineResultId(resultId: string) {
   const parts = resultId.split(":");
-  if (parts.length < 3 || parts[0] !== "pay") return null;
+  if (parts.length < 4 || parts[0] !== "pay" || !parts[3]) return null;
   const amount = Number(parts[1]);
   if (!Number.isFinite(amount) || amount <= 0) return null;
-  return { amount, currency: (parts[2] || "USDT").toUpperCase() };
+  return { amount, currency: (parts[2] || "USDT").toUpperCase(), timestamp: parts[3] };
 }
 
 function formatInlineAmount(amount: number) {
@@ -236,7 +243,7 @@ function renderPaymentMenuText(order: { amount: number; currency: string }, loca
 function renderAssetMenu(orderId: string, options: TelegramPaymentOption[]) {
   const keyboard = new InlineKeyboard();
   for (const asset of paymentAssets(options)) {
-    keyboard.text(assetName(asset), `payasset:${orderId}:${asset}`).row();
+    keyboard.text(emojiButton(assetName(asset), paymentAssetTelegramEmojiId(asset)), `payasset:${orderId}:${asset}`).row();
   }
   return keyboard;
 }
@@ -262,10 +269,15 @@ function renderNetworkMenu(orderId: string, options: TelegramPaymentOption[], as
       .filter(Boolean),
   )].sort((a, b) => t(locale, networkLabel(a)).localeCompare(t(locale, networkLabel(b))));
   for (const network of networks) {
-    keyboard.text(t(locale, networkLabel(network)), `paynet:${orderId}:${targetAsset}:${network}`).row();
+    const label = t(locale, networkLabel(network));
+    keyboard.text(emojiButton(label, paymentNetworkTelegramEmojiId(network)), `paynet:${orderId}:${targetAsset}:${network}`).row();
   }
   keyboard.text(t(locale, "telegram.reselect_asset"), `payways:${orderId}`);
   return keyboard;
+}
+
+function emojiButton(text: string, emojiId: string) {
+  return emojiId ? { icon_custom_emoji_id: emojiId, text } : text;
 }
 
 function paymentAssets(options: TelegramPaymentOption[]) {

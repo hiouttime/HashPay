@@ -145,7 +145,7 @@ export function publicOrder(order: Order): ApiOrder {
     expireAt: order.expireAt,
     id: order.id,
     merchantId: order.merchant,
-    merchantNo: order.merchantNo,
+    merchantNo: order.merchant === "INLINE" ? "" : order.merchantNo,
     paidAt: order.paidAt,
     payment,
     payway: order.payway ? { id: order.payway, name: order.channelName ?? null } : null,

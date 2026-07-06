@@ -173,7 +173,7 @@ export async function checkOrderPayment(env: AppEnv, orderId: string) {
     orders: [checkOrder(order, snapshot)],
   });
   if (order.payway) await recordCheck(env, order.payway, result);
-  if (result.status === "error") throw new AppError(502, "errors.payment_check_failed");
+  if (result.status === "error") throw new AppError(502, "errors.payment_check_failed", { detail: result.error ?? "unknown" });
   const match = result.matches.find((item) => item.orderId === order.id);
   if (match) return markPaid(env, order, { timestamp: match.time, txid: match.txid });
   throw new AppError(404, "errors.tx_not_found");

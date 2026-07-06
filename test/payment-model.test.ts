@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { assignPayment, paymentExplorerUrl, paymentOptions, payments, validateChannel } from "@/server/payments/driver";
-import { assetName, networkLabel, key, paymentById, solanaAssets } from "@/shared/payments";
+import {
+  assetName,
+  networkLabel,
+  key,
+  paymentAssetTelegramEmojiId,
+  paymentById,
+  paymentNetworkTelegramEmojiId,
+  solanaAssets,
+} from "@/shared/payments";
 
 describe("payment model", () => {
   it("keeps TON as network and gram as the payment asset", () => {
@@ -67,6 +75,21 @@ describe("payment model", () => {
       icon: "icon-tron",
     });
     expect(paymentExplorerUrl("trc20", "abc")).toBe("https://tronscan.org/#/transaction/abc");
+  });
+
+  it("keeps Telegram custom emoji IDs in payment definitions", () => {
+    expect(paymentAssetTelegramEmojiId("USDT")).toBe("6222280715564752360");
+    expect(paymentAssetTelegramEmojiId("USDC")).toBe("6222075845624734726");
+    expect(paymentAssetTelegramEmojiId("ETH")).toBe("6221781623185088657");
+    expect(paymentAssetTelegramEmojiId("bnb")).toBe("");
+    expect(paymentNetworkTelegramEmojiId("trc20")).toBe("6221973857331323093");
+    expect(paymentNetworkTelegramEmojiId("binance")).toBe("6222038930380823799");
+    expect(paymentNetworkTelegramEmojiId("okx")).toBe("6224164522580516460");
+    expect(paymentNetworkTelegramEmojiId("TON")).toBe("6222235515328928786");
+    expect(paymentNetworkTelegramEmojiId("solana")).toBe("6221755831906475362");
+    expect(paymentNetworkTelegramEmojiId("bep20")).toBe("6221954916525558708");
+    expect(paymentNetworkTelegramEmojiId("base")).toBe("6221781623185088657");
+    expect(paymentNetworkTelegramEmojiId("unknown")).toBe("6221781623185088657");
   });
 
   it("uses Binance ID as the address and keeps API details in data", () => {
