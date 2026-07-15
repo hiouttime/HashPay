@@ -1,5 +1,6 @@
 import { key, trc20Assets } from "@/shared/payments";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson } from "@/server/utils/http";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -7,19 +8,17 @@ import { sameAmount } from "@/shared/amount";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const txs = await scan(input);
-    return {
-      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "TRC20 check failed", matches: [], status: "error" };
-  }
+export async function check(channel: PaymentChannel) {
+  const result = await fetchJson<{ data?: unknown[] }>(`https://api.trongrid.io/v1/accounts/${encodeURIComponent(channel.address)}`);
+  if (!Array.isArray(result.data)) throw new Error("TronGrid response is invalid");
 }
 
-async function scan(input: PaymentCheckInput) {
+export async function scan(input: PaymentCheckInput) {
+  const txs = await transactions(input);
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+}
+
+async function transactions(input: PaymentCheckInput) {
   const address = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
   const from = Math.min(...input.orders.map((order) => order.createdAt));
   const assets = Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)));

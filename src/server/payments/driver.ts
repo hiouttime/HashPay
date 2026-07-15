@@ -1,13 +1,13 @@
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
-import { check as checkAptos } from "@/server/payments/providers/aptos";
-import { check as checkBinance, validate as validateBinance } from "@/server/payments/providers/binance";
-import { check as checkEvm } from "@/server/payments/providers/evm";
-import { check as checkOkpay, create as createOkpay } from "@/server/payments/providers/okpay";
-import { check as checkOkx, validate as validateOkx } from "@/server/payments/providers/okx";
-import { check as checkSolana } from "@/server/payments/providers/solana";
-import { check as checkTon } from "@/server/payments/providers/ton";
-import { check as checkTrc20 } from "@/server/payments/providers/trc20";
+import { check as checkAptos, scan as scanAptos } from "@/server/payments/providers/aptos";
+import { check as checkBinance, scan as scanBinance } from "@/server/payments/providers/binance";
+import { check as checkEvm, scan as scanEvm } from "@/server/payments/providers/evm";
+import { check as checkOkpay, create as createOkpay, scan as scanOkpay } from "@/server/payments/providers/okpay";
+import { check as checkOkx, scan as scanOkx } from "@/server/payments/providers/okx";
+import { check as checkSolana, scan as scanSolana } from "@/server/payments/providers/solana";
+import { check as checkTon, scan as scanTon } from "@/server/payments/providers/ton";
+import { check as checkTrc20, scan as scanTrc20 } from "@/server/payments/providers/trc20";
 import {
   defaultPayment,
   evmPayments,
@@ -43,10 +43,13 @@ export interface PaymentCheckOrder {
   snapshot: PaymentSnapshot;
 }
 
-export interface PaymentCheckResult {
+export interface CheckResult {
   error?: string;
-  matches: PaymentCheckMatch[];
   status: "error" | "ok";
+}
+
+export interface PaymentCheckResult extends CheckResult {
+  matches: PaymentCheckMatch[];
 }
 
 export interface PaymentCheckMatch {
@@ -55,27 +58,29 @@ export interface PaymentCheckMatch {
   txid?: string;
 }
 
-type Check = (input: PaymentCheckInput) => Promise<PaymentCheckResult>;
+type Check = (channel: PaymentChannel) => Promise<void>;
+type Scan = (input: PaymentCheckInput) => Promise<PaymentCheckMatch[]>;
 type Create = (channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) => Promise<PaymentSnapshot>;
 type Validate = (input: { address: string; data: Record<string, string> }) => Promise<void>;
 type Provider = {
   check: Check;
+  scan: Scan;
   scheduled?: true;
   validate?: Validate;
 };
 
-const providers: Partial<Record<string, Provider>> = {
-  aptos: { check: checkAptos, scheduled: true },
-  base: { check: checkEvm, scheduled: true },
-  bep20: { check: checkEvm, scheduled: true },
-  binance: { check: checkBinance, scheduled: true, validate: validateBinance },
-  erc20: { check: checkEvm, scheduled: true },
-  okpay: { check: checkOkpay },
-  okx: { check: checkOkx, scheduled: true, validate: validateOkx },
-  polygon: { check: checkEvm, scheduled: true },
-  solana: { check: checkSolana, scheduled: true },
-  ton: { check: checkTon, scheduled: true },
-  trc20: { check: checkTrc20, scheduled: true },
+const providers: Record<string, Provider> = {
+  aptos: { check: checkAptos, scan: scanAptos, scheduled: true },
+  base: { check: checkEvm, scan: scanEvm, scheduled: true },
+  bep20: { check: checkEvm, scan: scanEvm, scheduled: true },
+  binance: { check: checkBinance, scan: scanBinance, scheduled: true, validate: checkBinance },
+  erc20: { check: checkEvm, scan: scanEvm, scheduled: true },
+  okpay: { check: checkOkpay, scan: scanOkpay },
+  okx: { check: checkOkx, scan: scanOkx, scheduled: true, validate: checkOkx },
+  polygon: { check: checkEvm, scan: scanEvm, scheduled: true },
+  solana: { check: checkSolana, scan: scanSolana, scheduled: true },
+  ton: { check: checkTon, scan: scanTon, scheduled: true },
+  trc20: { check: checkTrc20, scan: scanTrc20, scheduled: true },
 };
 
 const creators: Partial<Record<string, Create>> = {
@@ -113,25 +118,42 @@ export function createPayment(channel: PaymentChannel, order: Order, snapshot: P
 }
 
 export async function validateData(driver: string, address: string, data: Record<string, string>) {
-  byId(driver);
-  await providers[driver]?.validate?.({ address, data });
+  await providers[byId(driver).id].validate?.({ address, data });
 }
 
-export function checkPayment(input: PaymentCheckInput): Promise<PaymentCheckResult> {
+export async function checkChannel(channel: PaymentChannel): Promise<CheckResult> {
+  const provider = providers[byId(channel.driver).id];
+  try {
+    await provider.check(channel);
+    return { status: "ok" };
+  } catch (error) {
+    return { error: errorText(error), status: "error" };
+  }
+}
+
+export async function checkPayment(input: PaymentCheckInput): Promise<PaymentCheckResult> {
   const driver = input.orders[0]?.snapshot.driver;
-  if (!driver) return Promise.resolve({ matches: [], status: "ok" } satisfies PaymentCheckResult);
-  byId(driver);
-  return providers[driver]?.check(input) ?? Promise.resolve({ matches: [], status: "ok" });
+  if (!driver) return { matches: [], status: "ok" };
+  try {
+    return { matches: await providers[byId(driver).id].scan(input), status: "ok" };
+  } catch (error) {
+    return { error: errorText(error), matches: [], status: "error" };
+  }
 }
 
 export function checksOnSchedule(driver: string) {
-  return providers[driver]?.scheduled === true;
+  return providers[byId(driver).id].scheduled === true;
 }
 
 function byId(id: string) {
   const payment = paymentById(id);
   if (!payment) throw new AppError(400, "errors.payment_driver_invalid");
   return payment;
+}
+
+function errorText(error: unknown) {
+  const detail = error instanceof AppError ? error.params.detail : undefined;
+  return String(detail ?? (error instanceof Error ? error.message : "Payment check failed"));
 }
 
 function address(payment: Payment, raw: string) {

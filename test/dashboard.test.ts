@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "@/server/types/env";
 
 vi.mock("@/server/payments/channels", () => ({
+  checkChannels: vi.fn(),
   listPayments: vi.fn(async () => []),
   paymentHealth: vi.fn(),
 }));

@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson, fetchText, host, reason } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
@@ -27,19 +28,22 @@ const chains: Record<string, Chain> = {
   polygon: { blockSeconds: 2, explorer: "https://polygon.blockscout.com", native: "matic" },
 };
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const txs = await scan(input);
-    return {
-      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "EVM check failed", matches: [], status: "error" };
+export async function check(channel: PaymentChannel) {
+  const chain = chains[key(channel.driver)];
+  if (!chain) throw new Error("EVM network is not configured");
+  if (!chain.explorer) {
+    await rpc(chain, "eth_blockNumber", []);
+    return;
   }
+  await json<Record<string, unknown>>(`${chain.explorer}/api/v2/addresses/${channel.address}`);
 }
 
-async function scan(input: PaymentCheckInput) {
+export async function scan(input: PaymentCheckInput) {
+  const txs = await transactions(input);
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+}
+
+async function transactions(input: PaymentCheckInput) {
   const first = input.orders[0]?.snapshot;
   const network = key(first?.driver);
   const chain = chains[network];

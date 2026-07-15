@@ -169,24 +169,12 @@ describe("scheduled checkout payment checks", () => {
     expect(env.paymentChecks).toBe(1);
   });
 
-  it("rechecks errored payment channels", async () => {
+  it("does not scan errored payment channels", async () => {
     const env = scheduledCheckEnv("error");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      data: [trc20Tx({ hash: "tx-a", value: "10000000" })],
-    }))));
-
-    await checkPendingPayments(env);
-
-    expect(env.paidOrders).toEqual(new Set(["order-a"]));
-    expect(env.paymentChecks).toBe(1);
-  });
-
-  it("skips healthy channels when only errored channels should be checked", async () => {
-    const env = scheduledCheckEnv("enabled");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    await checkPendingPayments(env, "error");
+    await checkPendingPayments(env);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(env.paymentChecks).toBe(0);

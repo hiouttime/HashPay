@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText, host, reason } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
@@ -8,19 +9,18 @@ import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
 const endpoint = "https://public.rpc.solanavibestation.com/";
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const txs = await scan(input);
-    return {
-      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Solana check failed", matches: [], status: "error" };
-  }
+export async function check(channel: PaymentChannel) {
+  const token = channel.assets.map((asset) => solanaAssets[key(asset)]).find(Boolean);
+  if (!token) throw new Error("Solana asset is not configured");
+  await tokenAccounts(channel.address, token.contract, "finalized");
 }
 
-async function scan(input: PaymentCheckInput) {
+export async function scan(input: PaymentCheckInput) {
+  const txs = await transactions(input);
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+}
+
+async function transactions(input: PaymentCheckInput) {
   const owner = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
   if (!owner) return [];
   const createdAt = Math.min(...input.orders.map((order) => order.createdAt));

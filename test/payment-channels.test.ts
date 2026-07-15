@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/server/http/api";
-import { savePayment } from "@/server/payments/channels";
+import { checkChannels, savePayment } from "@/server/payments/channels";
 import { decryptSecret } from "@/server/utils/crypto";
 import type { AppEnv } from "@/server/types/env";
 
@@ -44,6 +44,26 @@ describe("payment channels", () => {
   it("rejects plaintext stored credentials", async () => {
     await expect(decryptSecret(envWithPayments(), "{\"secretKey\":\"plain\"}")).rejects.toMatchObject(new AppError(500, "errors.payment_credential_invalid"));
   });
+
+  it("checks and recovers channels without orders", async () => {
+    const env = envWithPayments();
+    await savePayment(env, {
+      address: "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
+      assets: ["usdt"],
+      driver: "trc20",
+      name: "TRON",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+
+    await checkChannels(env);
+
+    expect(env.status()).toBe("error");
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [] })));
+
+    await checkChannels(env, "error");
+
+    expect(env.status()).toBe("enabled");
+  });
 });
 
 function envWithPayments() {
@@ -59,7 +79,7 @@ function envWithPayments() {
             return this;
           },
           async all() {
-            return { results: [] };
+            return { results: row ? [row] : [] };
           },
           async first() {
             return sql.includes("FROM payments WHERE id = ?") ? row : null;
@@ -78,13 +98,18 @@ function envWithPayments() {
                 updatedAt: values[7],
               };
             }
+            if (sql.startsWith("UPDATE payments SET status = CASE") && row) {
+              row.status = row.status === "disabled" ? "disabled" : values[0] ? "error" : "enabled";
+              row.updatedAt = values[1];
+            }
             return { meta: { last_row_id: 1 } };
           },
         };
       },
     },
+    status: () => String(row?.status ?? ""),
     storedCredentials: () => String(row?.credentials ?? ""),
-  } as unknown as AppEnv & { storedCredentials(): string };
+  } as unknown as AppEnv & { status(): string; storedCredentials(): string };
 }
 
 function json(body: unknown) {

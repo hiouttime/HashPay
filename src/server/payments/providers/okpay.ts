@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { fetchJson } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
@@ -29,26 +29,26 @@ export async function create(channel: PaymentChannel, order: Order, snapshot: Pa
   };
 }
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const channel = input.channel;
-    if (!channel) return { matches: [], status: "ok" };
-    const matches = [];
-    for (const order of input.orders) {
-      const out_id = String(order.snapshot.out_id ?? "").trim();
-      if (!out_id) continue;
-      const payload = await post(channel, "checkTransferByTxid", { txid: out_id });
-      const data = responseData(payload);
-      if (Number(data.status) !== 1) continue;
-      const amount = Number(data.amount);
-      const coin = key(data.coin);
-      if (!sameAmount(amount, order.snapshot.amount) || coin !== key(order.snapshot.currency)) continue;
-      matches.push({ orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
-    }
-    return { matches, status: "ok" };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "OKPay check failed", matches: [], status: "error" };
+export async function check(channel: PaymentChannel) {
+  await post(channel, "checkTransferByTxid", { txid: "0" });
+}
+
+export async function scan(input: PaymentCheckInput) {
+  const channel = input.channel;
+  if (!channel) return [];
+  const matches = [];
+  for (const order of input.orders) {
+    const out_id = String(order.snapshot.out_id ?? "").trim();
+    if (!out_id) continue;
+    const payload = await post(channel, "checkTransferByTxid", { txid: out_id });
+    const data = responseData(payload);
+    if (Number(data.status) !== 1) continue;
+    const amount = Number(data.amount);
+    const coin = key(data.coin);
+    if (!sameAmount(amount, order.snapshot.amount) || coin !== key(order.snapshot.currency)) continue;
+    matches.push({ orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
   }
+  return matches;
 }
 
 export function verify(channel: PaymentChannel, input: Record<string, unknown>) {

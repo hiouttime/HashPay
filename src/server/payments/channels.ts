@@ -1,6 +1,6 @@
 import { all, jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { validateChannel, validateData, type PaymentCheckResult } from "@/server/payments/driver";
+import { checkChannel, validateChannel, validateData, type CheckResult } from "@/server/payments/driver";
 import { decryptSecret, encryptSecret } from "@/server/utils/crypto";
 import { key, paymentById } from "@/shared/payments";
 import type { Payment } from "@/shared/types/api";
@@ -84,7 +84,12 @@ export function paymentHealth(payment: PaymentChannel) {
   return { ...summary, details: "common.normal", status: "ok" };
 }
 
-export async function recordCheck(env: AppEnv, id: number, result: PaymentCheckResult) {
+export async function checkChannels(env: AppEnv, status?: Payment["status"]) {
+  const channels = (await listPayments(env)).filter((channel) => channel.status !== "disabled" && (!status || channel.status === status));
+  for (const channel of channels) await recordCheck(env, channel.id, await checkChannel(channel));
+}
+
+export async function recordCheck(env: AppEnv, id: number, result: CheckResult) {
   const time = now();
   await run(
     env,

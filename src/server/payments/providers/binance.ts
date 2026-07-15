@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { AppError } from "@/server/http/api";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { fetchText } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
@@ -18,7 +19,7 @@ interface BinancePayRow {
   transactionTime?: string | number;
 }
 
-export async function validate(input: { address: string; data: Record<string, string> }) {
+export async function check(input: Pick<PaymentChannel, "address" | "data">) {
   const payload = await signedGet<{ uid?: unknown }>(accountApi, input.data.apiKey, input.data.secretKey);
   const uid = String(payload.uid ?? "").trim();
   if (!uid) throw new AppError(400, "errors.payment_account_id_invalid", { detail: "Binance API 返回中没有账户ID" });
@@ -27,19 +28,12 @@ export async function validate(input: { address: string; data: Record<string, st
   }
 }
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const rows = await history(input);
-    return {
-      matches: input.orders.flatMap((order) => {
-        const tx = rows.find((row) => match(order.snapshot, row, order.createdAt, order.expireAt));
-        return tx ? [{ orderId: order.id, time: timestamp(tx), txid: String(tx.transactionId) }] : [];
-      }),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Binance check failed", matches: [], status: "error" };
-  }
+export async function scan(input: PaymentCheckInput) {
+  const rows = await history(input);
+  return input.orders.flatMap((order) => {
+    const tx = rows.find((row) => match(order.snapshot, row, order.createdAt, order.expireAt));
+    return tx ? [{ orderId: order.id, time: timestamp(tx), txid: String(tx.transactionId) }] : [];
+  });
 }
 
 async function history(input: PaymentCheckInput) {

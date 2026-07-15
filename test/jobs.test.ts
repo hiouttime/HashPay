@@ -3,6 +3,7 @@ import type { AppEnv } from "@/server/types/env";
 
 const mocks = vi.hoisted(() => ({
   all: vi.fn(),
+  checkChannels: vi.fn(),
   checkPendingPayments: vi.fn(),
   deliverNotify: vi.fn(),
   migrateD1: vi.fn(),
@@ -19,6 +20,10 @@ vi.mock("@/server/db", () => ({
 
 vi.mock("@/server/db/migrations", () => ({
   migrateD1: mocks.migrateD1,
+}));
+
+vi.mock("@/server/payments/channels", () => ({
+  checkChannels: mocks.checkChannels,
 }));
 
 vi.mock("@/server/services/orders/checkout", () => ({
@@ -38,6 +43,7 @@ import { handleNotifyQueue, runJobs } from "@/server/services/app/jobs";
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.all.mockResolvedValue([]);
+  mocks.checkChannels.mockResolvedValue(undefined);
   mocks.checkPendingPayments.mockResolvedValue(undefined);
   mocks.deliverNotify.mockResolvedValue(undefined);
   mocks.migrateD1.mockResolvedValue(undefined);
@@ -56,8 +62,8 @@ describe("scheduled jobs", () => {
     expect(mocks.migrateD1).toHaveBeenCalledTimes(1);
     expect(mocks.syncMarketRates).not.toHaveBeenCalled();
     expect(mocks.run).toHaveBeenCalledWith(env, expect.stringContaining("UPDATE orders SET status = 'expired'"), 1234, 1234);
-    expect(mocks.checkPendingPayments).toHaveBeenNthCalledWith(1, env, "enabled");
-    expect(mocks.checkPendingPayments).toHaveBeenNthCalledWith(2, env, "error");
+    expect(mocks.checkChannels).toHaveBeenCalledWith(env, "error");
+    expect(mocks.checkPendingPayments).toHaveBeenCalledWith(env);
     expect(mocks.all).toHaveBeenCalledWith(env, expect.stringContaining("SELECT id FROM notify"), 1234);
     expect(env.QUEUE_NOTIFY?.send).toHaveBeenCalledTimes(2);
     expect(env.QUEUE_NOTIFY?.send).toHaveBeenNthCalledWith(1, { notifyId: 11 });
@@ -72,8 +78,8 @@ describe("scheduled jobs", () => {
 
     expect(mocks.syncMarketRates).toHaveBeenCalledWith(env);
     expect(mocks.run).toHaveBeenCalledWith(env, expect.stringContaining("UPDATE orders SET status = 'expired'"), 1234, 1234);
-    expect(mocks.checkPendingPayments).toHaveBeenNthCalledWith(1, env, "enabled");
-    expect(mocks.checkPendingPayments).toHaveBeenNthCalledWith(2, env, "error");
+    expect(mocks.checkChannels).toHaveBeenCalledWith(env, "error");
+    expect(mocks.checkPendingPayments).toHaveBeenCalledWith(env);
     expect(mocks.all).toHaveBeenCalledWith(env, expect.stringContaining("SELECT id FROM notify"), 1234);
   });
 

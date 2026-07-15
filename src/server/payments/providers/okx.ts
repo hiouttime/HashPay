@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { AppError } from "@/server/http/api";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
@@ -29,7 +30,7 @@ interface OkxBill {
   type?: string | number;
 }
 
-export async function validate(input: { address: string; data: Record<string, string> }) {
+export async function check(input: Pick<PaymentChannel, "address" | "data">) {
   const rows = await signedGet<OkxConfig>(configApi, input.data);
   const uid = String(rows[0]?.uid ?? "").trim();
   if (!uid) throw new AppError(400, "errors.payment_account_id_invalid", { detail: "OKX API 返回中没有账户ID" });
@@ -38,16 +39,9 @@ export async function validate(input: { address: string; data: Record<string, st
   }
 }
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const rows = await bills(input);
-    return {
-      matches: paymentMatches(input.orders, rows, match, (tx) => ({ time: timestamp(tx), txid: String(tx.billId) })),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "OKX check failed", matches: [], status: "error" };
-  }
+export async function scan(input: PaymentCheckInput) {
+  const rows = await bills(input);
+  return paymentMatches(input.orders, rows, match, (tx) => ({ time: timestamp(tx), txid: String(tx.billId) }));
 }
 
 async function bills(input: PaymentCheckInput) {

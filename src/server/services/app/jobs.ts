@@ -1,5 +1,6 @@
 import { all, now, run } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
+import { checkChannels } from "@/server/payments/channels";
 import { checkPendingPayments } from "@/server/services/orders/checkout";
 import { deliverNotify } from "@/server/services/orders/notifications";
 import { syncMarketRates } from "@/server/services/app/settings";
@@ -12,8 +13,8 @@ export async function runJobs(env: AppEnv, time = new Date()) {
   if (isTopOfHour(time)) await syncMarketRates(env).catch(() => undefined);
   const ts = now();
   await run(env, "UPDATE orders SET status = 'expired', updated_at = ? WHERE status = 'pending' AND expire_at < ?", ts, ts);
-  await checkPendingPayments(env, "enabled");
-  await checkPendingPayments(env, "error");
+  await checkChannels(env, "error");
+  await checkPendingPayments(env);
   const dueNotify = await all<{ id: number }>(env, "SELECT id FROM notify WHERE status IN ('pending', 'retry') AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 20", ts);
   for (const { id: notifyId } of dueNotify) {
     await env.QUEUE_NOTIFY?.send({ notifyId });

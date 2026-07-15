@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
-import type { PaymentCheckInput, PaymentCheckResult } from "@/server/payments/driver";
+import type { PaymentChannel } from "@/server/payments/channels";
+import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson } from "@/server/utils/http";
 import { sameAmount } from "@/shared/amount";
@@ -9,19 +10,23 @@ import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const endpoint = "https://api.mainnet.aptoslabs.com/v1/graphql";
 
-export async function check(input: PaymentCheckInput): Promise<PaymentCheckResult> {
-  try {
-    const txs = await scan(input);
-    return {
-      matches: paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash })),
-      status: "ok",
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Aptos check failed", matches: [], status: "error" };
-  }
+export async function check(channel: PaymentChannel) {
+  const rows = await graphql<{ fungible_asset_activities?: unknown[] }>(`
+    query($owner: String!) {
+      fungible_asset_activities(where: { owner_address: { _eq: $owner } }, limit: 1) {
+        transaction_version
+      }
+    }
+  `, { owner: channel.address });
+  if (!Array.isArray(rows.fungible_asset_activities)) throw new Error("Aptos response is invalid");
 }
 
-async function scan(input: PaymentCheckInput) {
+export async function scan(input: PaymentCheckInput) {
+  const txs = await transactions(input);
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+}
+
+async function transactions(input: PaymentCheckInput) {
   const address = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
   if (!address) return [];
   const assets = Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)));

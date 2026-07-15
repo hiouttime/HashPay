@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkPayment, createPayment } from "@/server/payments/driver";
-import { validate as validateBinance } from "@/server/payments/providers/binance";
-import { validate as validateOkx } from "@/server/payments/providers/okx";
+import { checkChannel, checkPayment, createPayment } from "@/server/payments/driver";
+import { check as checkBinance } from "@/server/payments/providers/binance";
+import { check as checkOkx } from "@/server/payments/providers/okx";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { Order } from "@/server/services/orders/repository";
 import { aptosAssets, evmAssets, solanaAssets, tonAssets, trc20Assets } from "@/shared/payments";
@@ -27,6 +27,15 @@ describe("TRC20 provider", () => {
       matches: [{ orderId: "order", time: 120, txid: "tx" }],
       status: "ok",
     });
+  });
+
+  it("checks channel health without scanning transactions", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => json({ data: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkChannel(channel({ address: snapshot.address, driver: "trc20" }))).resolves.toEqual({ status: "ok" });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`https://api.trongrid.io/v1/accounts/${snapshot.address}`);
   });
 
   it("ignores transactions outside the order window", async () => {
@@ -145,6 +154,17 @@ describe("EVM provider", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
   });
 
+  it("checks BSC health with one block request", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => json({ result: "0x64" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkChannel(channel({ address, driver: "bep20" }))).resolves.toEqual({ status: "ok" });
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? "{}"));
+    expect(body.method).toBe("eth_blockNumber");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns readable BSC RPC errors", async () => {
     const now = Math.floor(Date.now() / 1000);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
@@ -236,6 +256,17 @@ describe("Solana provider", () => {
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "solana-paid" }], status: "ok" });
     expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])))).toEqual(new Set(["https://public.rpc.solanavibestation.com/"]));
+  });
+
+  it("checks the token-account API without reading transaction history", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => json({ result: { value: [] } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkChannel(channel({ address, assets: ["usdc"], driver: "solana" }))).resolves.toEqual({ status: "ok" });
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body ?? "{}"));
+    expect(body.method).toBe("getTokenAccountsByOwner");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects Solana transfers with a different mint", async () => {
@@ -330,7 +361,7 @@ describe("Binance Pay provider", () => {
     const fetchMock = vi.fn(async () => json({ uid: 34355667 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(validateBinance({
+    await expect(checkBinance({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).resolves.toBeUndefined();
@@ -345,7 +376,7 @@ describe("Binance Pay provider", () => {
   it("rejects Binance ID mismatches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ uid: 34355667 })));
 
-    await expect(validateBinance({
+    await expect(checkBinance({
       address: "999999",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -362,7 +393,7 @@ describe("Binance Pay provider", () => {
       { headers: { "content-type": "application/json" }, status: 401 },
     )));
 
-    await expect(validateBinance({
+    await expect(checkBinance({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -375,7 +406,7 @@ describe("Binance Pay provider", () => {
   it("reports Binance account responses without a UID", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({})));
 
-    await expect(validateBinance({
+    await expect(checkBinance({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -462,7 +493,7 @@ describe("OKX provider", () => {
     const fetchMock = vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(validateOkx({
+    await expect(checkOkx({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).resolves.toBeUndefined();
@@ -479,7 +510,7 @@ describe("OKX provider", () => {
   it("rejects OKX UID mismatches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] })));
 
-    await expect(validateOkx({
+    await expect(checkOkx({
       address: "999999",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -492,7 +523,7 @@ describe("OKX provider", () => {
   it("reports OKX API failures with the platform reason", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "50113", msg: "Invalid signature" })));
 
-    await expect(validateOkx({
+    await expect(checkOkx({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -505,7 +536,7 @@ describe("OKX provider", () => {
   it("reports OKX account responses without a UID", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{}] })));
 
-    await expect(validateOkx({
+    await expect(checkOkx({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
