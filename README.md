@@ -316,9 +316,9 @@ X-Signature: <base64-rsa-sha256-signature>
 
 ### 已适配平台
 
-| 平台/方式 | 状态 | 说明 |
-| --- | --- | --- |
-| [EgdeKey](/docs/edge-key/start.md) | 已接入 | Cloudflare 一键部署发卡平台 |
+| 平台/方式 | 说明 |
+| --- | --- |
+| [EgdeKey](https://github.com/TGDash/HashPay/wiki/配置教程-%E2%80%90-EgdeKey) | 运行在Cloudflare Wokers 上的发卡系统 |
 
 ## 🔧 维护
 
