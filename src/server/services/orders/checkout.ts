@@ -6,6 +6,7 @@ import { listPayments, recordCheck, type PaymentChannel } from "@/server/payment
 import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/payments/providers/okpay";
 import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
+import { notifyPayment } from "@/server/services/telegram/notify";
 import { clearReviewImage, imageData, saveReview } from "@/server/services/orders/review";
 import { payAmount, rateContext, systemSettings } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
@@ -161,6 +162,7 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
   }
   if (manual) await clearReviewImage(env, order.id);
   await createNotify(env, order.id);
+  await notifyPayment(env, order, paidPayment);
   return paidPayment;
 }
 

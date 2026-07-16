@@ -1,5 +1,6 @@
 import { getConfig, setConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
+import { fetchText, reason } from "@/server/utils/http";
 import type { AppEnv } from "@/server/types/env";
 
 export function botToken(env: AppEnv) {
@@ -7,12 +8,23 @@ export function botToken(env: AppEnv) {
   return env.TGBOT_TOKEN;
 }
 
+export async function sendTelegramMessage(env: AppEnv, chatId: number, text: string) {
+  await call(env, "sendMessage", {
+    chat_id: chatId,
+    link_preview_options: { is_disabled: true },
+    parse_mode: "HTML",
+    text,
+  });
+}
+
 export async function getBotInfo(env: AppEnv) {
-  const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/getMe`);
-  const payload = (await response.json()) as { description?: string; ok: boolean; result?: { username?: string } };
-  const username = payload.result?.username;
-  if (!payload.ok || !username) throw new AppError(500, "errors.bot_token_invalid");
-  return { ...payload.result, username };
+  try {
+    const bot = await call<{ username?: string }>(env, "getMe");
+    if (!bot.username) throw new Error("Telegram bot username is missing");
+    return { ...bot, username: bot.username };
+  } catch {
+    throw new AppError(500, "errors.bot_token_invalid");
+  }
 }
 
 export async function refreshBotInfo(env: AppEnv) {
@@ -23,13 +35,11 @@ export async function refreshBotInfo(env: AppEnv) {
 
 export async function setupWebhook(env: AppEnv, domain: string, secret: string) {
   const url = `${domain.replace(/\/$/, "")}/telegram/webhook/${secret}`;
-  const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/setWebhook`, {
-    body: JSON.stringify({ allowed_updates: ["message", "callback_query", "inline_query", "chosen_inline_result"], url }),
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  const payload = (await response.json()) as { description?: string; ok: boolean };
-  if (!payload.ok) throw new AppError(400, "errors.webhook_setup_failed");
+  try {
+    await call(env, "setWebhook", { allowed_updates: ["message", "callback_query", "inline_query", "chosen_inline_result"], url });
+  } catch {
+    throw new AppError(400, "errors.webhook_setup_failed");
+  }
   return url;
 }
 
@@ -38,18 +48,33 @@ export async function configureBotMiniApp(env: AppEnv) {
   if (!domain) throw new AppError(400, "errors.domain_missing");
   const secret = await getConfig(env, "bot_secret");
   const url = `${domain.replace(/\/$/, "")}/admin`;
-  const response = await fetch(`https://api.telegram.org/bot${botToken(env)}/setChatMenuButton`, {
-    body: JSON.stringify({
+  try {
+    await call(env, "setChatMenuButton", {
       menu_button: {
         text: "HashPay",
         type: "web_app",
         web_app: { url },
       },
-    }),
+    });
+  } catch {
+    throw new AppError(400, "errors.miniapp_setup_failed");
+  }
+  if (secret) await setupWebhook(env, domain, secret);
+}
+
+async function call<T = unknown>(env: AppEnv, method: string, body: Record<string, unknown> = {}) {
+  const url = `https://api.telegram.org/bot${botToken(env)}/${method}`;
+  const { res, text } = await fetchText(url, {
+    body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const payload = (await response.json()) as { description?: string; ok: boolean };
-  if (!payload.ok) throw new AppError(400, "errors.miniapp_setup_failed");
-  if (secret) await setupWebhook(env, domain, secret);
+  let payload: { description?: string; ok?: boolean; result?: T };
+  try {
+    payload = JSON.parse(text || "{}") as typeof payload;
+  } catch {
+    throw new Error(`Telegram ${method} returned invalid JSON: ${reason(text)}`);
+  }
+  if (!res.ok || !payload.ok) throw new Error(payload.description || `Telegram ${method} failed: HTTP ${res.status}`);
+  return payload.result as T;
 }

@@ -67,7 +67,7 @@ export async function createBot(env: AppEnv) {
       await ctx.reply(t(locale, "telegram.login_invalid"));
       return;
     }
-    await ctx.reply(t(locale, "telegram.login_confirmed", { time: formatInlineTime(Date.now() / 1000, locale) }));
+    await ctx.reply(t(locale, "telegram.login_confirmed", { time: telegramTime(Date.now() / 1000, locale) }));
   });
 
   bot.callbackQuery(/^check:(.+)$/, async (ctx) => {
@@ -144,8 +144,8 @@ export async function createBot(env: AppEnv) {
       return;
     }
     const resultId = `pay:${parsed.amount}:${parsed.currency}:${Date.now().toString(36)}`;
-    const title = t(locale, "telegram.inline_title", { amount: formatInlineAmount(parsed.amount), asset: assetName(parsed.currency) });
-    const pendingText = t(locale, "telegram.inline_pending", { amount: formatInlineAmount(parsed.amount), asset: assetName(parsed.currency) });
+    const title = t(locale, "telegram.inline_title", { amount: telegramAmount(parsed.amount), asset: assetName(parsed.currency) });
+    const pendingText = t(locale, "telegram.inline_pending", { amount: telegramAmount(parsed.amount), asset: assetName(parsed.currency) });
     await ctx.answerInlineQuery([{
       description: t(locale, "telegram.inline_desc"),
       id: resultId,
@@ -206,7 +206,7 @@ function parseInlineResultId(resultId: string) {
   return { amount, currency: (parts[2] || "USDT").toUpperCase(), timestamp: parts[3] };
 }
 
-function formatInlineAmount(amount: number) {
+function telegramAmount(amount: number) {
   return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
 }
 
@@ -229,7 +229,7 @@ async function siteUrl(env: AppEnv, path: string) {
 }
 
 function payMenuText(order: { amount: number; currency: string }, locale: Locale) {
-  return t(locale, "telegram.payment_menu", { amount: formatInlineAmount(order.amount), asset: assetName(order.currency) });
+  return t(locale, "telegram.payment_menu", { amount: telegramAmount(order.amount), asset: assetName(order.currency) });
 }
 
 function assetMenu(orderId: string, options: TelegramPaymentOption[]) {
@@ -244,9 +244,9 @@ function networkMenuText(order: { amount: number; currency: string }, options: T
   const targetAsset = key(asset);
   const payAmount = options.find((option) => key(option.asset) === targetAsset)?.amount ?? order.amount;
   return t(locale, "telegram.network_menu", {
-    amount: formatInlineAmount(order.amount),
+    amount: telegramAmount(order.amount),
     asset: assetName(order.currency),
-    payAmount: formatInlineAmount(payAmount),
+    payAmount: telegramAmount(payAmount),
     payAsset: assetName(asset),
   });
 }
@@ -313,28 +313,28 @@ function paidText(orderId: string, snapshot: PaymentSnapshot, locale: Locale) {
     t(locale, "telegram.paid"),
     "",
     t(locale, "telegram.order_id"),
-    `<pre>${escapeHtml(orderId)}</pre>`,
+    `<pre>${telegramHtml(orderId)}</pre>`,
   ];
   const url = paymentExplorerUrl(snapshot.driver, tx.txid);
-  if (url) lines.push(`<a href="${escapeHtml(url)}">${escapeHtml(t(locale, "telegram.tx_link"))}</a>`);
+  if (url) lines.push(`<a href="${telegramHtml(url)}">${telegramHtml(t(locale, "telegram.tx_link"))}</a>`);
   return lines.join("\n");
 }
 
 function paymentText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSnapshot, locale: Locale) {
   const exchange = paymentById(snapshot.driver)?.kind === "exchange";
-  const address = escapeHtml(snapshot.address ?? "");
+  const address = telegramHtml(snapshot.address ?? "");
   return [
-    escapeHtml(t(locale, exchange ? "telegram.pay_exchange" : "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetName(snapshot.currency) })),
-    escapeHtml(t(locale, exchange ? "telegram.exchange_wait" : "telegram.network_warning")),
+    telegramHtml(t(locale, exchange ? "telegram.pay_exchange" : "telegram.pay_chain", { network: t(locale, networkLabel(snapshot.driver)), asset: assetName(snapshot.currency) })),
+    telegramHtml(t(locale, exchange ? "telegram.exchange_wait" : "telegram.network_warning")),
     "",
-    exchange ? `${escapeHtml(t(locale, "payment.exchange_address"))}\n<pre>${address}</pre>` : t(locale, "telegram.address", { address }),
-    t(locale, "telegram.amount_due", { amount: escapeHtml(formatInlineAmount(snapshot.amount)) }),
-    t(locale, "telegram.problem_order", { orderId: escapeHtml(order.id) }),
-    t(locale, "telegram.deadline", { time: escapeHtml(formatInlineTime(order.expireAt, locale)) }),
+    exchange ? `${telegramHtml(t(locale, "payment.exchange_address"))}\n<pre>${address}</pre>` : t(locale, "telegram.address", { address }),
+    t(locale, "telegram.amount_due", { amount: telegramHtml(telegramAmount(snapshot.amount)) }),
+    t(locale, "telegram.problem_order", { orderId: telegramHtml(order.id) }),
+    t(locale, "telegram.deadline", { time: telegramHtml(telegramTime(order.expireAt, locale)) }),
   ].join("\n");
 }
 
-function formatInlineTime(timestamp: number, locale: Locale) {
+function telegramTime(timestamp: number, locale: Locale) {
   return new Date(timestamp * 1000).toLocaleString(locale, {
     day: "2-digit",
     hour: "2-digit",
@@ -347,12 +347,12 @@ function formatInlineTime(timestamp: number, locale: Locale) {
   }).replaceAll("/", "-");
 }
 
-function escapeHtml(value: string) {
-  return value
+function telegramHtml(value: unknown) {
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('\"', "&quot;");
 }
 
 function payError(error: unknown, locale: Locale) {

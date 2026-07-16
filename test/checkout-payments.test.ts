@@ -170,6 +170,31 @@ describe("checkout payment check", () => {
 
     expect(env.paidOrders).toEqual(new Set(["new-order"]));
   });
+
+  it("keeps the order paid when the Telegram administrator notice fails", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({
+      adminId: "123456",
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+    });
+    const consoleMock = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("api.trongrid.io")) {
+        return new Response(JSON.stringify({
+          data: [trc20Tx({ hash: "paid-tx", timestamp: ts * 1000, value: "10000000" })],
+        }));
+      }
+      throw new Error("Telegram unavailable");
+    }));
+
+    await expect(checkOrderPayment(env, "new-order")).resolves.toMatchObject({
+      tx: { txid: "paid-tx" },
+    });
+
+    expect(env.paidOrders).toEqual(new Set(["new-order"]));
+    expect(consoleMock).toHaveBeenCalledWith("telegram:payment_notice_failed", expect.any(Error));
+  });
 });
 
 describe("admin payment confirmation", () => {
@@ -244,7 +269,7 @@ describe("scheduled checkout payment checks", () => {
   });
 });
 
-function checkoutEnv(options: { claimed?: Array<{ driver: string; txid: string }>; currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
+function checkoutEnv(options: { adminId?: string; claimed?: Array<{ driver: string; txid: string }>; currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
   const ts = Math.floor(Date.now() / 1000);
   const claims = [...(options.claimed ?? [])];
   const orders = new Map<string, Record<string, unknown>>([
@@ -266,6 +291,7 @@ function checkoutEnv(options: { claimed?: Array<{ driver: string; txid: string }
   const env = {
     notifications: 0,
     paidOrders: new Set<string>(),
+    TGBOT_TOKEN: "token",
     updatedPayment: "",
     DB: db({
       all(sql, values) {
@@ -282,6 +308,9 @@ function checkoutEnv(options: { claimed?: Array<{ driver: string; txid: string }
         return [];
       },
       first(sql, values) {
+        if (sql.includes("SELECT value FROM configs") && values[0] === "admin_id") {
+          return options.adminId ? { value: options.adminId } : null;
+        }
         if (sql.includes("SELECT * FROM orders WHERE id = ?")) return orders.get(String(values[0])) ?? null;
         return null;
       },
