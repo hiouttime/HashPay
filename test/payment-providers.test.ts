@@ -131,11 +131,13 @@ describe("EVM provider", () => {
   });
 
   it("checks BSC token payments through public RPC", async () => {
-    const now = Math.floor(Date.now() / 1000);
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
       if (body.method === "eth_blockNumber") return json({ result: "0x64" });
-      if (body.method === "eth_getLogs") return json({ result: [{ data: "0x2386f26fc10000", transactionHash: "0xbsc-paid" }] });
+      if (body.method === "eth_getLogs") return json({ result: [{ blockTimestamp: hex(now), data: "0x2386f26fc10000", transactionHash: "0xbsc-paid" }] });
       return json({ result: null });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -152,6 +154,58 @@ describe("EVM provider", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
+  });
+
+  it("does not match the historical BSC payment from the reported incident", async () => {
+    const paidAt = 1_784_132_988;
+    const createdAt = 1_784_133_393;
+    vi.useFakeTimers();
+    vi.setSystemTime(1_784_133_399_000);
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "eth_blockNumber") return json({ result: "0x690f6a4" });
+      if (body.method === "eth_getLogs") return json({ result: [{
+        blockTimestamp: hex(paidAt),
+        data: "0x7ad1841c56350000",
+        transactionHash: "0x2b5e0f44c32c6a10aca3aadeb49955104b8b44db98b00acebb50c90a2c873e12",
+      }] });
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "bep20", id: 5, name: "BSC" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: 8.85, driver: "bep20" }), {
+        createdAt,
+        expireAt: createdAt + 300,
+        id: "incident-order",
+      })],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it.each([undefined, "invalid"])("rejects BSC logs with invalid blockTimestamp %s", async (blockTimestamp) => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "eth_blockNumber") return json({ result: "0x64" });
+      if (body.method === "eth_getLogs") return json({ result: [{ blockTimestamp, data: "0x2386f26fc10000", transactionHash: "0xbsc-paid" }] });
+      return json({ result: null });
+    }));
+
+    const result = await checkPayment({
+      channel: channel({ address, driver: "bep20", id: 5, name: "BSC" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: 0.01, driver: "bep20" }), {
+        createdAt: now - 10,
+        expireAt: now + 100,
+        id: "bsc-order",
+      })],
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("blockTimestamp is invalid");
   });
 
   it("checks BSC health with one block request", async () => {
@@ -751,4 +805,8 @@ function okpayOrder(): Order {
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+}
+
+function hex(value: number) {
+  return `0x${value.toString(16)}`;
 }

@@ -112,7 +112,7 @@ async function tokenLogs(chain: Chain, address: string, asset: string, contract:
     currency: asset,
     hash: String(log.transactionHash ?? ""),
     raw: { ...log, contract },
-    timestamp: checkedAt,
+    timestamp: rpcTimestamp(log.blockTimestamp),
     to: address,
   }));
 }
@@ -178,6 +178,14 @@ function parseRpc<T>(text: string, url: string, method: string) {
 
 function time(value: unknown) {
   return Math.floor(Date.parse(String(value)) / 1000);
+}
+
+function rpcTimestamp(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[\da-f]+$/i.test(raw)) throw new Error("EVM RPC log blockTimestamp is invalid");
+  const timestamp = Number.parseInt(raw, 16);
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) throw new Error("EVM RPC log blockTimestamp is invalid");
+  return timestamp;
 }
 
 function hex(value: number) {

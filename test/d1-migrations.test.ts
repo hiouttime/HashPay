@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "@/server/types/env";
 
-const migrationNames = ["0001_init.sql"];
+const migrationNames = ["0001_init.sql", "0002_order_tx.sql"];
 
 describe("D1 migrations", () => {
   it("loads SQL migration files in filename order", async () => {
@@ -21,6 +21,9 @@ describe("D1 migrations", () => {
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS configs"));
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS notify"));
     expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS review"));
+    expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("ALTER TABLE orders ADD COLUMN driver TEXT"));
+    expect(env.DB.exec).toHaveBeenCalledWith(expect.stringContaining("CREATE UNIQUE INDEX orders_driver_txid_unique"));
+    expect(env.DB.exec).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE orders"));
     expect(env.applied).toEqual(new Set(migrationNames));
   });
 

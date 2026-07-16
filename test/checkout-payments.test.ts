@@ -114,6 +114,62 @@ describe("checkout payment check", () => {
 
     expect(inserts).toEqual([]);
   });
+
+  it("treats a concurrent txid uniqueness conflict as an unmatched transaction", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const order = orderRow("new-order", {
+      payment: JSON.stringify(trc20Snapshot),
+      payway: 1,
+      ts,
+    });
+    const env = {
+      DB: db({
+        run(sql) {
+          if (sql.startsWith("UPDATE orders SET status = 'paid'")) {
+            throw new Error("D1_ERROR: UNIQUE constraint failed: orders.driver, orders.txid");
+          }
+          return { meta: { changes: 1, last_row_id: 1 } };
+        },
+      }),
+    } as unknown as AppEnv;
+
+    await expect(markPaid(env, orderFromRow(order), { txid: "same-tx" })).resolves.toBeNull();
+  });
+
+  it("does not confirm a second order with the same driver and txid", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({
+      claimed: [{ driver: "trc20", txid: "reused-tx" }],
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      data: [trc20Tx({ hash: "reused-tx", timestamp: ts * 1000, value: "10000000" })],
+    }))));
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+
+    expect(env.paidOrders).toEqual(new Set());
+    expect(env.notifications).toBe(0);
+  });
+
+  it("allows the same txid on a different driver", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({
+      claimed: [{ driver: "bep20", txid: "shared-tx" }],
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      data: [trc20Tx({ hash: "shared-tx", timestamp: ts * 1000, value: "10000000" })],
+    }))));
+
+    await expect(checkOrderPayment(env, "new-order")).resolves.toMatchObject({
+      tx: { txid: "shared-tx" },
+    });
+
+    expect(env.paidOrders).toEqual(new Set(["new-order"]));
+  });
 });
 
 describe("admin payment confirmation", () => {
@@ -127,6 +183,7 @@ describe("admin payment confirmation", () => {
     order.expire_at = ts + 60;
     order.status = "expired";
     let paidSql = "";
+    let paidValues: unknown[] = [];
     let reviewCleared = false;
 
     const env = {
@@ -135,18 +192,24 @@ describe("admin payment confirmation", () => {
           if (sql.includes("SELECT * FROM orders WHERE id = ?")) return order;
           return null;
         },
-        run(sql) {
-          if (sql.startsWith("UPDATE orders SET status = 'paid'")) paidSql = sql;
+        run(sql, values) {
+          if (sql.startsWith("UPDATE orders SET status = 'paid'")) {
+            paidSql = sql;
+            paidValues = values;
+          }
           if (sql.startsWith("UPDATE review SET image = NULL")) reviewCleared = true;
           return { meta: { changes: 1, last_row_id: 1 } };
         },
       }),
     } as unknown as AppEnv;
 
-    const payment = await confirmOrder(env, "expired-order", {});
+    const payment = await confirmOrder(env, "expired-order");
 
     expect(payment.tx).toMatchObject({ confirmedBy: "admin" });
+    expect(payment.tx?.txid).toBeUndefined();
     expect(paidSql).toContain("status IN ('pending', 'expired')");
+    expect(paidValues[1]).toBe("manual");
+    expect(paidValues[2]).toMatch(/^[0-9a-f-]{36}$/);
     expect(reviewCleared).toBe(true);
   });
 });
@@ -181,8 +244,9 @@ describe("scheduled checkout payment checks", () => {
   });
 });
 
-function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
+function checkoutEnv(options: { claimed?: Array<{ driver: string; txid: string }>; currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
   const ts = Math.floor(Date.now() / 1000);
+  const claims = [...(options.claimed ?? [])];
   const orders = new Map<string, Record<string, unknown>>([
     ["new-order", orderRow("new-order", {
       payment: options.currentPayment ? JSON.stringify(options.currentPayment) : "{}",
@@ -200,6 +264,7 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: bool
   }
 
   const env = {
+    notifications: 0,
     paidOrders: new Set<string>(),
     updatedPayment: "",
     DB: db({
@@ -222,11 +287,26 @@ function checkoutEnv(options: { currentPayment?: PaymentSnapshot; expired?: bool
       },
       run(sql, values) {
         if (sql.startsWith("UPDATE orders SET payway = ?")) env.updatedPayment = String(values[1]);
-        if (sql.startsWith("UPDATE orders SET status = 'paid'")) env.paidOrders.add(String(values[3]));
+        if (sql.startsWith("UPDATE orders SET status = 'paid'")) {
+          const driver = String(values[1]);
+          const txid = String(values[2]);
+          if (claims.some((claim) => claim.driver === driver && claim.txid === txid)) return { meta: { changes: 0, last_row_id: 0 } };
+          const id = String(values[5]);
+          const order = orders.get(id);
+          if (order) {
+            order.driver = driver;
+            order.payment = values[0];
+            order.status = "paid";
+            order.txid = txid;
+          }
+          claims.push({ driver, txid });
+          env.paidOrders.add(id);
+        }
+        if (sql.startsWith("INSERT INTO notify")) env.notifications += 1;
         return { meta: { changes: 1, last_row_id: 1 } };
       },
     }),
-  } as unknown as AppEnv & { paidOrders: Set<string>; updatedPayment: string };
+  } as unknown as AppEnv & { notifications: number; paidOrders: Set<string>; updatedPayment: string };
 
   return env;
 }
@@ -254,12 +334,14 @@ function scheduledCheckEnv(paymentStatus = "enabled") {
       run(sql, values) {
         if (sql.startsWith("UPDATE payments SET status")) env.paymentChecks += 1;
         if (sql.startsWith("UPDATE orders SET status = 'paid'")) {
-          const id = String(values[3]);
+          const id = String(values[5]);
           env.paidOrders.add(id);
           const order = orders.get(id);
           if (order) {
+            order.driver = values[1];
             order.status = "paid";
             order.payment = values[0];
+            order.txid = values[2];
           }
           return { meta: { changes: 1, last_row_id: 1 } };
         }

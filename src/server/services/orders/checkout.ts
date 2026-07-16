@@ -122,30 +122,57 @@ async function uniqueAmount(env: AppEnv, channel: PaymentChannel, orderId: strin
 export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   const manual = tx.confirmedBy === "admin";
+  const driver = manual ? "manual" : key(snapshot.driver);
+  const txid = manual ? crypto.randomUUID() : normalizeTxid(driver, tx.txid);
+  if (!driver || !txid) return null;
   const paidPayment = {
     ...snapshot,
     tx: {
       confirmedBy: tx.confirmedBy ?? "system",
       timestamp: tx.timestamp ?? now(),
-      txid: tx.txid,
+      ...(manual ? {} : { txid }),
     },
   };
   const ts = now();
   const sql = manual
-    ? "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired')"
-    : "UPDATE orders SET status = 'paid', payment = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'";
-  const result = await run(
-    env,
-    sql,
-    JSON.stringify(paidPayment),
-    ts,
-    ts,
-    order.id,
-  );
-  if (!result.meta.changes) return jsonParseObject<PaymentSnapshot>((await getOrder(env, order.id)).payment, {} as PaymentSnapshot);
+    ? "UPDATE orders SET status = 'paid', payment = ?, driver = ?, txid = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired') AND NOT EXISTS (SELECT 1 FROM orders claimed WHERE claimed.driver = ? AND claimed.txid = ?)"
+    : "UPDATE orders SET status = 'paid', payment = ?, driver = ?, txid = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending' AND NOT EXISTS (SELECT 1 FROM orders claimed WHERE claimed.driver = ? AND claimed.txid = ?)";
+  let result;
+  try {
+    result = await run(
+      env,
+      sql,
+      JSON.stringify(paidPayment),
+      driver,
+      txid,
+      ts,
+      ts,
+      order.id,
+      driver,
+      txid,
+    );
+  } catch (error) {
+    if (txConflict(error)) return null;
+    throw error;
+  }
+  if (!result.meta.changes) {
+    const current = await getOrder(env, order.id);
+    return current.status === "paid" ? jsonParseObject<PaymentSnapshot>(current.payment, {} as PaymentSnapshot) : null;
+  }
   if (manual) await clearReviewImage(env, order.id);
   await createNotify(env, order.id);
   return paidPayment;
+}
+
+function normalizeTxid(driver: string, value: unknown) {
+  const txid = String(value ?? "").trim();
+  if (!txid) return "";
+  return ["aptos", "base", "bep20", "erc20", "polygon", "trc20"].includes(driver) ? txid.toLowerCase() : txid;
+}
+
+function txConflict(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("orders.driver, orders.txid") || message.includes("orders_driver_txid_unique");
 }
 
 export async function submitPaymentReview(env: AppEnv, orderId: string, input: Record<string, unknown>) {
@@ -175,7 +202,10 @@ export async function checkOrderPayment(env: AppEnv, orderId: string) {
   if (order.payway) await recordCheck(env, order.payway, result);
   if (result.status === "error") throw new AppError(502, "errors.payment_check_failed", { detail: result.error ?? "unknown" });
   const match = result.matches.find((item) => item.orderId === order.id);
-  if (match) return markPaid(env, order, { timestamp: match.time, txid: match.txid });
+  if (match) {
+    const payment = await markPaid(env, order, { timestamp: match.time, txid: match.txid });
+    if (payment) return payment;
+  }
   throw new AppError(404, "errors.tx_not_found");
 }
 
@@ -228,15 +258,15 @@ function checkOrder(order: Order, snapshot: PaymentSnapshot) {
   };
 }
 
-export async function confirmOrder(env: AppEnv, orderId: string, input: Record<string, unknown>) {
+export async function confirmOrder(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
   if (order.status !== "pending" && order.status !== "expired") throw new AppError(400, "errors.order_unavailable");
-  const tx: PaymentTxEvidence = {
+  const payment = await markPaid(env, order, {
     confirmedBy: "admin",
-    timestamp: Number(input.timestamp ?? now()),
-    txid: typeof input.txid === "string" ? input.txid.trim() || undefined : undefined,
-  };
-  return markPaid(env, order, tx);
+    timestamp: now(),
+  });
+  if (!payment) throw new AppError(400, "errors.order_unavailable");
+  return payment;
 }
 
 export async function okpayNotify(env: AppEnv, input: Record<string, unknown>) {
