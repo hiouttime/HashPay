@@ -3,12 +3,17 @@
   "name": "hashpay",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-14",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/*", "!/assets/*"]
+    "run_worker_first": [
+      "/*",
+      "!/assets/*"
+    ]
   },
   "observability": {
     "enabled": true
@@ -38,6 +43,8 @@
     ]
   },
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": [
+      "* * * * *"
+    ]
   }
 }
