@@ -600,7 +600,7 @@ describe("OKX provider", () => {
     });
   });
 
-  it("matches OKX internal receive bills by amount, currency, and time", async () => {
+  it("matches OKX deposits by amount, currency, and time", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_800_000_000_000);
     const fetchMock = vi.fn(async () => json({
@@ -610,7 +610,7 @@ describe("OKX provider", () => {
         billId: "okx-bill",
         ccy: "USDT",
         ts: "1800000120000",
-        type: "72",
+        type: "1",
       }],
     }));
     vi.stubGlobal("fetch", fetchMock);
@@ -629,7 +629,7 @@ describe("OKX provider", () => {
     });
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://www.okx.com/api/v5/asset/bills?ccy=USDT&limit=100&type=72");
+    expect(url).toBe("https://www.okx.com/api/v5/asset/bills?ccy=USDT&limit=100");
     expect((init.headers as Record<string, string>)["OK-ACCESS-KEY"]).toBe("api-key");
   });
 

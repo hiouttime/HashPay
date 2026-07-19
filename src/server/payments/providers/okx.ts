@@ -50,7 +50,6 @@ async function bills(input: PaymentCheckInput) {
   const rows = await Promise.all(currencies.map((ccy) => signedGet<OkxBill>(billsApi, input.channel!.data, {
     ccy: ccy.toUpperCase(),
     limit: "100",
-    type: "72",
   })));
   return rows.flat();
 }
@@ -108,7 +107,7 @@ function match(snapshot: PaymentSnapshot, row: OkxBill, created: number, expire:
   const amount = Number(row.balChg);
   const time = timestamp(row);
   return Boolean(row.billId)
-    && String(row.type) === "72"
+    && ["1", "72"].includes(String(row.type))
     && time >= created
     && time <= expire
     && key(row.ccy) === key(snapshot.currency)
