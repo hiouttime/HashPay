@@ -339,6 +339,50 @@ describe("Solana provider", () => {
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 
+  it("ignores failed Solana signatures before fetching the transaction", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") {
+        return json({
+          result: [{
+            blockTime: 120,
+            err: { InstructionError: [0, "InvalidAccountData"] },
+            signature: "solana-failed",
+          }],
+        });
+      }
+      if (body.method === "getTransaction") return json({ result: solanaTx({ account }) });
+      return json({ result: null });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+    expect(fetchMock.mock.calls.some((call) => String((call[1] as RequestInit | undefined)?.body ?? "").includes("getTransaction"))).toBe(false);
+  });
+
+  it("ignores Solana transfers from failed transactions", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, err: null, signature: "solana-failed" }] });
+      if (body.method === "getTransaction") {
+        return json({ result: solanaTx({ account, err: { InstructionError: [0, "InvalidAccountData"] } }) });
+      }
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("returns readable Solana endpoint errors", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("forbidden", { status: 403 })));
 
@@ -714,10 +758,10 @@ function aptosTx(input: { address: string; asset?: string }) {
   };
 }
 
-function solanaTx(input: { account: string; mint?: string }) {
+function solanaTx(input: { account: string; err?: unknown; mint?: string }) {
   return {
     blockTime: 120,
-    meta: { innerInstructions: [] },
+    meta: { err: input.err ?? null, innerInstructions: [] },
     transaction: {
       message: {
         instructions: [{

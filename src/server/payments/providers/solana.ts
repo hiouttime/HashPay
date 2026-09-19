@@ -39,11 +39,11 @@ async function scanAsset(owner: string, asset: string, createdAt: number, expire
   const accounts = await tokenAccounts(owner, token.contract, commitment);
   const out = [];
   for (const account of accounts) {
-    const signatures = await rpc<Array<{ blockTime?: number; signature: string }>>("getSignaturesForAddress", [
+    const signatures = await rpc<Array<{ blockTime?: number; err?: unknown; signature: string }>>("getSignaturesForAddress", [
       account,
       { commitment, limit: 50 },
     ]);
-    for (const row of signatures.filter((item) => item.blockTime && item.blockTime >= createdAt && item.blockTime <= expireAt)) {
+    for (const row of signatures.filter((item) => item.err == null && item.blockTime && item.blockTime >= createdAt && item.blockTime <= expireAt)) {
       const tx = await transaction(row.signature, commitment);
       if (!tx) continue;
       out.push(...transfers(tx, {
@@ -77,6 +77,8 @@ async function transaction(signature: string, commitment: string) {
 }
 
 function transfers(tx: Record<string, unknown>, input: { account: string; asset: string; decimals: number; mint: string; owner: string; signature: string }) {
+  const meta = tx.meta as { err?: unknown } | undefined;
+  if (meta?.err != null) return [];
   return instructions(tx)
     .map((instruction) => transfer(instruction, tx, input))
     .filter((item): item is TxCandidate => item !== null);
