@@ -121,8 +121,8 @@ function hasReturnUrl(order: Order) {
           <div>
             <dt>{{ t('checkout.order_id') }}</dt>
             <dd>
-              <code>{{ checkout.order.id }}</code>
-              <n-button size="tiny" text type="primary" @click="copyText(checkout.order.id, { message })">{{ t('common.copy') }}</n-button>
+              <code>{{ checkout.order.merchantNo || checkout.order.id }}</code>
+              <n-button size="tiny" text type="primary" @click="copyText(checkout.order.merchantNo || checkout.order.id, { message })">{{ t('common.copy') }}</n-button>
             </dd>
           </div>
           <div>
