@@ -25,7 +25,7 @@ const chains: Record<string, Chain> = {
     rpc: "https://bsc.rpc.blxrbdn.com",
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
-  polygon: { blockSeconds: 2, explorer: "https://polygon.blockscout.com", native: "matic" },
+  polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },
 };
 
 export async function check(channel: PaymentChannel) {

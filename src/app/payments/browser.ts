@@ -65,19 +65,23 @@ function base(payment: ProbePayment) {
   return blockscout("https://base.blockscout.com", payment);
 }
 
-function polygon(payment: ProbePayment) {
-  return blockscout("https://polygon.blockscout.com", payment);
+function polygon(payment: ProbePayment, order: ProbeOrder) {
+  return tokenLogs("https://gateway.tenderly.co/public/polygon", 2, payment, order);
 }
 
 async function bep20(payment: ProbePayment, order: ProbeOrder) {
+  return tokenLogs("https://bsc.rpc.blxrbdn.com", 0.4, payment, order);
+}
+
+async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbePayment, order: ProbeOrder) {
   const asset = key(payment.currency);
-  const token = evmAssets.bep20?.[asset];
+  const token = evmAssets[key(payment.driver)]?.[asset];
   if (!token || !payment.address) return [];
-  const latest = Number.parseInt(await rpc<string>("eth_blockNumber", []), 16);
+  const latest = Number.parseInt(await rpc<string>(endpoint, "eth_blockNumber", []), 16);
   const checkedAt = Math.floor(Date.now() / 1000);
   const createdAt = Number(order.createdAt ?? checkedAt);
-  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / 0.4) - 1000);
-  const logs = await rpc<Array<Record<string, unknown>>>("eth_getLogs", [{
+  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / blockSeconds) - 1000);
+  const logs = await rpc<Array<Record<string, unknown>>>(endpoint, "eth_getLogs", [{
     address: token.contract,
     fromBlock: hex(fromBlock),
     toBlock: "latest",
@@ -227,8 +231,8 @@ async function tronGrid<T>(address: string, path: string, params: URLSearchParam
   return Array.isArray(payload.data) ? payload.data : [];
 }
 
-async function rpc<T>(method: string, params: unknown[]) {
-  const payload = await json<{ result?: T }>("https://bsc.rpc.blxrbdn.com", {
+async function rpc<T>(endpoint: string, method: string, params: unknown[]) {
+  const payload = await json<{ result?: T }>(endpoint, {
     body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
     headers: { "content-type": "application/json" },
     method: "POST",
