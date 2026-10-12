@@ -11,6 +11,7 @@ export interface TronGridTokenTx {
     symbol?: string;
   };
   transaction_id?: string;
+  type?: string;
   value?: string;
 }
 
@@ -31,6 +32,7 @@ export interface TronGridNativeTx {
 }
 
 export function trc20Candidate(item: TronGridTokenTx, currency: string): TxCandidate | null {
+  if (item.type !== "Transfer") return null;
   const asset = key(currency);
   const token = trc20Assets[asset];
   if (!token || item.token_info?.address !== token.contract || String(item.token_info?.symbol || "").toUpperCase() !== token.symbol) return null;

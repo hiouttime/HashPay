@@ -82,12 +82,28 @@ describe("frontend payment module", () => {
       false,
     )).resolves.toEqual([]);
   });
+
+  it("ignores approvals when probing TRC20 payments in the browser", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [
+      { ...trc20Tx({ hash: "approval", value: "10000000" }), type: "Approval" },
+      trc20Tx({ hash: "transfer", value: "10000000" }),
+    ] }))));
+
+    const matches = await browserMatches(
+      { address: tronAddress, amount: 10, currency: "usdt", driver: "trc20" },
+      { createdAt: 100, expireAt: 200 },
+      false,
+    );
+
+    expect(matches.map((item) => item.hash)).toEqual(["transfer"]);
+  });
 });
 
 const tronAddress = "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2";
 
 function trc20Tx(input: { hash: string; value: string }) {
   return {
+    type: "Transfer",
     block_timestamp: 120_000,
     to: tronAddress,
     token_info: { address: trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },

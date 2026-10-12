@@ -47,6 +47,18 @@ describe("checkout payment selection", () => {
 });
 
 describe("checkout payment check", () => {
+  it("does not mark an order paid for a matching USDT approval", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({ currentPayment: trc20Snapshot, includeExisting: false });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [{
+      ...trc20Tx({ hash: "approval", timestamp: ts * 1000, value: "10000000" }),
+      type: "Approval",
+    }] }))));
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+    expect(env.paidOrders).toEqual(new Set());
+  });
+
   it("runs a server-side check instead of trusting browser candidates", async () => {
     const env = checkoutEnv({
       currentPayment: trc20Snapshot,
@@ -465,6 +477,7 @@ function paymentRow(ts: number, payment: PaymentSnapshot = trc20Snapshot, status
 
 function trc20Tx(input: { hash: string; timestamp?: number; value: string }) {
   return {
+    type: "Transfer",
     block_timestamp: input.timestamp ?? 120_000,
     to: trc20Snapshot.address,
     token_info: { address: trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },

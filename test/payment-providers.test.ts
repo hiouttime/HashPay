@@ -64,6 +64,34 @@ describe("TRC20 provider", () => {
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 
+  it.each([false, true])("rejects the reported USDT approval with fastConfirm=%s", async (fastConfirm) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [{
+      transaction_id: "4e5f31cff97fe901820a8dbcb815e5fe009bb2552e747c5e944cb8ef92bff6f7",
+      token_info: { symbol: "USDT", address: trc20Assets.usdt.contract, decimals: 6, name: "Tether USD" },
+      block_timestamp: 1791807441000,
+      from: "TDLesDoiXREurTrU4qQw8BzvEEBpBCRE4k",
+      to: snapshot.address,
+      type: "Approval",
+      value: "36000000",
+    }] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm,
+      orders: [order({ ...snapshot, amount: 36 }, { createdAt: 1791807400, expireAt: 1791807700 })],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it.each([undefined, "", "Unknown"])("rejects TRC20 records with type %s", async (type) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [{ ...trc20Tx(), type }] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("matches multiple orders from one chain scan", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({
       data: [
@@ -720,6 +748,7 @@ function payment(input: Partial<PaymentSnapshot>): PaymentSnapshot {
 
 function trc20Tx(input: Partial<{ contract: string; hash: string; timestamp: number; to: string; value: string }> = {}) {
   return {
+    type: "Transfer",
     block_timestamp: (input.timestamp ?? 120) * 1000,
     to: input.to ?? "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
     token_info: { address: input.contract ?? trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },
