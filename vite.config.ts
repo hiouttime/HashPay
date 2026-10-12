@@ -14,6 +14,14 @@ function gitShortHash() {
   }
 }
 
+function gitCommittedAt() {
+  try {
+    return execSync("git log -1 --format=%cI", { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 function base64AssetPlugin(): Plugin {
   const prefix = "\0base64-asset:";
   return {
@@ -36,6 +44,7 @@ function base64AssetPlugin(): Plugin {
 
 export default defineConfig({
   define: {
+    __GIT_COMMITTED_AT__: JSON.stringify(gitCommittedAt()),
     __GIT_SHORT_HASH__: JSON.stringify(gitShortHash()),
   },
   plugins: [base64AssetPlugin(), vue(), cloudflare()],

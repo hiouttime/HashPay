@@ -19,6 +19,7 @@ import { isTelegramMiniApp, loginWithTelegram, logoutSession, readSession } from
 const route = useRoute();
 const router = useRouter();
 const version = __GIT_SHORT_HASH__;
+const committedAt = __GIT_COMMITTED_AT__;
 const miniApp = isTelegramMiniApp();
 const { t } = useI18n();
 
@@ -38,6 +39,7 @@ const pageKey = computed(() => route.path.split("/")[2] as PageKey);
 const page = computed(() => pages.find((item) => item.key === pageKey.value)!.component);
 
 const loading = ref(true);
+const update = ref(false);
 const navOpen = ref(false);
 const status = ref<AppState | null>(null);
 const user = ref<TelegramUser | null>(null);
@@ -55,6 +57,24 @@ async function init() {
 
   user.value = (await readSession()) ?? (await loginWithTelegram());
   loading.value = false;
+  if (user.value) void checkUpdate();
+}
+
+async function checkUpdate() {
+  const current = Date.parse(committedAt);
+  if (!Number.isFinite(current)) return;
+  try {
+    const response = await fetch("https://api.github.com/repos/TGDash/HashPay/commits/main", {
+      headers: { accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return;
+    const payload = await response.json() as { commit?: { committer?: { date?: unknown } } };
+    const latest = Date.parse(String(payload.commit?.committer?.date ?? ""));
+    update.value = Number.isFinite(latest) && latest > current;
+  } catch {
+    update.value = false;
+  }
 }
 
 async function signOut() {
@@ -115,6 +135,10 @@ onMounted(init);
           </div>
         </n-layout-sider>
         <n-layout-content class="workspace-content">
+          <n-alert v-if="update" class="update-notice" type="info" :title="t('update.available')">
+            {{ t('update.action') }}
+            <a class="update-guide" href="https://github.com/TGDash/HashPay/wiki/补全更新组件" target="_blank" rel="noreferrer">{{ t('update.guide') }}</a>
+          </n-alert>
           <component :is="page" v-bind="pageProps" />
         </n-layout-content>
       </n-layout>

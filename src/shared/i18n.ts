@@ -53,6 +53,9 @@ const zh = {
   "nav.settings": "设置",
   "nav.logout": "退出登录",
   "nav.open_menu": "打开菜单",
+  "update.available": "发现新版本",
+  "update.action": "请前往部署仓库内执行 Update HashPay 进行更新。",
+  "update.guide": "没有找到更新入口？",
 
   "help.title": "帮助",
   "help.telegram.title": "Telegram 消息收款单",
@@ -595,6 +598,9 @@ const en: Record<keyof typeof zh, string> = {
   "nav.settings": "Settings",
   "nav.logout": "Sign out",
   "nav.open_menu": "Open menu",
+  "update.available": "A new version is available",
+  "update.action": "Open your deployment repository and run Update HashPay to update.",
+  "update.guide": "Can't find the update action?",
 
   "help.title": "Help",
   "help.telegram.title": "Telegram Inline Payment Request",
