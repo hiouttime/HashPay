@@ -35,33 +35,36 @@ async function jettonTransfers(address: string, asset: string, createdAt: number
   if (!token) return [];
   const url = `https://toncenter.com/api/v3/jetton/transfers?owner_address=${encodeURIComponent(address)}&direction=in&limit=50&start_utime=${createdAt}&end_utime=${expireAt}`;
   const payload = await json<{ jetton_transfers?: unknown[] }>(url);
-  return (payload.jetton_transfers ?? []).map((item) => {
+  return (payload.jetton_transfers ?? []).flatMap((item) => {
     const row = item as Record<string, unknown>;
-    return {
+    if (row.transaction_aborted !== false) return [];
+    return [{
       amount: amount(row.amount, token.decimals),
       currency: asset,
       hash: String(row.transaction_hash ?? ""),
       raw: row,
       timestamp: Number(row.transaction_now),
       to: address,
-    };
+    }];
   });
 }
 
 async function tonTransactions(address: string, asset: string, createdAt: number, expireAt: number) {
   const url = `https://toncenter.com/api/v3/transactions?account=${encodeURIComponent(address)}&limit=50&sort=desc&start_utime=${createdAt}&end_utime=${expireAt}`;
   const payload = await json<{ transactions?: unknown[] }>(url);
-  return (payload.transactions ?? []).map((item) => {
+  return (payload.transactions ?? []).flatMap((item) => {
     const row = item as Record<string, unknown>;
+    const description = row.description as { aborted?: unknown } | undefined;
+    if (description?.aborted !== false) return [];
     const inMsg = row.in_msg as { value?: unknown } | undefined;
-    return {
+    return [{
       amount: amount(inMsg?.value, 9),
       currency: asset,
       hash: String(row.hash ?? ""),
       raw: row,
       timestamp: Number(row.now),
       to: address,
-    };
+    }];
   });
 }
 

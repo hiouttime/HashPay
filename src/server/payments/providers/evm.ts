@@ -79,16 +79,17 @@ async function blockscout(baseUrl: string, address: string, asset: string, netwo
   }
 
   const payload = await json<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/transactions`);
-  return (payload.items ?? []).map((item) => {
+  return (payload.items ?? []).flatMap((item) => {
     const row = item as Record<string, unknown>;
-    return {
+    if (row.status !== "ok") return [];
+    return [{
       amount: amount(row.value, 18),
       currency: asset,
       hash: String(row.hash ?? ""),
       raw: row,
       timestamp: time(row.timestamp),
       to: addressOf(row.to),
-    };
+    }];
   });
 }
 

@@ -131,6 +131,44 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xpaid" }], status: "ok" });
   });
 
+  it.each(["error", undefined])("rejects a reverted native transfer when status is %s", async (status) => {
+    const snapshot = payment({ address, amount: 0.05, currency: "eth", driver: "erc20" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      items: [{
+        hash: "0xreverted",
+        status,
+        timestamp: "1970-01-01T00:02:00Z",
+        to: { hash: address },
+        value: "50000000000000000",
+      }],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["eth"], driver: "erc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches a successful native transfer", async () => {
+    const snapshot = payment({ address, amount: 0.05, currency: "eth", driver: "erc20" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      items: [{
+        hash: "0xnative",
+        status: "ok",
+        timestamp: "1970-01-01T00:02:00Z",
+        to: { hash: address },
+        value: "50000000000000000",
+      }],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["eth"], driver: "erc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xnative" }], status: "ok" });
+  });
+
   it("rejects fake EVM token contracts", async () => {
     const snapshot = payment({ address, amount: 2.5, currency: "usdc", driver: "base" });
     vi.stubGlobal("fetch", vi.fn(async () => json({ items: [evmTokenTx({ address, contract: evmAssets.erc20.usdc.contract, hash: "0xfake", value: "2500000" })] })));
@@ -289,6 +327,32 @@ describe("TON provider", () => {
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it.each([true, undefined])("rejects an aborted TON jetton transfer when transaction_aborted is %s", async (aborted) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ aborted: aborted ?? null, hash: "ton-aborted" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches a completed GRAM transfer and ignores a bounced one", async () => {
+    const gram = payment({ address, amount: 3, currency: "gram", driver: "ton" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      transactions: [
+        tonTx({ aborted: true, hash: "ton-bounced" }),
+        tonTx({ hash: "ton-paid" }),
+      ],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["gram"], driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(gram)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "ton-paid" }], status: "ok" });
   });
 });
 
@@ -767,12 +831,22 @@ function evmTokenTx(input: { address: string; contract: string; hash: string; va
   };
 }
 
-function tonJettonTx(input: Partial<{ hash: string; master: string }> = {}) {
+function tonJettonTx(input: Partial<{ aborted: boolean | null; hash: string; master: string }> = {}) {
   return {
     amount: "3000000",
     jetton_master: input.master ?? tonAssets.usdt.contract,
+    ...(input.aborted === null ? {} : { transaction_aborted: input.aborted ?? false }),
     transaction_hash: input.hash ?? "ton-paid",
     transaction_now: 120,
+  };
+}
+
+function tonTx(input: Partial<{ aborted: boolean; hash: string }> = {}) {
+  return {
+    description: { aborted: input.aborted ?? false },
+    hash: input.hash ?? "ton-paid",
+    in_msg: { value: "3000000000" },
+    now: 120,
   };
 }
 
