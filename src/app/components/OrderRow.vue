@@ -21,6 +21,12 @@ const emit = defineEmits<{
   select: [checked: boolean];
 }>();
 
+function assetAmount(order: Order) {
+  const payment = order.payment;
+  const amount = order.status === "paid" && payment.tx?.amount ? payment.tx.amount : payment.amount;
+  return amount ? `${formatAmount(amount)} ${assetName(payment.currency)}` : "";
+}
+
 function shortAddress(value: unknown) {
   const text = String(value || "");
   return text.length > 19 ? `${text.slice(0, 10)}...${text.slice(-6)}` : text;
@@ -64,7 +70,7 @@ function orderStatusClass(status: string) {
     </div>
     <div class="order-cell order-amount-cell">
       <strong>{{ formatAmount(props.order.amount) }} {{ assetName(props.order.currency) }}</strong>
-      <span v-if="props.order.payment?.amount">{{ formatAmount(props.order.payment.amount) }} {{ assetName(props.order.payment.currency) }}</span>
+      <span v-if="assetAmount(props.order)">{{ assetAmount(props.order) }}</span>
     </div>
     <div class="order-cell order-payment-cell">
       <strong class="order-payway-title">

@@ -64,7 +64,7 @@ export function paymentNoticeText(
   const currency = assetName(systemAmount.currency);
   const orderAmount = formatAmount(order.amount);
   const orderCurrency = assetName(order.currency);
-  const paidAmount = formatAmount(payment.amount);
+  const paidAmount = formatAmount(payment.tx?.amount ?? payment.amount);
   const paidCurrency = assetName(payment.currency);
   const emojiId = paymentAssetTelegramEmojiId(payment.currency);
   const emoji = emojiId ? `<tg-emoji emoji-id="${emojiId}">💵</tg-emoji>` : "💵";

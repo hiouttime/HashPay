@@ -4,7 +4,6 @@ import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -41,7 +40,7 @@ export async function check(input: Pick<PaymentChannel, "address" | "data">) {
 
 export async function scan(input: PaymentCheckInput) {
   const rows = await bills(input);
-  return paymentMatches(input.orders, rows, match, (tx) => ({ time: timestamp(tx), txid: String(tx.billId) }));
+  return paymentMatches(input.orders, rows, match, (tx) => ({ time: timestamp(tx), txid: String(tx.billId) }), input.tolerance);
 }
 
 async function bills(input: PaymentCheckInput) {
@@ -106,13 +105,13 @@ function parseJson(text: string) {
 function match(snapshot: PaymentSnapshot, row: OkxBill, created: number, expire: number) {
   const amount = Number(row.balChg);
   const time = timestamp(row);
-  return Boolean(row.billId)
+  const valid = Boolean(row.billId)
     && ["1", "72"].includes(String(row.type))
     && time >= created
     && time <= expire
     && key(row.ccy) === key(snapshot.currency)
-    && amount > 0
-    && sameAmount(amount, snapshot.amount);
+    && amount > 0;
+  return valid ? amount : null;
 }
 
 function timestamp(row: OkxBill) {

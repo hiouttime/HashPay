@@ -3,7 +3,6 @@ import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson, fetchText, host, reason } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -40,7 +39,7 @@ export async function check(channel: PaymentChannel) {
 
 export async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
@@ -122,13 +121,13 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
   const network = key(snapshot.driver);
   const asset = key(snapshot.currency);
   const token = evmAssets[network]?.[asset];
-  return Boolean(tx.hash)
+  const valid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
     && (!token || lower(contract(tx.raw)) === lower(token.contract))
-    && sameAmount(tx.amount, snapshot.amount)
     && lower(snapshot.address) === lower(tx.to);
+  return valid ? tx.amount : null;
 }
 
 async function json<T>(url: string) {

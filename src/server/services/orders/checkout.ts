@@ -4,19 +4,20 @@ import { getMerchant } from "@/server/services/merchants";
 import { assignPayment, checkPayment, checksOnSchedule, createPayment, paymentOptions } from "@/server/payments/driver";
 import { listPayments, recordCheck, type PaymentChannel } from "@/server/payments/channels";
 import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/payments/providers/okpay";
-import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
+import { getOrder, listPendingChannelOrders, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
 import { notifyPayment, notifyReview } from "@/server/services/telegram/notify";
 import { clearReviewImage, imageData, saveReview } from "@/server/services/orders/review";
 import { ezfpReturnUrl, preserveEzfpContext } from "@/server/services/merchants/ezfp";
-import { payAmount, rateContext, systemSettings } from "@/server/services/app/settings";
+import { payAmount, rateContext, systemSettings, toleranceOf } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
-import { ceilAmount, sameAmount } from "@/shared/amount";
+import { ceilAmount, fitAmount, sameAmount } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot, PaymentTxEvidence } from "@/shared/types/domain";
 import type { AppEnv } from "@/server/types/env";
 
 type PaymentTxInput = {
+  amount?: number;
   confirmedBy?: PaymentTxEvidence["confirmedBy"];
   timestamp?: number;
   txid?: string;
@@ -42,6 +43,7 @@ export async function checkoutData(env: AppEnv, orderId: string) {
     }
   }
   return {
+    tolerance: toleranceOf(rate.settings),
     fastConfirm: rate.settings.fastConfirm,
     merchant: merchant ? { id: merchant.id, name: merchant.name } : { id: "INLINE", name: "Telegram" },
     options,
@@ -141,12 +143,14 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
   const driver = manual ? "manual" : key(snapshot.driver);
   const txid = manual ? crypto.randomUUID() : normalizeTxid(driver, tx.txid);
   if (!driver || !txid) return null;
+  const received = Number(tx.amount);
   const paidPayment = {
     ...snapshot,
     tx: {
       confirmedBy: tx.confirmedBy ?? "system",
       timestamp: tx.timestamp ?? now(),
       ...(manual ? {} : { txid }),
+      ...(Number.isFinite(received) && received > 0 ? { amount: received } : {}),
     },
   };
   const ts = now();
@@ -213,16 +217,18 @@ export async function checkOrderPayment(env: AppEnv, orderId: string) {
   if (order.status !== "pending" || now() > order.expireAt) throw new AppError(400, "errors.order_unavailable");
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (!snapshot.driver) throw new AppError(400, "errors.payment_not_selected");
+  const settings = await systemSettings(env);
   const result = await checkPayment({
     channel: await orderChannel(env, order),
-    fastConfirm: (await systemSettings(env)).fastConfirm,
-    orders: [checkOrder(order, snapshot)],
+    fastConfirm: settings.fastConfirm,
+    orders: await scanOrders(env, order, snapshot, settings.dynamicMatch),
+    tolerance: toleranceOf(settings),
   });
   if (order.payway) await recordCheck(env, order.payway, result);
   if (result.status === "error") throw new AppError(502, "errors.payment_check_failed", { detail: result.error ?? "unknown" });
   const match = result.matches.find((item) => item.orderId === order.id);
   if (match) {
-    const payment = await markPaid(env, order, { timestamp: match.time, txid: match.txid });
+    const payment = await markPaid(env, order, { amount: match.amount, timestamp: match.time, txid: match.txid });
     if (payment) return payment;
   }
   throw new AppError(404, "errors.tx_not_found");
@@ -245,6 +251,17 @@ export async function checkPendingPayments(env: AppEnv) {
     if (!channelById.has(order.payway)) continue;
     groups.set(order.payway, [...(groups.get(order.payway) ?? []), { order, snapshot }]);
   }
+  if (settings.dynamicMatch) {
+    for (const payway of groups.keys()) {
+      const pending = await listPendingChannelOrders(env, payway);
+      const items = pending.flatMap((order) => {
+        const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
+        if (!snapshot.driver || !checksOnSchedule(snapshot.driver)) return [];
+        return [{ order, snapshot }];
+      });
+      if (items.length) groups.set(payway, items);
+    }
+  }
 
   for (const [payway, items] of groups) {
     const channel = channelById.get(payway);
@@ -253,12 +270,13 @@ export async function checkPendingPayments(env: AppEnv) {
       channel,
       fastConfirm: settings.fastConfirm,
       orders: items.map((item) => checkOrder(item.order, item.snapshot)),
+      tolerance: toleranceOf(settings),
     });
     await recordCheck(env, payway, result);
     if (result.status === "error") continue;
     for (const match of result.matches) {
       const item = items.find((entry) => entry.order.id === match.orderId);
-      if (item) await markPaid(env, item.order, { timestamp: match.time, txid: match.txid });
+      if (item) await markPaid(env, item.order, { amount: match.amount, timestamp: match.time, txid: match.txid });
     }
   }
 }
@@ -266,6 +284,17 @@ export async function checkPendingPayments(env: AppEnv) {
 async function orderChannel(env: AppEnv, order: Order) {
   if (!order.payway) return undefined;
   return (await listPayments(env)).find((item) => item.id === order.payway);
+}
+
+async function scanOrders(env: AppEnv, order: Order, snapshot: PaymentSnapshot, dynamic: boolean) {
+  if (!dynamic || !order.payway) return [checkOrder(order, snapshot)];
+  const pending = await listPendingChannelOrders(env, order.payway);
+  const orders = pending.flatMap((item) => {
+    const itemSnapshot = item.id === order.id ? snapshot : jsonParseObject<PaymentSnapshot>(item.payment, {} as PaymentSnapshot);
+    if (!itemSnapshot.driver) return [];
+    return [checkOrder(item, itemSnapshot)];
+  });
+  return orders.some((item) => item.id === order.id) ? orders : [checkOrder(order, snapshot), ...orders];
 }
 
 function checkOrder(order: Order, snapshot: PaymentSnapshot) {
@@ -297,8 +326,9 @@ export async function okpayNotify(env: AppEnv, input: Record<string, unknown>) {
   const order = await getOrder(env, data.uniqueId);
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (snapshot.driver !== "okpay" || order.payway !== channel.id) throw new AppError(400, "errors.bad_request");
-  if (!sameAmount(data.amount, snapshot.amount) || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
+  const received = fitAmount(data.amount, snapshot.amount, toleranceOf(await systemSettings(env)));
+  if (received == null || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
   if (order.status === "paid") return { status: "success" };
-  await markPaid(env, order, { txid: data.orderId });
+  await markPaid(env, order, { amount: received, txid: data.orderId });
   return { status: "success" };
 }

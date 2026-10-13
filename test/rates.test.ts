@@ -131,7 +131,10 @@ function rate(rates: Awaited<ReturnType<typeof syncMarketRates>>, rateAdjust = 0
     rates,
     settings: {
       currency: "CNY",
+      dynamicMatch: false,
       fastConfirm: true,
+      matchMax: 0,
+      matchMin: 0,
       rateAdjust,
       timeout: 5,
     },

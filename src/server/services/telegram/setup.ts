@@ -22,7 +22,10 @@ export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
   if (!user?.id) return false;
   await setConfigs(env, {
     currency: "CNY",
+    dynamic_match: "false",
     fast_confirm: "false",
+    match_max: "0",
+    match_min: "0",
     rate_adjust: "0",
     timeout: "5",
   });

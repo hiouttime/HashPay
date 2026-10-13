@@ -2,8 +2,8 @@ import { createHmac } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
+import { paymentMatches } from "@/server/payments/match";
 import { fetchText } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -30,10 +30,10 @@ export async function check(input: Pick<PaymentChannel, "address" | "data">) {
 
 export async function scan(input: PaymentCheckInput) {
   const rows = await history(input);
-  return input.orders.flatMap((order) => {
-    const tx = rows.find((row) => match(order.snapshot, row, order.createdAt, order.expireAt));
-    return tx ? [{ orderId: order.id, time: timestamp(tx), txid: String(tx.transactionId) }] : [];
-  });
+  return paymentMatches(input.orders, rows, match, (tx) => ({
+    time: timestamp(tx),
+    txid: String(tx.transactionId),
+  }), input.tolerance);
 }
 
 async function history(input: PaymentCheckInput) {
@@ -92,11 +92,16 @@ function parseJson(text: string) {
 
 function match(snapshot: PaymentSnapshot, row: BinancePayRow, created: number, expire: number) {
   const time = timestamp(row);
-  return Boolean(row.transactionId)
-    && time >= created
-    && time <= expire
-    && String(row.receiverInfo?.binanceId ?? "").trim() === String(snapshot.address).trim()
-    && funds(row).some((fund) => key(fund.currency) === key(snapshot.currency) && sameAmount(Number(fund.amount), snapshot.amount));
+  if (!row.transactionId || time < created || time > expire) return null;
+  if (String(row.receiverInfo?.binanceId ?? "").trim() !== String(snapshot.address).trim()) return null;
+  const amounts = funds(row)
+    .filter((fund) => key(fund.currency) === key(snapshot.currency))
+    .map((fund) => Number(fund.amount))
+    .filter((amount) => Number.isFinite(amount) && amount > 0);
+  return amounts.reduce<number | null>((closest, amount) => {
+    if (closest == null) return amount;
+    return Math.abs(amount - snapshot.amount) < Math.abs(closest - snapshot.amount) ? amount : closest;
+  }, null);
 }
 
 function funds(row: BinancePayRow) {

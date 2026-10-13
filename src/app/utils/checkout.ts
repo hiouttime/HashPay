@@ -2,8 +2,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { MessageApi } from "naive-ui";
 import * as pay from "@/app/payments";
 import { browserMatches, canProbeInBrowser } from "@/app/payments/browser";
-import { api, type Checkout } from "@/app/api";
+import { api, type Checkout, type Order } from "@/app/api";
 import { appT } from "@/app/i18n";
+import { sameAmount } from "@/shared/amount";
 
 const paymentProbeIntervalMs = 3000;
 const statusPollIntervalMs = 5000;
@@ -11,6 +12,7 @@ const statusPollIntervalMs = 5000;
 export function useCheckout(orderId: string, message: MessageApi) {
   const checkout = ref<Checkout | null>(null);
   const changingPayment = ref(false);
+  const noticeOpen = ref(false);
   const paidReturnDueAt = ref(0);
   const nowMs = ref(Date.now());
   let pollingStatus = false;
@@ -44,7 +46,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
           ...latest,
         },
       };
-      if (previousStatus !== "paid" && latest.status === "paid") {
+      if (previousStatus !== "paid" && latest.status === "paid" && !offAmount(checkout.value.order)) {
         message.success(appT("checkout.paid"));
       }
     } catch {
@@ -61,7 +63,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
     if (!order || order.status !== "pending" || isExpired(order, nowMs.value) || !canProbeInBrowser(payment) || probingPayment) return;
     probingPayment = true;
     try {
-      const matches = (await browserMatches(payment, order, current.fastConfirm)).filter((item) => !checkedTx.has(item.hash));
+      const matches = (await browserMatches(payment, order, current.fastConfirm, current.tolerance)).filter((item) => !checkedTx.has(item.hash));
       if (!matches.length) return;
       try {
         await api.silent.checkout.check(orderId);
@@ -106,6 +108,12 @@ export function useCheckout(orderId: string, message: MessageApi) {
     window.location.href = url;
   }
 
+  function closeNotice() {
+    noticeOpen.value = false;
+    const order = checkout.value?.order;
+    paidReturnDueAt.value = order?.returnUrl?.trim() ? Date.now() + 5000 : 0;
+  }
+
   onMounted(() => {
     void load().then(() => probePayment());
     clock = setInterval(() => {
@@ -119,9 +127,23 @@ export function useCheckout(orderId: string, message: MessageApi) {
     }, paymentProbeIntervalMs);
   });
 
-  watch(() => [checkout.value?.order?.status, checkout.value?.order?.returnUrl] as const, () => {
+  watch(() => {
     const order = checkout.value?.order;
-    paidReturnDueAt.value = order?.status === "paid" && order.returnUrl?.trim() ? Date.now() + 5000 : 0;
+    return order ? `${order.status}:${offAmount(order)}:${order.returnUrl ?? ""}` : "";
+  }, () => {
+    const order = checkout.value?.order;
+    if (!order || order.status !== "paid") {
+      noticeOpen.value = false;
+      paidReturnDueAt.value = 0;
+      return;
+    }
+    if (offAmount(order)) {
+      noticeOpen.value = true;
+      paidReturnDueAt.value = 0;
+      return;
+    }
+    noticeOpen.value = false;
+    if (!paidReturnDueAt.value && order.returnUrl?.trim()) paidReturnDueAt.value = Date.now() + 5000;
   }, { immediate: true });
 
   watch(nowMs, () => {
@@ -139,9 +161,11 @@ export function useCheckout(orderId: string, message: MessageApi) {
   });
 
   return {
+    noticeOpen,
     changePayment,
     changingPayment,
     checkout,
+    closeNotice,
     load,
     nowMs,
     paidReturnSeconds,
@@ -149,6 +173,11 @@ export function useCheckout(orderId: string, message: MessageApi) {
     returnToMerchant,
     selectPayment,
   };
+}
+
+function offAmount(order: Order) {
+  const received = order.payment.tx?.amount;
+  return order.status === "paid" && received != null && !sameAmount(received, Number(order.payment.amount));
 }
 
 function isExpired(order: { expireAt: number; status: string }, now = Date.now()) {

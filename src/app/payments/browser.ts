@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { sameAmount } from "@/shared/amount";
+import { fitAmount, type AmountTolerance } from "@/shared/amount";
 import { aptosAssets, evmAssets, key, tonAssets, trc20Assets } from "@/shared/payments";
 import { trc20Candidate, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -31,10 +31,10 @@ export function canProbeInBrowser(payment: ProbePayment) {
   return Boolean(payment.address && checks[key(payment.driver)]);
 }
 
-export async function browserMatches(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean) {
+export async function browserMatches(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean, tolerance?: AmountTolerance | null) {
   const check = checks[key(payment.driver)];
   if (!payment.address || !check) return [];
-  return (await check(payment, order, fastConfirm)).filter((tx) => matches(payment, order, tx));
+  return (await check(payment, order, fastConfirm)).filter((tx) => matches(payment, order, tx, tolerance));
 }
 
 async function trc20(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean) {
@@ -252,7 +252,7 @@ async function json<T>(url: string, init: RequestInit = {}) {
   }
 }
 
-function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate) {
+function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate, tolerance?: AmountTolerance | null) {
   const createdAt = Number(order.createdAt ?? 0);
   const expireAt = Number(order.expireAt ?? 0);
   const targetAmount = Number(payment.amount);
@@ -260,8 +260,7 @@ function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate) {
     && tx.timestamp >= createdAt
     && tx.timestamp <= expireAt
     && key(tx.currency) === key(payment.currency)
-    && Number.isFinite(targetAmount)
-    && sameAmount(tx.amount, targetAmount)
+    && fitAmount(tx.amount, targetAmount, tolerance) != null
     && sameAddress(tx.to, payment.address);
 }
 

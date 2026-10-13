@@ -12,6 +12,7 @@ export interface PaymentSnapshot {
 }
 
 export interface PaymentTxEvidence {
+  amount?: number;
   confirmedBy: "system" | "admin";
   timestamp: number;
   txid?: string;

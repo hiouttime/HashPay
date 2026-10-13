@@ -92,6 +92,38 @@ describe("TRC20 provider", () => {
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 
+  it("matches one off-amount payment inside the tolerance", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      data: [trc20Tx({ to: snapshot.address, value: "12550000" })],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+      tolerance: { max: 1, min: -0.1 },
+    })).resolves.toMatchObject({
+      matches: [{ amount: 12.55, orderId: "order", txid: "tx" }],
+      status: "ok",
+    });
+  });
+
+  it("leaves an off-amount payment unmatched when another order is also in range", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      data: [trc20Tx({ to: snapshot.address, value: "12550000" })],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [
+        order(snapshot, { id: "order-a" }),
+        order({ ...snapshot, amount: 12.51 }, { id: "order-b" }),
+      ],
+      tolerance: { max: 1, min: -0.1 },
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("matches multiple orders from one chain scan", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({
       data: [
@@ -362,6 +394,29 @@ describe("Aptos provider", () => {
 
   it("validates Aptos asset metadata before marking a payment as paid", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address })] } })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "aptos" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "12345" }], status: "ok" });
+  });
+
+  it.each(["0x1::fungible_asset::Withdraw", "0x1::aptos_coin::GasFeeEvent", "deposit"])(
+    "rejects an Aptos activity that is not a deposit when type is %s",
+    async (type) => {
+      vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address, type })] } })));
+
+      await expect(checkPayment({
+        channel: channel({ address, driver: "aptos" }),
+        fastConfirm: false,
+        orders: [order(snapshot)],
+      })).resolves.toMatchObject({ matches: [], status: "ok" });
+    },
+  );
+
+  it("matches the legacy Aptos deposit event", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address, type: "0x1::fungible_asset::DepositEvent" })] } })));
 
     await expect(checkPayment({
       channel: channel({ address, driver: "aptos" }),
@@ -850,14 +905,14 @@ function tonTx(input: Partial<{ aborted: boolean; hash: string }> = {}) {
   };
 }
 
-function aptosTx(input: { address: string; asset?: string }) {
+function aptosTx(input: { address: string; asset?: string; type?: string }) {
   return {
     amount: "4200000",
     asset_type: input.asset ?? aptosAssets.usdc.contract,
     owner_address: input.address,
     transaction_timestamp: "1970-01-01T00:02:00Z",
     transaction_version: "12345",
-    type: "deposit",
+    type: input.type ?? "0x1::fungible_asset::Deposit",
   };
 }
 

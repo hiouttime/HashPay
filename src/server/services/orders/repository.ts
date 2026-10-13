@@ -109,6 +109,15 @@ export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSi
   return { page, pageSize, rows: rows.map(order), total: count?.count ?? 0 };
 }
 
+export async function listPendingChannelOrders(env: AppEnv, payway: number) {
+  return (await all<OrderRow>(
+    env,
+    "SELECT * FROM orders WHERE status = 'pending' AND expire_at > ? AND payway = ? AND json_extract(payment, '$.driver') IS NOT NULL ORDER BY created_at ASC",
+    now(),
+    payway,
+  )).map(order);
+}
+
 export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
   return (await all<OrderRow>(
     env,

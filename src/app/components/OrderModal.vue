@@ -9,7 +9,6 @@ import { copyText } from "@/app/utils/clipboard";
 import { ask } from "@/app/utils/telegram";
 import { assetName } from "@/shared/payments";
 import type { OrderDetail, Order } from "@/shared/types/api";
-import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const props = defineProps<{
   orderId?: string | null;
@@ -113,8 +112,10 @@ function statusClass(status: Order["status"]) {
   }[status];
 }
 
-function payAmount(payment: Partial<PaymentSnapshot>) {
-  return payment.amount ? `${formatAmount(payment.amount)} ${assetName(payment.currency)}` : "--";
+function assetAmount(order: Order) {
+  const payment = order.payment;
+  const amount = order.status === "paid" && payment.tx?.amount ? payment.tx.amount : payment.amount;
+  return amount ? `${formatAmount(amount)} ${assetName(payment.currency)}` : "--";
 }
 
 function rateText(value: OrderDetail) {
@@ -236,8 +237,8 @@ function rateText(value: OrderDetail) {
                 <strong>{{ formatAmount(detail.order.amount) }} {{ assetName(detail.order.currency) }}</strong>
               </div>
               <div class="detail-item">
-                <span>{{ t('order.pay_amount') }}</span>
-                <strong>{{ payAmount(detail.order.payment) }}</strong>
+                <span>{{ detail.order.status === 'paid' ? t('order.received_amount') : t('order.pay_amount') }}</span>
+                <strong>{{ assetAmount(detail.order) }}</strong>
               </div>
               <div class="detail-item">
                 <span>{{ t('order.rate') }}</span>

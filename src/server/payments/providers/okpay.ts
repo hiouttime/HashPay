@@ -3,7 +3,7 @@ import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { fetchJson } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
+import { fitAmount } from "@/shared/amount";
 import { key } from "@/shared/payments";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -43,10 +43,10 @@ export async function scan(input: PaymentCheckInput) {
     const payload = await post(channel, "checkTransferByTxid", { txid: out_id });
     const data = responseData(payload);
     if (Number(data.status) !== 1) continue;
-    const amount = Number(data.amount);
+    const amount = fitAmount(Number(data.amount), order.snapshot.amount, input.tolerance);
     const coin = key(data.coin);
-    if (!sameAmount(amount, order.snapshot.amount) || coin !== key(order.snapshot.currency)) continue;
-    matches.push({ orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
+    if (amount == null || coin !== key(order.snapshot.currency)) continue;
+    matches.push({ amount, orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
   }
   return matches;
 }

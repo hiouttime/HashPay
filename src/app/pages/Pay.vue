@@ -20,9 +20,11 @@ const orderId = String(route.params.id);
 const reviewVisible = ref(false);
 const { t } = useI18n();
 const {
+  noticeOpen,
   changePayment,
   changingPayment,
   checkout,
+  closeNotice,
   load,
   nowMs,
   paidReturnSeconds,
@@ -75,6 +77,11 @@ function showPaymentReview(order: Order) {
 
 function hasReturnUrl(order: Order) {
   return Boolean(order.returnUrl?.trim());
+}
+
+function money(amount: unknown, currency: unknown) {
+  const value = Number(amount);
+  return value ? `${formatAmount(value)} ${pay.assetName(currency)}` : "";
 }
 </script>
 
@@ -151,8 +158,8 @@ function hasReturnUrl(order: Order) {
               <dd>{{ pay.networkName(checkout.order.payment.driver) }} / {{ pay.assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div>
-              <dt>{{ t('checkout.amount_due') }}</dt>
-              <dd>{{ formatAmount(checkout.order.payment.amount) }} {{ pay.assetName(checkout.order.payment.currency) }}</dd>
+              <dt>{{ t('order.received_amount') }}</dt>
+              <dd>{{ money(checkout.order.payment.tx?.amount || checkout.order.payment.amount, checkout.order.payment.currency) }}</dd>
             </div>
             <div v-if="checkout.order.payment.tx?.txid">
               <dt>{{ t('order.tx_hash') }}</dt>
@@ -162,11 +169,11 @@ function hasReturnUrl(order: Order) {
               </dd>
             </div>
           </dl>
-          <div v-if="hasReturnUrl(checkout.order)" class="checkout-return-actions">
+          <div v-if="hasReturnUrl(checkout.order) && !noticeOpen" class="checkout-return-actions">
             <n-button block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
             <span>{{ t('checkout.return_countdown', { seconds: paidReturnSeconds }) }}</span>
           </div>
-          <p v-else class="checkout-return-hint">{{ t('checkout.return_hint') }}</p>
+          <p v-else-if="!hasReturnUrl(checkout.order)" class="checkout-return-hint">{{ t('checkout.return_hint') }}</p>
         </template>
 
         <template v-else-if="expired(checkout.order)">
@@ -250,6 +257,33 @@ function hasReturnUrl(order: Order) {
       <span>{{ t('checkout.copyright') }}</span>
       <a href="https://github.com/tgdash/HashPay" target="_blank" rel="noreferrer">HashPay</a>
     </n-layout-footer>
+
+    <n-modal
+      v-if="checkout"
+      :show="noticeOpen"
+      preset="dialog"
+      type="success"
+      :closable="false"
+      :close-on-esc="false"
+      :mask-closable="false"
+      :title="t('checkout.amount_notice_title')"
+    >
+      <n-space vertical :size="16">
+        <n-text>{{ t('checkout.amount_notice') }}</n-text>
+        <n-grid :cols="2" :x-gap="12">
+          <n-gi>
+            <n-statistic :label="t('order.pay_amount')" :value="money(checkout.order.payment.amount, checkout.order.payment.currency)" />
+          </n-gi>
+          <n-gi>
+            <n-statistic :label="t('order.received_amount')" :value="money(checkout.order.payment.tx?.amount || checkout.order.payment.amount, checkout.order.payment.currency)" />
+          </n-gi>
+        </n-grid>
+        <n-text depth="3">{{ t('checkout.amount_notice_hint') }}</n-text>
+      </n-space>
+      <template #action>
+        <n-button type="primary" @click="closeNotice">{{ t('checkout.amount_notice_ok') }}</n-button>
+      </template>
+    </n-modal>
 
     <ReviewModal
       v-model:show="reviewVisible"

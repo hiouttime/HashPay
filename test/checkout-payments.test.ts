@@ -207,6 +207,44 @@ describe("checkout payment check", () => {
     expect(env.paidOrders).toEqual(new Set(["new-order"]));
     expect(consoleMock).toHaveBeenCalledWith("telegram:payment_notice_failed", expect.any(Error));
   });
+
+  it("confirms a unique off-amount payment and stores the received amount", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({
+      configs: { dynamic_match: "true", match_max: "1", match_min: "-0.1" },
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      data: [trc20Tx({ hash: "fuzzy-tx", timestamp: (ts + 10) * 1000, value: "10050000" })],
+    }))));
+
+    await expect(checkOrderPayment(env, "new-order")).resolves.toMatchObject({
+      amount: 10,
+      tx: { amount: 10.05, txid: "fuzzy-tx" },
+    });
+    expect(env.paidOrders).toEqual(new Set(["new-order"]));
+  });
+
+  it("does not claim an off-amount payment that also fits another pending order", async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const env = checkoutEnv({
+      configs: { dynamic_match: "true", match_max: "1", match_min: "-0.1" },
+      currentPayment: trc20Snapshot,
+      includeExisting: false,
+      pending: [orderRow("nearby", {
+        payment: JSON.stringify({ ...trc20Snapshot, amount: 10.01 }),
+        payway: 1,
+        ts,
+      })],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      data: [trc20Tx({ hash: "shared-fuzzy", timestamp: (ts + 10) * 1000, value: "10050000" })],
+    }))));
+
+    await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+    expect(env.paidOrders).toEqual(new Set());
+  });
 });
 
 describe("admin payment confirmation", () => {
@@ -281,7 +319,15 @@ describe("scheduled checkout payment checks", () => {
   });
 });
 
-function checkoutEnv(options: { adminId?: string; claimed?: Array<{ driver: string; txid: string }>; currentPayment?: PaymentSnapshot; expired?: boolean; includeExisting?: boolean } = {}) {
+function checkoutEnv(options: {
+  adminId?: string;
+  claimed?: Array<{ driver: string; txid: string }>;
+  configs?: Record<string, string>;
+  currentPayment?: PaymentSnapshot;
+  expired?: boolean;
+  includeExisting?: boolean;
+  pending?: Array<Record<string, unknown>>;
+} = {}) {
   const ts = Math.floor(Date.now() / 1000);
   const claims = [...(options.claimed ?? [])];
   const orders = new Map<string, Record<string, unknown>>([
@@ -299,6 +345,7 @@ function checkoutEnv(options: { adminId?: string; claimed?: Array<{ driver: stri
       ts,
     }));
   }
+  for (const row of options.pending ?? []) orders.set(String(row.id), row);
 
   const env = {
     notifications: 0,
@@ -308,6 +355,13 @@ function checkoutEnv(options: { adminId?: string; claimed?: Array<{ driver: stri
     DB: db({
       all(sql, values) {
         if (sql.includes("FROM payments")) return [paymentRow(ts, options.currentPayment ?? trc20Snapshot)];
+        if (sql.includes("json_extract(payment, '$.driver')") && sql.includes("payway = ?")) {
+          const [currentTime, payway] = values;
+          return Array.from(orders.values())
+            .filter((order) => order.status === "pending")
+            .filter((order) => Number(order.expire_at) > Number(currentTime))
+            .filter((order) => order.payway === payway);
+        }
         if (sql.includes("FROM orders WHERE status = 'pending'")) {
           const [currentTime, payway, orderId] = values;
           return Array.from(orders.values())
@@ -320,8 +374,11 @@ function checkoutEnv(options: { adminId?: string; claimed?: Array<{ driver: stri
         return [];
       },
       first(sql, values) {
-        if (sql.includes("SELECT value FROM configs") && values[0] === "admin_id") {
-          return options.adminId ? { value: options.adminId } : null;
+        if (sql.includes("SELECT value FROM configs")) {
+          const key = String(values[0]);
+          if (key === "admin_id") return options.adminId ? { value: options.adminId } : null;
+          const value = options.configs?.[key];
+          return value == null ? null : { value };
         }
         if (sql.includes("SELECT * FROM orders WHERE id = ?")) return orders.get(String(values[0])) ?? null;
         return null;

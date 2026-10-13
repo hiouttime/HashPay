@@ -4,7 +4,6 @@ import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson } from "@/server/utils/http";
 import type { PaymentSnapshot } from "@/shared/types/domain";
-import { sameAmount } from "@/shared/amount";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
 
@@ -15,7 +14,7 @@ export async function check(channel: PaymentChannel) {
 
 export async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
@@ -61,11 +60,11 @@ async function tronGrid<T>(address: string, path: string, params: URLSearchParam
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
   const asset = key(snapshot.currency);
-  return Boolean(tx.hash)
+  const valid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
     && trc20ContractMatches(asset, tx.raw)
-    && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
+  return valid ? tx.amount : null;
 }

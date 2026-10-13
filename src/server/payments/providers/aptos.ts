@@ -3,12 +3,12 @@ import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { aptosAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const endpoint = "https://api.mainnet.aptoslabs.com/v1/graphql";
+const depositTypes = ["0x1::fungible_asset::Deposit", "0x1::fungible_asset::DepositEvent"];
 
 export async function check(channel: PaymentChannel) {
   const rows = await graphql<{ fungible_asset_activities?: unknown[] }>(`
@@ -23,7 +23,7 @@ export async function check(channel: PaymentChannel) {
 
 export async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
@@ -50,7 +50,7 @@ async function activities(address: string, assets: string[], createdAt: number, 
           owner_address: { _eq: $owner }
           asset_type: { _in: $assets }
           transaction_timestamp: { _gte: $start, _lte: $end }
-          type: { _eq: "deposit" }
+          type: { _in: ["0x1::fungible_asset::Deposit", "0x1::fungible_asset::DepositEvent"] }
           is_transaction_success: { _eq: true }
         }
         order_by: { transaction_timestamp: desc }
@@ -76,13 +76,14 @@ async function activities(address: string, assets: string[], createdAt: number, 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
   const asset = key(snapshot.currency);
   const token = aptosAssets[asset];
-  return Boolean(tx.hash)
+  const valid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
+    && depositTypes.includes(String((tx.raw as Record<string, unknown>).type ?? ""))
     && key(tx.currency) === asset
     && (!token || contract(tx.raw) === token.contract)
-    && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
+  return valid ? tx.amount : null;
 }
 
 async function graphql<T>(query: string, variables: Record<string, unknown>) {

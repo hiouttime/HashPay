@@ -11,6 +11,7 @@ import type {
   Order,
   Payment,
   Settings,
+  SettingsInput,
   AppState,
   TelegramUser,
 } from "@/shared/types/api";
@@ -72,7 +73,7 @@ function endpoints(options: ApiRequestOptions = {}) {
     },
     settings: {
       get: () => get<Settings>("/api/admin/settings", options),
-      save: (input: { currency: string; domain: string; fastConfirm: boolean; rateAdjust: number; title: string; timeout: number }) => put<Settings>("/api/admin/settings", input, options),
+      save: (input: SettingsInput) => put<Settings>("/api/admin/settings", input, options),
       rebindBot: () => post<{ username: string }>("/api/admin/settings/bot/rebind", undefined, options),
     },
     banner: {

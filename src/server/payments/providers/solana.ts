@@ -3,7 +3,6 @@ import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText, host, reason } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
@@ -17,7 +16,7 @@ export async function check(channel: PaymentChannel) {
 
 export async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
@@ -113,13 +112,13 @@ function instructions(tx: Record<string, unknown>) {
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
   const asset = key(snapshot.currency);
   const token = solanaAssets[asset];
-  return Boolean(tx.hash)
+  const valid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
     && (!token || mint(tx.raw) === token.contract)
-    && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
+  return valid ? tx.amount : null;
 }
 
 async function rpc<T>(method: string, params: unknown[]) {

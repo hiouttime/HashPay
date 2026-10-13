@@ -40,11 +40,39 @@ describe("settings payload", () => {
     expect(saved.title).toBe("Demo Pay");
     expect(configs.get("domain")).toBe("https://pay.example.com");
     expect(configs.get("currency")).toBe("USD");
+    expect(configs.get("dynamic_match")).toBe("false");
     expect(configs.get("fast_confirm")).toBe("true");
+    expect(configs.get("match_max")).toBe("0");
+    expect(configs.get("match_min")).toBe("0");
     expect(configs.get("rate_adjust")).toBe("2");
     expect(configs.get("title")).toBe("Demo Pay");
     expect(configs.get("timeout")).toBe("8");
     expect(mocks.configureBotMiniApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves dynamic matching tolerance", async () => {
+    const configs = new Map<string, string | null>();
+    const saved = await saveAdminSettings(env(configs), {
+      currency: "CNY",
+      domain: "https://pay.example.com",
+      dynamicMatch: true,
+      fastConfirm: false,
+      matchMax: 1,
+      matchMin: -0.1,
+      rateAdjust: 0,
+      timeout: 5,
+    });
+
+    expect(saved.dynamicMatch).toBe(true);
+    expect(saved.matchMin).toBe(-0.1);
+    expect(saved.matchMax).toBe(1);
+    expect(configs.get("dynamic_match")).toBe("true");
+    expect(configs.get("match_min")).toBe("-0.1");
+    expect(configs.get("match_max")).toBe("1");
+  });
+
+  it("rejects a match tolerance whose lower bound exceeds the upper bound", () => {
+    expect(() => normalizeSettingsPayload({ matchMax: -0.2, matchMin: 1 })).toThrow(AppError);
   });
 
   it("rejects non-HTTPS domains", async () => {
