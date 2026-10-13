@@ -1,5 +1,6 @@
 import type { PaymentCheckMatch, PaymentCheckOrder } from "@/server/payments/driver";
 import { fitAmount, sameAmount, type AmountTolerance } from "@/shared/amount";
+import { key, paymentById } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 type Hit<T> = { amount: number; exact: boolean; orderId: string; row: T; txid: string };
@@ -15,7 +16,8 @@ export function paymentMatches<T>(
   for (const order of orders) {
     for (const row of rows) {
       const observed = match(order.snapshot, row, order.createdAt, order.expireAt);
-      const amount = observed == null ? null : fitAmount(observed, order.snapshot.amount, tolerance);
+      const band = stablecoin(order.snapshot) ? tolerance : null;
+      const amount = observed == null ? null : fitAmount(observed, order.snapshot.amount, band);
       if (amount == null) continue;
       const txid = String(evidence(row).txid ?? "").trim();
       if (!txid || hits.some((hit) => hit.orderId === order.id && hit.txid === txid)) continue;
@@ -47,4 +49,9 @@ export function paymentMatches<T>(
     if (txsForOrder.get(hit.orderId)?.size === 1 && ordersForTx.get(hit.txid)?.size === 1) claim(hit);
   }
   return result;
+}
+
+function stablecoin(snapshot: PaymentSnapshot) {
+  const asset = key(snapshot.currency);
+  return paymentById(snapshot.driver)?.kind === "chain" && (asset === "usdt" || asset === "usdc");
 }

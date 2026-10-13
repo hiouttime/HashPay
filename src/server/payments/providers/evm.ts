@@ -25,6 +25,8 @@ const chains: Record<string, Chain> = {
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
   polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },
+  // Official rpc.xlayer.tech rejects eth_getLogs ranges above 100 blocks.
+  xlayer: { blockSeconds: 1, native: "okb", rpc: "https://xlayer-mainnet.rpc.sentio.xyz" },
 };
 
 export async function check(channel: PaymentChannel) {

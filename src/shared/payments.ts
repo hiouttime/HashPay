@@ -10,7 +10,8 @@ export type NetworkKey =
   | "polygon"
   | "solana"
   | "ton"
-  | "trc20";
+  | "trc20"
+  | "xlayer";
 
 export type PaymentAssetKey =
   | "bnb"
@@ -102,6 +103,10 @@ export const evmAssets: Record<string, Record<string, TokenAsset>> = {
   polygon: {
     usdt: { contract: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", decimals: 6, symbol: "USDT" },
     usdc: { contract: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359", decimals: 6, symbol: "USDC" },
+  },
+  xlayer: {
+    usdt: { contract: "0x779ded0c9e1022225f8e0630b35a9b54be713736", decimals: 6, symbol: "USDT" },
+    usdc: { contract: "0xb6ceceab302e2e4948951ee7843fc24e92933061", decimals: 6, symbol: "USDC" },
   },
 };
 
@@ -252,6 +257,24 @@ export const polygon: Payment = {
   network: "polygon",
 };
 
+export const xlayer: Payment = {
+  address: {
+    helpKey: "payment.help.evm",
+    nameKey: "payment.address.evm",
+    pattern: /^0x[a-fA-F0-9]{40}$/,
+  },
+  assets: ["usdt", "usdc"],
+  evm: true,
+  explorer: {
+    transaction: "https://web3.okx.com/explorer/x-layer/evm/tx/{hash}",
+  },
+  icon: "icon-xlayer",
+  id: "xlayer",
+  kind: "chain",
+  nameKey: "network.xlayer",
+  network: "xlayer",
+};
+
 export const ton: Payment = {
   address: {
     helpKey: "payment.help.ton",
@@ -369,6 +392,7 @@ export const payments: Payment[] = [
   base,
   bep20,
   polygon,
+  xlayer,
   ton,
   aptos,
   solana,

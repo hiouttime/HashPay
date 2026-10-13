@@ -83,6 +83,7 @@ const providers: Record<string, Provider> = {
   solana: { check: checkSolana, scan: scanSolana, scheduled: true },
   ton: { check: checkTon, scan: scanTon, scheduled: true },
   trc20: { check: checkTrc20, scan: scanTrc20, scheduled: true },
+  xlayer: { check: checkEvm, scan: scanEvm, scheduled: true },
 };
 
 const creators: Partial<Record<string, Create>> = {

@@ -335,6 +335,36 @@ describe("EVM provider", () => {
     expect(result.error).toContain("eth_blockNumber");
     expect(result.error).toContain("HTTP 502 bad gateway");
   });
+
+  it.each([
+    ["usdt", "2500000"],
+    ["usdc", "8800000"],
+  ] as const)("checks X Layer %s payments through public RPC", async (asset, value) => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "eth_blockNumber") return json({ result: "0x64" });
+      if (body.method === "eth_getLogs") return json({ result: [{ blockTimestamp: hex(now), data: hex(Number(value)), transactionHash: "0xxlayer-paid" }] });
+      return json({ result: null });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "xlayer", id: 6, name: "X Layer" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: asset === "usdt" ? 2.5 : 8.8, currency: asset, driver: "xlayer" }), {
+        createdAt: now - 10,
+        expireAt: now + 100,
+        id: "xlayer-order",
+      })],
+    })).resolves.toMatchObject({ matches: [{ orderId: "xlayer-order", txid: "0xxlayer-paid" }], status: "ok" });
+
+    const logBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body ?? "{}")) as { params?: Array<{ address?: string }> };
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://xlayer-mainnet.rpc.sentio.xyz");
+    expect(logBody.params?.[0]?.address).toBe(evmAssets.xlayer[asset].contract);
+  });
 });
 
 describe("TON provider", () => {

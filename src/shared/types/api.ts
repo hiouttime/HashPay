@@ -1,4 +1,3 @@
-import type { AmountTolerance } from "@/shared/amount";
 import type { NotifyStatus, OrderStatus, PaymentSnapshot } from "@/shared/types/domain";
 
 export interface TelegramUser {
@@ -35,7 +34,6 @@ export interface Order {
 }
 
 export interface Checkout {
-  tolerance: AmountTolerance | null;
   fastConfirm: boolean;
   merchant: { id: string; name: string };
   options: Array<{

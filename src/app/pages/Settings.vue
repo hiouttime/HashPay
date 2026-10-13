@@ -57,7 +57,7 @@ async function save() {
     return;
   }
   const matchMin = Number(settings.value.matchMin ?? 0);
-  const matchMax = Number(settings.value.matchMax ?? 0);
+  const matchMax = Number(settings.value.matchMax ?? 1);
   if (matchMin > matchMax) {
     message.error(t("errors.match_range_invalid"));
     return;
@@ -259,7 +259,7 @@ onMounted(load);
             <div class="match-tolerance-fields">
               <label>
                 <span>{{ t('settings.match_min') }}</span>
-                <n-input-number v-model:value="settings.matchMin" placeholder="-0.1" :step="0.01" />
+                <n-input-number v-model:value="settings.matchMin" placeholder="0" :step="0.01" />
               </label>
               <label>
                 <span>{{ t('settings.match_max') }}</span>

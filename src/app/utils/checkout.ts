@@ -63,7 +63,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
     if (!order || order.status !== "pending" || isExpired(order, nowMs.value) || !canProbeInBrowser(payment) || probingPayment) return;
     probingPayment = true;
     try {
-      const matches = (await browserMatches(payment, order, current.fastConfirm, current.tolerance)).filter((item) => !checkedTx.has(item.hash));
+      const matches = (await browserMatches(payment, order, current.fastConfirm)).filter((item) => !checkedTx.has(item.hash));
       if (!matches.length) return;
       try {
         await api.silent.checkout.check(orderId);

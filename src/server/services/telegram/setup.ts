@@ -24,7 +24,7 @@ export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
     currency: "CNY",
     dynamic_match: "false",
     fast_confirm: "false",
-    match_max: "0",
+    match_max: "1",
     match_min: "0",
     rate_adjust: "0",
     timeout: "5",

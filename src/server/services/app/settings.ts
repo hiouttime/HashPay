@@ -126,8 +126,8 @@ export async function systemSettings(env: AppEnv): Promise<SystemSettings> {
     currency: normalizeCurrency(currency || "CNY"),
     dynamicMatch: dynamicMatch === "true",
     fastConfirm: fastConfirm === "true",
-    matchMax: normalizeMatchBound(matchMax),
-    matchMin: normalizeMatchBound(matchMin),
+    matchMax: normalizeMatchBound(matchMax, 1),
+    matchMin: normalizeMatchBound(matchMin, 0),
     rateAdjust: normalizeRateAdjust(rateAdjust),
     timeout: normalizeTimeoutMinutes(timeout),
   };
@@ -158,8 +158,8 @@ export function payAmount(amount: number, from: string, to: string, rate: RateCo
 }
 
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
-  const matchMin = normalizeMatchBound(input.matchMin);
-  const matchMax = normalizeMatchBound(input.matchMax);
+  const matchMin = normalizeMatchBound(input.matchMin, 0);
+  const matchMax = normalizeMatchBound(input.matchMax, 1);
   if (matchMin > matchMax) throw new AppError(400, "errors.match_range_invalid");
   return {
     currency: normalizeCurrency(String(input.currency ?? "CNY")),
@@ -183,9 +183,10 @@ function normalizeRateAdjust(value: unknown) {
   return Math.min(Math.max(parsed, -99), 200);
 }
 
-function normalizeMatchBound(value: unknown) {
-  const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed)) return 0;
+function normalizeMatchBound(value: unknown, fallback: number) {
+  if (value == null || (typeof value === "string" && !value.trim())) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
   const rounded = Math.round(parsed * 1e8) / 1e8;
   return Math.min(Math.max(rounded, -1_000_000), 1_000_000);
 }

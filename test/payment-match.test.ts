@@ -37,6 +37,11 @@ describe("payment amount matching", () => {
     expect(matchOrders([order("a", 15)], [tx("paid", 16.5)])).toEqual([]);
     expect(fitAmount(16.5, 15, tolerance)).toBeNull();
   });
+
+  it("does not apply tolerance to non-stable assets or exchange channels", () => {
+    expect(matchOrders([order("a", 15, { currency: "trx" })], [tx("paid", 15.05)])).toEqual([]);
+    expect(matchOrders([order("a", 15, { driver: "binance" })], [tx("paid", 15.05)])).toEqual([]);
+  });
 });
 
 function matchOrders(orders: ReturnType<typeof order>[], rows: ReturnType<typeof tx>[]) {
@@ -49,12 +54,12 @@ function matchOrders(orders: ReturnType<typeof order>[], rows: ReturnType<typeof
   );
 }
 
-function order(id: string, amount: number) {
+function order(id: string, amount: number, patch: Partial<PaymentSnapshot> = {}) {
   return {
     createdAt: 1,
     expireAt: 2,
     id,
-    snapshot: { address: "T", amount, currency: "usdt", driver: "trc20" } satisfies PaymentSnapshot,
+    snapshot: { address: "T", amount, currency: "usdt", driver: "trc20", ...patch } satisfies PaymentSnapshot,
   };
 }
 

@@ -42,7 +42,7 @@ describe("settings payload", () => {
     expect(configs.get("currency")).toBe("USD");
     expect(configs.get("dynamic_match")).toBe("false");
     expect(configs.get("fast_confirm")).toBe("true");
-    expect(configs.get("match_max")).toBe("0");
+    expect(configs.get("match_max")).toBe("1");
     expect(configs.get("match_min")).toBe("0");
     expect(configs.get("rate_adjust")).toBe("2");
     expect(configs.get("title")).toBe("Demo Pay");

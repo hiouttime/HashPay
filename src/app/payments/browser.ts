@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { fitAmount, type AmountTolerance } from "@/shared/amount";
+import { sameAmount } from "@/shared/amount";
 import { aptosAssets, evmAssets, key, tonAssets, trc20Assets } from "@/shared/payments";
 import { trc20Candidate, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -24,6 +24,7 @@ const checks: Record<string, Probe> = {
   polygon,
   ton,
   trc20,
+  xlayer,
 };
 const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -31,10 +32,10 @@ export function canProbeInBrowser(payment: ProbePayment) {
   return Boolean(payment.address && checks[key(payment.driver)]);
 }
 
-export async function browserMatches(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean, tolerance?: AmountTolerance | null) {
+export async function browserMatches(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean) {
   const check = checks[key(payment.driver)];
   if (!payment.address || !check) return [];
-  return (await check(payment, order, fastConfirm)).filter((tx) => matches(payment, order, tx, tolerance));
+  return (await check(payment, order, fastConfirm)).filter((tx) => matches(payment, order, tx));
 }
 
 async function trc20(payment: ProbePayment, order: ProbeOrder, fastConfirm: boolean) {
@@ -71,6 +72,10 @@ function polygon(payment: ProbePayment, order: ProbeOrder) {
 
 async function bep20(payment: ProbePayment, order: ProbeOrder) {
   return tokenLogs("https://bsc.rpc.blxrbdn.com", 0.4, payment, order);
+}
+
+function xlayer(payment: ProbePayment, order: ProbeOrder) {
+  return tokenLogs("https://xlayer-mainnet.rpc.sentio.xyz", 1, payment, order);
 }
 
 async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbePayment, order: ProbeOrder) {
@@ -252,7 +257,7 @@ async function json<T>(url: string, init: RequestInit = {}) {
   }
 }
 
-function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate, tolerance?: AmountTolerance | null) {
+function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate) {
   const createdAt = Number(order.createdAt ?? 0);
   const expireAt = Number(order.expireAt ?? 0);
   const targetAmount = Number(payment.amount);
@@ -260,7 +265,7 @@ function matches(payment: ProbePayment, order: ProbeOrder, tx: TxCandidate, tole
     && tx.timestamp >= createdAt
     && tx.timestamp <= expireAt
     && key(tx.currency) === key(payment.currency)
-    && fitAmount(tx.amount, targetAmount, tolerance) != null
+    && sameAmount(tx.amount, targetAmount)
     && sameAddress(tx.to, payment.address);
 }
 

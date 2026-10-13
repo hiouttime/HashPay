@@ -11,7 +11,7 @@ import { clearReviewImage, imageData, saveReview } from "@/server/services/order
 import { ezfpReturnUrl, preserveEzfpContext } from "@/server/services/merchants/ezfp";
 import { payAmount, rateContext, systemSettings, toleranceOf } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
-import { ceilAmount, fitAmount, sameAmount } from "@/shared/amount";
+import { ceilAmount, sameAmount } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot, PaymentTxEvidence } from "@/shared/types/domain";
 import type { AppEnv } from "@/server/types/env";
@@ -43,7 +43,6 @@ export async function checkoutData(env: AppEnv, orderId: string) {
     }
   }
   return {
-    tolerance: toleranceOf(rate.settings),
     fastConfirm: rate.settings.fastConfirm,
     merchant: merchant ? { id: merchant.id, name: merchant.name } : { id: "INLINE", name: "Telegram" },
     options,
@@ -188,7 +187,7 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
 function normalizeTxid(driver: string, value: unknown) {
   const txid = String(value ?? "").trim();
   if (!txid) return "";
-  return ["aptos", "base", "bep20", "erc20", "polygon", "trc20"].includes(driver) ? txid.toLowerCase() : txid;
+  return ["aptos", "base", "bep20", "erc20", "polygon", "trc20", "xlayer"].includes(driver) ? txid.toLowerCase() : txid;
 }
 
 function txConflict(error: unknown) {
@@ -326,9 +325,8 @@ export async function okpayNotify(env: AppEnv, input: Record<string, unknown>) {
   const order = await getOrder(env, data.uniqueId);
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (snapshot.driver !== "okpay" || order.payway !== channel.id) throw new AppError(400, "errors.bad_request");
-  const received = fitAmount(data.amount, snapshot.amount, toleranceOf(await systemSettings(env)));
-  if (received == null || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
+  if (!sameAmount(data.amount, snapshot.amount) || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
   if (order.status === "paid") return { status: "success" };
-  await markPaid(env, order, { amount: received, txid: data.orderId });
+  await markPaid(env, order, { amount: data.amount, txid: data.orderId });
   return { status: "success" };
 }

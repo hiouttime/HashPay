@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assignPayment, paymentExplorerUrl, paymentOptions, payments, validateChannel } from "@/server/payments/driver";
 import {
   assetName,
+  evmAssets,
   networkLabel,
   key,
   paymentAssetTelegramEmojiId,
@@ -227,5 +228,34 @@ describe("payment model", () => {
       { asset: "eth", channelId: 11, network: "base" },
     ]);
     expect(paymentExplorerUrl("base", "0xabc")).toBe("https://basescan.org/tx/0xabc");
+  });
+
+  it("supports X Layer USDT and USDC", () => {
+    const address = "0x0000000000000000000000000000000000000001";
+    expect(paymentById("xlayer")).toMatchObject({
+      address: { nameKey: "payment.address.evm" },
+      assets: ["usdt", "usdc"],
+      evm: true,
+      icon: "icon-xlayer",
+    });
+    expect(paymentOptions({
+      address,
+      assets: ["usdt", "usdc", "okb"],
+      createdAt: 1,
+      data: {},
+      driver: "xlayer",
+      id: 13,
+      name: "X Layer",
+      status: "enabled",
+      updatedAt: 1,
+    })).toEqual([
+      { asset: "usdt", channelId: 13, network: "xlayer" },
+      { asset: "usdc", channelId: 13, network: "xlayer" },
+    ]);
+    expect(() => validateChannel({ address: "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", assets: ["usdt"], driver: "xlayer" })).toThrow("errors.payment_address_invalid");
+    expect(() => validateChannel({ address, assets: ["okb"], driver: "xlayer" })).toThrow("errors.payment_asset_invalid");
+    expect(paymentExplorerUrl("xlayer", "0xabc")).toBe("https://web3.okx.com/explorer/x-layer/evm/tx/0xabc");
+    expect(evmAssets.xlayer.usdt).toMatchObject({ contract: "0x779ded0c9e1022225f8e0630b35a9b54be713736", decimals: 6 });
+    expect(evmAssets.xlayer.usdc).toMatchObject({ contract: "0xb6ceceab302e2e4948951ee7843fc24e92933061", decimals: 6 });
   });
 });
