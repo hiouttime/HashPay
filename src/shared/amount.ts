@@ -15,10 +15,11 @@ export interface AmountTolerance {
 
 export function fitAmount(actual: number, expected: number, tolerance?: AmountTolerance | null) {
   if (!Number.isFinite(actual) || actual <= 0 || !Number.isFinite(expected)) return null;
-  if (sameAmount(actual, expected)) return actual;
-  if (!tolerance || !Number.isFinite(tolerance.min) || !Number.isFinite(tolerance.max)) return null;
+  if (!tolerance || !Number.isFinite(tolerance.min) || !Number.isFinite(tolerance.max)) {
+    return sameAmount(actual, expected) ? actual : null;
+  }
   const value = new Decimal(actual);
-  const low = new Decimal(expected).plus(tolerance.min);
-  const high = new Decimal(expected).plus(tolerance.max);
+  const low = new Decimal(expected).minus(Math.max(0, tolerance.min));
+  const high = new Decimal(expected).plus(Math.max(0, tolerance.max));
   return value.gte(low) && value.lte(high) ? actual : null;
 }

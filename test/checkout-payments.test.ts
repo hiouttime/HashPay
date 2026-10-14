@@ -211,7 +211,7 @@ describe("checkout payment check", () => {
   it("confirms a unique off-amount payment and stores the received amount", async () => {
     const ts = Math.floor(Date.now() / 1000);
     const env = checkoutEnv({
-      configs: { dynamic_match: "true", match_max: "1", match_min: "-0.1" },
+      configs: { dynamic_match: "true", match_max: "1", match_min: "0.3" },
       currentPayment: trc20Snapshot,
       includeExisting: false,
     });
@@ -229,7 +229,7 @@ describe("checkout payment check", () => {
   it("does not claim an off-amount payment that also fits another pending order", async () => {
     const ts = Math.floor(Date.now() / 1000);
     const env = checkoutEnv({
-      configs: { dynamic_match: "true", match_max: "1", match_min: "-0.1" },
+      configs: { dynamic_match: "true", match_max: "1", match_min: "0.3" },
       currentPayment: trc20Snapshot,
       includeExisting: false,
       pending: [orderRow("nearby", {

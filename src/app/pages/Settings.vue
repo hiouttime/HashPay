@@ -58,10 +58,6 @@ async function save() {
   }
   const matchMin = Number(settings.value.matchMin ?? 0);
   const matchMax = Number(settings.value.matchMax ?? 1);
-  if (matchMin > matchMax) {
-    message.error(t("errors.match_range_invalid"));
-    return;
-  }
   const { botUsername: _bot, marketRates: _rates, ...current } = settings.value;
   const saved = await api.settings.save({
     ...current,
@@ -259,11 +255,11 @@ onMounted(load);
             <div class="match-tolerance-fields">
               <label>
                 <span>{{ t('settings.match_min') }}</span>
-                <n-input-number v-model:value="settings.matchMin" placeholder="0" :step="0.01" />
+                <n-input-number v-model:value="settings.matchMin" :min="0" placeholder="0" :step="0.01" />
               </label>
               <label>
                 <span>{{ t('settings.match_max') }}</span>
-                <n-input-number v-model:value="settings.matchMax" placeholder="1" :step="0.01" />
+                <n-input-number v-model:value="settings.matchMax" :min="0" placeholder="1" :step="0.01" />
               </label>
             </div>
             <small>{{ t('settings.match_tolerance_help') }}</small>

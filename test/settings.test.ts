@@ -58,21 +58,22 @@ describe("settings payload", () => {
       dynamicMatch: true,
       fastConfirm: false,
       matchMax: 1,
-      matchMin: -0.1,
+      matchMin: 0.3,
       rateAdjust: 0,
       timeout: 5,
     });
 
     expect(saved.dynamicMatch).toBe(true);
-    expect(saved.matchMin).toBe(-0.1);
+    expect(saved.matchMin).toBe(0.3);
     expect(saved.matchMax).toBe(1);
     expect(configs.get("dynamic_match")).toBe("true");
-    expect(configs.get("match_min")).toBe("-0.1");
+    expect(configs.get("match_min")).toBe("0.3");
     expect(configs.get("match_max")).toBe("1");
   });
 
-  it("rejects a match tolerance whose lower bound exceeds the upper bound", () => {
-    expect(() => normalizeSettingsPayload({ matchMax: -0.2, matchMin: 1 })).toThrow(AppError);
+  it("stores under and over allowances as non-negative amounts", () => {
+    expect(normalizeSettingsPayload({ matchMax: 1, matchMin: 0.3 })).toMatchObject({ matchMax: 1, matchMin: 0.3 });
+    expect(normalizeSettingsPayload({ matchMax: -2, matchMin: -1 })).toMatchObject({ matchMax: 0, matchMin: 0 });
   });
 
   it("rejects non-HTTPS domains", async () => {

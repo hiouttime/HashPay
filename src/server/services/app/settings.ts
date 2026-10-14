@@ -160,7 +160,6 @@ export function payAmount(amount: number, from: string, to: string, rate: RateCo
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
   const matchMin = normalizeMatchBound(input.matchMin, 0);
   const matchMax = normalizeMatchBound(input.matchMax, 1);
-  if (matchMin > matchMax) throw new AppError(400, "errors.match_range_invalid");
   return {
     currency: normalizeCurrency(String(input.currency ?? "CNY")),
     dynamicMatch: input.dynamicMatch === true || input.dynamicMatch === "true",
@@ -188,7 +187,7 @@ function normalizeMatchBound(value: unknown, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   const rounded = Math.round(parsed * 1e8) / 1e8;
-  return Math.min(Math.max(rounded, -1_000_000), 1_000_000);
+  return Math.min(Math.max(rounded, 0), 1_000_000);
 }
 
 function normalizeTimeoutMinutes(value: unknown) {

@@ -101,7 +101,7 @@ describe("TRC20 provider", () => {
       channel: channel({ address: snapshot.address, driver: "trc20" }),
       fastConfirm: false,
       orders: [order(snapshot)],
-      tolerance: { max: 1, min: -0.1 },
+      tolerance: { max: 1, min: 0.1 },
     })).resolves.toMatchObject({
       matches: [{ amount: 12.55, orderId: "order", txid: "tx" }],
       status: "ok",
@@ -120,7 +120,7 @@ describe("TRC20 provider", () => {
         order(snapshot, { id: "order-a" }),
         order({ ...snapshot, amount: 12.51 }, { id: "order-b" }),
       ],
-      tolerance: { max: 1, min: -0.1 },
+      tolerance: { max: 1, min: 0.1 },
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 

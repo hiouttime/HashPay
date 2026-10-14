@@ -3,7 +3,7 @@ import { paymentMatches } from "@/server/payments/match";
 import { fitAmount } from "@/shared/amount";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
-const tolerance = { max: 1, min: -0.1 };
+const tolerance = { max: 1, min: 0.1 };
 
 describe("payment amount matching", () => {
   it("matches a unique payment inside the tolerance", () => {
@@ -31,6 +31,16 @@ describe("payment amount matching", () => {
       { amount: 15, orderId: "a", time: 1, txid: "a" },
       { amount: 15.01, orderId: "b", time: 1, txid: "b" },
     ]);
+  });
+
+  it("accepts from the amount due minus under through the amount due plus over", () => {
+    const band = { max: 1, min: 0.3 };
+    expect(fitAmount(9.7, 10, band)).toBe(9.7);
+    expect(fitAmount(10, 10, band)).toBe(10);
+    expect(fitAmount(10.01, 10, band)).toBe(10.01);
+    expect(fitAmount(11, 10, band)).toBe(11);
+    expect(fitAmount(9.69, 10, band)).toBeNull();
+    expect(fitAmount(11.01, 10, band)).toBeNull();
   });
 
   it("ignores a payment outside the tolerance", () => {
