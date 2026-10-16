@@ -106,7 +106,8 @@ async function tokenLogs(chain: Chain, address: string, asset: string, contract:
   const logs = await rpc<Array<Record<string, unknown>>>(chain, "eth_getLogs", [{
     address: contract,
     fromBlock: hex(fromBlock),
-    toBlock: "latest",
+    // bloXroute rejects the "latest" log tag even for small ranges.
+    toBlock: hex(latest),
     topics: [transferTopic, null, topicAddress(address)],
   }]);
   return logs.map((log) => ({

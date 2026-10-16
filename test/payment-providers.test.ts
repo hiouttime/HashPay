@@ -254,6 +254,36 @@ describe("EVM provider", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
   });
 
+  it("matches BSC payments when the RPC rejects the latest log range tag", async () => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        method?: string;
+        params?: Array<{ toBlock?: string }>;
+      };
+      if (body.method === "eth_blockNumber") return json({ result: "0x7a01000" });
+      if (body.method === "eth_getLogs") {
+        if (body.params?.[0]?.toBlock === "latest") {
+          return json({ error: { code: -32000, message: "exceed maximum block range: 5000" } });
+        }
+        return json({ result: [{ blockTimestamp: hex(now), data: "0x2386f26fc10000", transactionHash: "0xbsc-paid" }] });
+      }
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "bep20" }),
+      fastConfirm: true,
+      orders: [order(payment({ address, amount: 0.01, driver: "bep20" }), {
+        createdAt: now - 10,
+        expireAt: now + 100,
+        id: "bsc-order",
+      })],
+    })).resolves.toMatchObject({ matches: [{ orderId: "bsc-order", txid: "0xbsc-paid" }], status: "ok" });
+  });
+
   it("does not match the historical BSC payment from the reported incident", async () => {
     const paidAt = 1_784_132_988;
     const createdAt = 1_784_133_393;
