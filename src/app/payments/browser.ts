@@ -89,7 +89,7 @@ async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbeP
   const logs = await rpc<Array<Record<string, unknown>>>(endpoint, "eth_getLogs", [{
     address: token.contract,
     fromBlock: hex(fromBlock),
-    toBlock: "latest",
+    toBlock: hex(latest),
     topics: [transferTopic, null, topicAddress(payment.address)],
   }]);
   return valid(logs.map((log) => ({

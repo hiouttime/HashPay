@@ -81,6 +81,31 @@ describe("frontend payment module", () => {
     expect(String((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0])).toContain("https://api.trongrid.io/v1/accounts/");
   });
 
+  it("probes BSC payments when the RPC rejects the latest log range tag", async () => {
+    const now = 1_800_000_120;
+    vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    const address = "0x0000000000000000000000000000000000000001";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        method?: string;
+        params?: Array<{ toBlock?: string }>;
+      };
+      if (body.method === "eth_blockNumber") return new Response(JSON.stringify({ result: "0x7a01000" }));
+      if (body.params?.[0]?.toBlock === "latest") {
+        return new Response(JSON.stringify({ error: { code: -32000, message: "exceed maximum block range: 5000" } }));
+      }
+      return new Response(JSON.stringify({ result: [{ data: "0x8ac7230489e80000", transactionHash: "0xbrowser-paid" }] }));
+    }));
+
+    const matches = await browserMatches(
+      { address, amount: 10, currency: "usdt", driver: "bep20" },
+      { createdAt: now - 10, expireAt: now + 100 },
+      true,
+    );
+
+    expect(matches.map((item) => item.hash)).toEqual(["0xbrowser-paid"]);
+  });
+
   it("does not probe unsupported browser payment drivers", async () => {
     expect(canProbeInBrowser({ address: "2itEPQiRbuLQZzdubQFgx2P9M9mpREoNdPKng3M7sf5o", driver: "solana" })).toBe(false);
     await expect(browserMatches(
