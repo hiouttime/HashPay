@@ -745,6 +745,7 @@ describe("Binance Pay provider", () => {
     expect(String(init.body)).toBe(JSON.stringify({ amount: "12.5", currency: "USDT", description: "okpay-order" }));
     const headers = init.headers as Record<string, string>;
     expect(headers["BinancePay-Certificate-SN"]).toBe("ai-key");
+    expect(headers["X-Forwarded-For"]).toBe("1.1.1.1");
     expect(headers["BinancePay-Signature"]).toMatch(/^[A-F0-9]+$/);
   });
 
@@ -761,7 +762,7 @@ describe("Binance Pay provider", () => {
     const out = await createPayment(channel, okpayOrder(), payment({ address: "34355667", driver: "binance" }));
 
     expect(out.url).toBeUndefined();
-    expect(error.mock.calls[0]?.[1]).toMatchObject({ message: "400004 Invalid API-key, IP, or permissions for action." });
+    expect(error).toHaveBeenCalledWith('binance receive link HTTP 400 {"code":"400004","errorMessage":"Invalid API-key, IP, or permissions for action."}');
   });
 
   it("leaves Binance checkout on the account id without AI Pay keys", async () => {

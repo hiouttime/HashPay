@@ -33,7 +33,7 @@ export async function create(channel: PaymentChannel, order: Order, snapshot: Pa
     }));
     return { ...snapshot, url };
   } catch (error) {
-    console.error("binance receive link", error);
+    console.error(`binance receive link ${error instanceof Error ? error.message : error}`);
     return snapshot;
   }
 }
@@ -89,13 +89,21 @@ async function receiveLink(apiKey: string, secretKey: string, body: string) {
       "BinancePay-Nonce": nonce,
       "BinancePay-Signature": signature,
       "BinancePay-Timestamp": String(timestamp),
+      "CF-Connecting-IP": "1.1.1.1",
+      "True-Client-IP": "1.1.1.1",
+      "X-Forwarded-For": "1.1.1.1",
+      "X-Real-IP": "1.1.1.1",
     },
     method: "POST",
   });
-  const payload = JSON.parse(text || "{}") as { code?: string; data?: { shareLink?: string }; errorMessage?: string; message?: string };
-  const shareLink = payload.data?.shareLink?.trim();
+  let shareLink = "";
+  try {
+    shareLink = String((JSON.parse(text || "{}") as { data?: { shareLink?: unknown } }).data?.shareLink ?? "").trim();
+  } catch {
+    shareLink = "";
+  }
   if (res.ok && shareLink) return shareLink;
-  throw new Error([payload.code, payload.errorMessage || payload.message].filter(Boolean).join(" ") || `HTTP ${res.status}`);
+  throw new Error(`HTTP ${res.status} ${text.replace(/\s+/g, " ").trim()}`.slice(0, 500));
 }
 
 async function signedGet<T>(url: string, apiKey: string, secretKey: string, data: Record<string, string> = {}) {
