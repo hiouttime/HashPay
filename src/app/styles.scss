@@ -1410,19 +1410,12 @@ a {
   min-width: 0;
 }
 
-.pay-status.is-enabled {
-  color: #15803d;
+.pay-status {
   font-weight: 600;
-}
 
-.pay-status.is-disabled {
-  color: #b91c1c;
-  font-weight: 600;
-}
-
-.pay-status.is-error {
-  color: #b45309;
-  font-weight: 600;
+  &.is-enabled { color: #15803d; }
+  &.is-disabled { color: #b91c1c; }
+  &.is-error { color: #b45309; }
 }
 
 .pay-address {

@@ -8,6 +8,7 @@ defineOptions({
 defineProps<{
   options: ReadonlyArray<{
     label: string;
+    tag?: string;
     value: SegmentedValue;
   }>;
   size?: "small" | "medium" | "large";
@@ -31,7 +32,10 @@ defineEmits<{
       :key="String(item.value)"
       :value="item.value"
     >
-      {{ item.label }}
+      <span class="n-segmented-option">
+        <span class="n-segmented-text">{{ item.label }}</span>
+        <span v-if="item.tag" class="n-segmented-tag">{{ item.tag }}</span>
+      </span>
     </n-radio-button>
   </n-radio-group>
 </template>
@@ -43,23 +47,66 @@ defineEmits<{
   --segmented-divider-color-active: var(--n-button-border-color-active);
   --n-button-border-radius: var(--segmented-radius);
 
-  align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  max-width: 100%;
   min-width: 0;
-  row-gap: 0.375rem;
+  width: 100%;
 }
 
 .n-segmented.n-radio-group--button-group {
   height: auto !important;
   line-height: normal !important;
-  white-space: normal !important;
+}
+
+.n-segmented :deep(.n-radio-button) {
+  align-items: center;
+  display: flex !important;
+  flex: 1 1 0;
+  height: auto !important;
+  justify-content: center;
+  line-height: 1.2 !important;
+  min-height: var(--n-height);
+  min-width: 0;
+  overflow: hidden;
+  padding-block: 0.22rem !important;
+  text-align: center;
+}
+
+.n-segmented :deep(.n-radio__label) {
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+.n-segmented-option {
+  display: inline-grid;
+  gap: 0.12rem;
+  justify-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.n-segmented-text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.n-segmented-tag {
+  background: #f0fdf4;
+  border-radius: 999px;
+  color: #15803d;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.12rem 0.4rem;
 }
 
 .n-segmented :deep(.n-radio-group__splitor) {
+  align-self: stretch;
   background: var(--segmented-divider-color);
-  height: var(--n-height) !important;
+  height: auto !important;
   margin: 0;
 }
 

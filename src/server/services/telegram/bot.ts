@@ -16,6 +16,8 @@ import {
   key,
   paymentAssetTelegramEmojiId,
   paymentById,
+  paymentKind,
+  paymentKindOrder,
   paymentNetworkTelegramEmojiId,
 } from "@/shared/payments";
 import { paymentExplorerUrl } from "@/server/payments/driver";
@@ -126,7 +128,16 @@ export async function createBot(env: AppEnv) {
     await paymentAction(ctx, async (locale) => {
       const [, orderId, asset] = ctx.match;
       const checkout = await checkoutData(env, orderId);
-      await editMessage(ctx, networkMenuText(checkout.order, checkout.options, asset, locale), networkMenu(orderId, checkout.options, asset, locale), await siteUrl(env, "/banner.webp"));
+      await editMessage(ctx, payChoiceText(checkout.order, checkout.options, asset, locale, "telegram.kind_menu"), kindMenu(orderId, checkout.options, asset, locale), await siteUrl(env, "/banner.webp"));
+      await answerCallback(ctx);
+    });
+  });
+
+  bot.callbackQuery(/^paykind:([^:]+):([A-Za-z0-9_-]+):(chain|exchange|wallet)$/, async (ctx) => {
+    await paymentAction(ctx, async (locale) => {
+      const [, orderId, asset, kind] = ctx.match;
+      const checkout = await checkoutData(env, orderId);
+      await editMessage(ctx, payChoiceText(checkout.order, checkout.options, asset, locale, "telegram.network_menu"), networkMenu(orderId, checkout.options, asset, kind, locale), await siteUrl(env, "/banner.webp"));
       await answerCallback(ctx);
     });
   });
@@ -257,23 +268,22 @@ function assetMenu(orderId: string, options: TelegramPaymentOption[]) {
   return keyboard;
 }
 
-function networkMenuText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale) {
+function kindMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
+  const keyboard = new InlineKeyboard();
   const targetAsset = key(asset);
-  const payAmount = options.find((option) => key(option.asset) === targetAsset)?.amount ?? order.amount;
-  return t(locale, "telegram.network_menu", {
-    amount: telegramAmount(order.amount),
-    asset: assetName(order.currency),
-    payAmount: telegramAmount(payAmount),
-    payAsset: assetName(asset),
-  });
+  for (const kind of assetKinds(options, targetAsset)) {
+    keyboard.text(t(locale, `payment.kind.${kind}`), `paykind:${orderId}:${targetAsset}:${kind}`).row();
+  }
+  keyboard.text(t(locale, "telegram.reselect_asset"), `payways:${orderId}`);
+  return keyboard;
 }
 
-function networkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, locale: Locale) {
+function networkMenu(orderId: string, options: TelegramPaymentOption[], asset: string, kind: string, locale: Locale) {
   const keyboard = new InlineKeyboard();
   const targetAsset = key(asset);
   const networks = [...new Set(
     options
-      .filter((option) => key(option.asset) === targetAsset)
+      .filter((option) => key(option.asset) === targetAsset && paymentKind(option.network) === kind)
       .map((option) => option.network.trim().toLowerCase())
       .filter(Boolean),
   )].sort((a, b) => t(locale, networkLabel(a)).localeCompare(t(locale, networkLabel(b))));
@@ -281,8 +291,24 @@ function networkMenu(orderId: string, options: TelegramPaymentOption[], asset: s
     const label = t(locale, networkLabel(network));
     keyboard.text(emojiButton(label, paymentNetworkTelegramEmojiId(network)), `paynet:${orderId}:${targetAsset}:${network}`).row();
   }
-  keyboard.text(t(locale, "telegram.reselect_asset"), `payways:${orderId}`);
+  keyboard.text(t(locale, "telegram.reselect_kind"), `payasset:${orderId}:${targetAsset}`);
   return keyboard;
+}
+
+function payChoiceText(order: { amount: number; currency: string }, options: TelegramPaymentOption[], asset: string, locale: Locale, keyName: "telegram.kind_menu" | "telegram.network_menu") {
+  const targetAsset = key(asset);
+  const payAmount = options.find((option) => key(option.asset) === targetAsset)!.amount;
+  return t(locale, keyName, {
+    amount: telegramAmount(order.amount),
+    asset: assetName(order.currency),
+    payAmount: telegramAmount(payAmount),
+    payAsset: assetName(asset),
+  });
+}
+
+function assetKinds(options: TelegramPaymentOption[], asset: string) {
+  const present = new Set(options.filter((option) => key(option.asset) === asset).map((option) => paymentKind(option.network)));
+  return paymentKindOrder.filter((item) => present.has(item));
 }
 
 function emojiButton(text: string, emojiId: string) {

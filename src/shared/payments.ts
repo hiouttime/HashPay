@@ -418,6 +418,12 @@ export function paymentByNetwork(network: unknown) {
   return byNetwork.get(key(network));
 }
 
+export const paymentKindOrder = [...new Set(payments.map((payment) => payment.kind))];
+
+export function paymentKind(network: unknown) {
+  return paymentByNetwork(network)!.kind;
+}
+
 export function networkLabel(network: unknown) {
   const raw = text(network);
   return paymentByNetwork(raw)?.nameKey ?? raw.toUpperCase();
