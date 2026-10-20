@@ -270,6 +270,12 @@ function driverIconLabel(driver: payment.DriverChoice, network = payment.driverN
   return payment.isEvm(driver) ? networkName(payment.evmIconNetwork) : payment.networkName(network);
 }
 
+const channelStatus = {
+  disabled: "common.disabled",
+  enabled: "common.enabled",
+  error: "payment.channel_error",
+} as const;
+
 onMounted(load);
 </script>
 
@@ -295,7 +301,10 @@ onMounted(load);
         </span>
         <div class="pay-info">
           <strong>{{ item.name }} <span class="muted">#{{ item.id }}</span></strong>
-          <p>{{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} / {{ item.status === 'disabled' ? t('common.disabled') : item.status === 'error' ? t('payment.channel_error') : t('common.enabled') }}</p>
+          <p>
+            {{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} /
+            <span class="pay-status" :class="`is-${item.status}`">{{ t(channelStatus[item.status]) }}</span>
+          </p>
           <div class="chip-row readonly">
             <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ payment.assetName(asset) }}</span>
           </div>

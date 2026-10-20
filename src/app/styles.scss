@@ -1410,6 +1410,21 @@ a {
   min-width: 0;
 }
 
+.pay-status.is-enabled {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.pay-status.is-disabled {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.pay-status.is-error {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .pay-address {
   overflow-wrap: anywhere;
   word-break: break-word;
