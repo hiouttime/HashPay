@@ -721,6 +721,43 @@ describe("Binance Pay provider", () => {
     });
   });
 
+  it("creates a Binance receive link from the order amount", async () => {
+    const fetchMock = vi.fn(async () => json({
+      code: "000000",
+      data: { shareLink: "https://app.binance.com/uni-qr/preview" },
+      status: "SUCCESS",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const channel = binanceChannel();
+    channel.data.aiApiKey = "ai-key";
+    channel.data.aiSecretKey = "ai-secret";
+
+    const out = await createPayment(channel, okpayOrder(), payment({
+      address: "34355667",
+      amount: 12.5,
+      currency: "usdt",
+      driver: "binance",
+    }));
+
+    expect(out).toMatchObject({ url: "https://app.binance.com/uni-qr/preview" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://bpay.binanceapi.com/binancepay/openapi/user/c2c/createReceive");
+    expect(String(init.body)).toBe(JSON.stringify({ amount: "12.5", currency: "USDT", description: "okpay-order" }));
+    const headers = init.headers as Record<string, string>;
+    expect(headers["BinancePay-Certificate-SN"]).toBe("ai-key");
+    expect(headers["BinancePay-Signature"]).toMatch(/^[A-F0-9]+$/);
+  });
+
+  it("leaves Binance checkout on the account id without AI Pay keys", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await createPayment(binanceChannel(), okpayOrder(), payment({ address: "34355667", driver: "binance" }));
+
+    expect(out.url).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("matches payments received by Binance ID", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_800_000_000_000);

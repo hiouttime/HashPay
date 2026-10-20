@@ -23,6 +23,7 @@ const qrVisible = ref(false);
 const { t } = useI18n();
 const address = computed(() => splitAddress(props.payment.address));
 const isExchange = computed(() => paymentById(props.payment.driver)?.kind === "exchange");
+const binanceLink = computed(() => props.payment.driver === "binance" ? String(props.payment.url || "") : "");
 const showQr = computed(() => Boolean(props.payment.address && !props.payment.url && !isExchange.value));
 const warning = computed(() => {
   if (isExchange.value) return t("checkout.exchange_wait");
@@ -52,11 +53,11 @@ function splitAddress(value: unknown) {
     <n-button size="small" text type="primary" @click="emit('change')">{{ t('checkout.change') }}</n-button>
   </div>
 
-  <n-button v-if="payment.url" tag="a" :href="payment.url" target="_blank" rel="noreferrer" block type="primary">
+  <n-button v-if="payment.url && !binanceLink" tag="a" :href="payment.url" target="_blank" rel="noreferrer" block type="primary">
     {{ t('checkout.open_payment') }}
   </n-button>
 
-  <div v-if="payment.address && !payment.url" class="checkout-copy-field checkout-copy-field--address">
+  <div v-if="payment.address && (!payment.url || binanceLink)" class="checkout-copy-field checkout-copy-field--address">
     <div class="checkout-copy-head">
       <span>{{ t(isExchange ? 'payment.exchange_address' : 'checkout.address') }}</span>
       <div class="checkout-copy-actions">
@@ -72,6 +73,18 @@ function splitAddress(value: unknown) {
     <code class="checkout-address-code">
       <strong>{{ address.prefix }}</strong><span>{{ address.middle }}</span><strong>{{ address.suffix }}</strong>
     </code>
+  </div>
+
+  <div v-if="binanceLink" class="checkout-binance-pay">
+    <div class="checkout-address-qr-inline">
+      <div class="checkout-qr-box">
+        <n-qr-code :size="168" :value="binanceLink" />
+      </div>
+      <p>{{ t('checkout.binance_scan') }}</p>
+    </div>
+    <n-button class="checkout-binance-app" tag="a" :href="binanceLink" block type="primary">
+      {{ t('checkout.open_binance') }}
+    </n-button>
   </div>
 
   <div class="checkout-due-amount">

@@ -1,7 +1,8 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
+import type { Order } from "@/server/services/orders/repository";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText } from "@/server/utils/http";
 import { key } from "@/shared/payments";
@@ -9,6 +10,7 @@ import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const api = "https://api-gcp.binance.com/sapi/v1/pay/transactions";
 const accountApi = "https://api-gcp.binance.com/api/v3/account";
+const receiveApi = "https://bpay.binanceapi.com/binancepay/openapi/user/c2c/createReceive";
 
 interface BinancePayRow {
   amount?: string | number;
@@ -17,6 +19,19 @@ interface BinancePayRow {
   receiverInfo?: { binanceId?: unknown };
   transactionId?: string;
   transactionTime?: string | number;
+}
+
+export async function create(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
+  const apiKey = channel.data.aiApiKey?.trim();
+  const secretKey = channel.data.aiSecretKey?.trim();
+  if (!apiKey || !secretKey) return snapshot;
+  const body = JSON.stringify({
+    amount: String(snapshot.amount),
+    currency: snapshot.currency.toUpperCase(),
+    description: order.id,
+  });
+  const shareLink = await receiveLink(body, apiKey, secretKey);
+  return { ...snapshot, url: shareLink };
 }
 
 export async function check(input: Pick<PaymentChannel, "address" | "data">) {
@@ -55,6 +70,28 @@ async function history(input: PaymentCheckInput) {
     throw new Error(`Binance response failed: ${payload.code ?? "unknown"}`);
   }
   return Array.isArray(payload.data) ? payload.data as BinancePayRow[] : [];
+}
+
+async function receiveLink(body: string, apiKey: string, secretKey: string) {
+  const timestamp = Date.now();
+  const nonce = randomBytes(16).toString("hex");
+  const signature = createHmac("sha512", secretKey).update(`${timestamp}\n${nonce}\n${body}\n`).digest("hex").toUpperCase();
+  const { res, text } = await fetchText(receiveApi, {
+    body,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "BinancePay-Certificate-SN": apiKey,
+      "BinancePay-Nonce": nonce,
+      "BinancePay-Signature": signature,
+      "BinancePay-Timestamp": String(timestamp),
+    },
+    method: "POST",
+  });
+  const payload = parseJson(text) as { data?: { shareLink?: unknown } };
+  const shareLink = String(payload.data?.shareLink ?? "").trim();
+  if (!res.ok || !shareLink) throw new AppError(502, "errors.payment_create_failed");
+  return shareLink;
 }
 
 async function signedGet<T>(url: string, apiKey: string, secretKey: string, data: Record<string, string> = {}) {

@@ -473,8 +473,8 @@ function mediaExtra(keyboard?: InlineKeyboard) {
 }
 
 async function qrUrl(env: AppEnv, orderId: string, snapshot: PaymentSnapshot) {
-  if (!snapshot.address?.trim()) return "";
-  if (paymentById(snapshot.driver)?.kind === "exchange") return "";
+  if (snapshot.url?.trim()) return siteUrl(env, `/order/${encodeURIComponent(orderId)}/qr.png`);
+  if (!snapshot.address?.trim() || paymentById(snapshot.driver)?.kind === "exchange") return "";
   return siteUrl(env, `/order/${encodeURIComponent(orderId)}/qr.png`);
 }
 

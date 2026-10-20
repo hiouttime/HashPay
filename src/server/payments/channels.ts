@@ -53,7 +53,7 @@ export async function savePayment(env: AppEnv, input: { address: string; assets:
   const existing = input.id ? await getPayment(env, input.id) : null;
   const nextData = Object.fromEntries(Object.entries(input.data ?? {}).filter(([, value]) => String(value).trim()));
   const data = existing ? { ...existing.data, ...nextData } : nextData;
-  if (payment.data?.some((field) => !String(data[field.id] ?? "").trim())) {
+  if (payment.data?.some((field) => !field.optional && !data[field.id]?.trim())) {
     throw new AppError(400, "errors.payment_credential_missing");
   }
   await validateData(payment.id, address, data);

@@ -44,6 +44,7 @@ export interface PaymentData {
   id: string;
   helpKey?: string;
   nameKey: string;
+  optional?: boolean;
 }
 
 export interface Payment {
@@ -342,6 +343,8 @@ export const binance: Payment = {
       nameKey: "payment.binance.api_key",
     },
     { id: "secretKey", helpKey: "payment.binance.secret_key_help", nameKey: "payment.binance.secret_key" },
+    { id: "aiApiKey", helpKey: "payment.binance.ai_api_key_help", nameKey: "payment.binance.ai_api_key", optional: true },
+    { id: "aiSecretKey", helpKey: "payment.binance.ai_secret_key_help", nameKey: "payment.binance.ai_secret_key", optional: true },
   ],
   icon: "icon-binance",
   id: "binance",

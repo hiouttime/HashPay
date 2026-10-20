@@ -40,6 +40,8 @@ const editableFields = computed(() => {
   return [payment.fieldFor(driver)];
 });
 const dataFields = computed(() => currentDriver.value.data ?? []);
+const primaryDataFields = computed(() => dataFields.value.filter((field) => !field.optional));
+const advancedDataFields = computed(() => dataFields.value.filter((field) => field.optional));
 const selectedAssets = computed(() => form.assets);
 const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
@@ -106,7 +108,7 @@ function validate() {
     return false;
   }
 
-  const missingData = !isEdit.value ? dataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
+  const missingData = !isEdit.value ? primaryDataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
   if (missingData) {
     message.error(t("payment.validation.field_required", { field: t(missingData.nameKey) }));
     return false;
@@ -418,7 +420,7 @@ onMounted(load);
               <small v-if="field.help" class="field-help">{{ field.help }}</small>
             </div>
           </template>
-          <div v-for="field in dataFields" :key="field.id" class="form-field-block">
+          <div v-for="field in primaryDataFields" :key="field.id" class="form-field-block">
             <n-form-item :show-label="false" class="field-form-item">
               <n-input
                 v-model:value="form.data[field.id]"
@@ -429,6 +431,21 @@ onMounted(load);
             </n-form-item>
             <small v-if="field.helpKey" class="field-help" v-html="t(field.helpKey)"></small>
           </div>
+          <n-collapse v-if="advancedDataFields.length" class="advanced-fields">
+            <n-collapse-item :title="t('payment.advanced')" name="advanced">
+              <div v-for="field in advancedDataFields" :key="field.id" class="form-field-block">
+                <n-form-item :show-label="false" class="field-form-item">
+                  <n-input
+                    v-model:value="form.data[field.id]"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t(field.nameKey)"
+                  />
+                </n-form-item>
+                <small v-if="field.helpKey" class="field-help" v-html="t(field.helpKey)"></small>
+              </div>
+            </n-collapse-item>
+          </n-collapse>
         </div>
       </div>
 

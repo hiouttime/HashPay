@@ -1,7 +1,7 @@
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import { check as checkAptos, scan as scanAptos } from "@/server/payments/providers/aptos";
-import { check as checkBinance, scan as scanBinance } from "@/server/payments/providers/binance";
+import { check as checkBinance, create as createBinance, scan as scanBinance } from "@/server/payments/providers/binance";
 import { check as checkEvm, scan as scanEvm } from "@/server/payments/providers/evm";
 import { check as checkOkpay, create as createOkpay, scan as scanOkpay } from "@/server/payments/providers/okpay";
 import { check as checkOkx, scan as scanOkx } from "@/server/payments/providers/okx";
@@ -87,6 +87,7 @@ const providers: Record<string, Provider> = {
 };
 
 const creators: Partial<Record<string, Create>> = {
+  binance: createBinance,
   okpay: createOkpay,
 };
 

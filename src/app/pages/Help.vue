@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useMessage } from "naive-ui";
 import { useRoute } from "vue-router";
+import BinanceHelp from "@/app/components/BinanceHelp.vue";
 import { useI18n } from "@/app/i18n";
 import { copyText } from "@/app/utils/clipboard";
 
@@ -12,25 +13,35 @@ const props = defineProps<{
 const message = useMessage();
 const { t } = useI18n();
 const route = useRoute();
-const telegram = computed(() => route.params.topic === "telegram");
+const helpBase = "/admin/help";
+const topics = [
+  { id: "telegram", summary: "help.telegram.summary", title: "help.telegram.title" },
+  { id: "binance", summary: "help.binance.summary", title: "help.binance.title" },
+] as const;
+const topic = computed(() => String(route.params.topic || ""));
+const activeTopic = computed(() => topic.value || topics[0].id);
 const bot = computed(() => `@${props.username}`);
 </script>
 
 <template>
-  <div class="grid">
-    <div class="section-title">
+  <div class="help-layout" :class="{ 'is-reading': topic }">
+    <aside class="help-nav">
       <h2>{{ t('help.title') }}</h2>
-    </div>
+      <router-link
+        v-for="item in topics"
+        :key="item.id"
+        :class="{ 'is-active': activeTopic === item.id }"
+        :to="`${helpBase}/${item.id}`"
+      >
+        <strong>{{ t(item.title) }}</strong>
+        <span>{{ t(item.summary) }}</span>
+      </router-link>
+    </aside>
 
-    <n-list v-if="!telegram" bordered class="help-list">
-      <n-list-item>
-        <router-link to="/admin/help/telegram">
-          <n-thing :title="t('help.telegram.title')" :description="t('help.telegram.summary')" />
-        </router-link>
-      </n-list-item>
-    </n-list>
+    <div class="help-main">
+      <router-link v-if="topic" class="help-back" :to="helpBase">{{ t('help.back') }}</router-link>
 
-    <article v-else class="help-article grid">
+    <article v-if="activeTopic === 'telegram'" class="help-article grid">
       <header>
         <h2>{{ t('help.telegram.title') }}</h2>
         <p>{{ t('help.telegram.summary') }}</p>
@@ -70,5 +81,13 @@ const bot = computed(() => `@${props.username}`);
         <n-input :value="`${bot} 10`" readonly />
       </section>
     </article>
+
+    <article v-else-if="activeTopic === 'binance'" class="help-article grid">
+      <header>
+        <h2>{{ t('help.binance.title') }}</h2>
+      </header>
+      <BinanceHelp />
+    </article>
+    </div>
   </div>
 </template>

@@ -13,7 +13,7 @@ const router = createRouter({
     { path: "/admin", redirect: "/admin/overview" },
     { component: () => import("@/app/pages/Admin.vue"), meta: { back: "/admin/merchants" }, path: "/admin/merchants/new" },
     { component: () => import("@/app/pages/Admin.vue"), meta: { back: "/admin/merchants" }, path: "/admin/merchants/:id/edit" },
-    { component: () => import("@/app/pages/Admin.vue"), meta: { back: "/admin/help" }, path: "/admin/help/:topic(telegram)" },
+    { component: () => import("@/app/pages/Admin.vue"), meta: { back: "/admin/help" }, path: "/admin/help/:topic(telegram|binance)" },
     { component: () => import("@/app/pages/Admin.vue"), path: "/admin/:tab(overview|orders|payments|merchants|help|settings)" },
     { component: () => import("@/app/pages/Pay.vue"), path: "/pay/:id" },
     { component: () => import("@/app/pages/Home.vue"), path: "/" },

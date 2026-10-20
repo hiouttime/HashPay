@@ -100,6 +100,8 @@ describe("payment model", () => {
       data: [
         { id: "apiKey", nameKey: "payment.binance.api_key" },
         { id: "secretKey", nameKey: "payment.binance.secret_key" },
+        { id: "aiApiKey", nameKey: "payment.binance.ai_api_key", optional: true },
+        { id: "aiSecretKey", nameKey: "payment.binance.ai_secret_key", optional: true },
       ],
     });
     expect(() => validateChannel({ address: "34355667", assets: ["usdt"], driver: "binance" })).not.toThrow();
