@@ -748,6 +748,22 @@ describe("Binance Pay provider", () => {
     expect(headers["BinancePay-Signature"]).toMatch(/^[A-F0-9]+$/);
   });
 
+  it("leaves Binance checkout on the account id when the receive link fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: "400004",
+      errorMessage: "Invalid API-key, IP, or permissions for action.",
+    }), { status: 400, headers: { "content-type": "application/json" } })));
+    const channel = binanceChannel();
+    channel.data.aiApiKey = "ai-key";
+    channel.data.aiSecretKey = "ai-secret";
+
+    const out = await createPayment(channel, okpayOrder(), payment({ address: "34355667", driver: "binance" }));
+
+    expect(out.url).toBeUndefined();
+    expect(error.mock.calls[0]?.[1]).toMatchObject({ message: "400004 Invalid API-key, IP, or permissions for action." });
+  });
+
   it("leaves Binance checkout on the account id without AI Pay keys", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

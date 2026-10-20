@@ -25,13 +25,17 @@ export async function create(channel: PaymentChannel, order: Order, snapshot: Pa
   const apiKey = channel.data.aiApiKey?.trim();
   const secretKey = channel.data.aiSecretKey?.trim();
   if (!apiKey || !secretKey) return snapshot;
-  const body = JSON.stringify({
-    amount: String(snapshot.amount),
-    currency: snapshot.currency.toUpperCase(),
-    description: order.id,
-  });
-  const shareLink = await receiveLink(body, apiKey, secretKey);
-  return { ...snapshot, url: shareLink };
+  try {
+    const url = await receiveLink(apiKey, secretKey, JSON.stringify({
+      amount: String(snapshot.amount),
+      currency: snapshot.currency.toUpperCase(),
+      description: order.id,
+    }));
+    return { ...snapshot, url };
+  } catch (error) {
+    console.error("binance receive link", error);
+    return snapshot;
+  }
 }
 
 export async function check(input: Pick<PaymentChannel, "address" | "data">) {
@@ -72,7 +76,7 @@ async function history(input: PaymentCheckInput) {
   return Array.isArray(payload.data) ? payload.data as BinancePayRow[] : [];
 }
 
-async function receiveLink(body: string, apiKey: string, secretKey: string) {
+async function receiveLink(apiKey: string, secretKey: string, body: string) {
   const timestamp = Date.now();
   const nonce = randomBytes(16).toString("hex");
   const signature = createHmac("sha512", secretKey).update(`${timestamp}\n${nonce}\n${body}\n`).digest("hex").toUpperCase();
@@ -88,10 +92,10 @@ async function receiveLink(body: string, apiKey: string, secretKey: string) {
     },
     method: "POST",
   });
-  const payload = parseJson(text) as { data?: { shareLink?: unknown } };
-  const shareLink = String(payload.data?.shareLink ?? "").trim();
-  if (!res.ok || !shareLink) throw new AppError(502, "errors.payment_create_failed");
-  return shareLink;
+  const payload = JSON.parse(text || "{}") as { code?: string; data?: { shareLink?: string }; errorMessage?: string; message?: string };
+  const shareLink = payload.data?.shareLink?.trim();
+  if (res.ok && shareLink) return shareLink;
+  throw new Error([payload.code, payload.errorMessage || payload.message].filter(Boolean).join(" ") || `HTTP ${res.status}`);
 }
 
 async function signedGet<T>(url: string, apiKey: string, secretKey: string, data: Record<string, string> = {}) {

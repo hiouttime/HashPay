@@ -44,7 +44,7 @@ function splitAddress(value: unknown) {
 <template>
   <div class="checkout-pay-method">
     <div>
-      <span>{{ t('common.network') }}</span>
+      <span>{{ t('checkout.method') }}</span>
       <strong class="checkout-network-title">
         <AppIcon v-if="pay.networkIcon(payment.driver)" :name="pay.networkIcon(payment.driver)" :label="pay.networkName(payment.driver)" />
         <span>{{ pay.networkName(payment.driver) }}</span>

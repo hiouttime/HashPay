@@ -9,6 +9,8 @@ import { paymentKind, paymentKindOrder, type PaymentKind } from "@/shared/paymen
 
 const props = defineProps<{
   disabled: boolean;
+  initialAsset?: string;
+  initialNetwork?: string;
   options: pay.CheckoutOption[];
 }>();
 
@@ -17,8 +19,8 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const asset = ref("");
-const kind = ref<PaymentKind>("chain");
+const asset = ref(pay.assetKey(props.initialAsset));
+const kind = ref<PaymentKind>(props.initialNetwork ? paymentKind(props.initialNetwork) : "chain");
 const assets = computed(() => {
   const map = new Map<string, pay.CheckoutOption[]>();
   for (const option of props.options) {
@@ -32,13 +34,13 @@ const assets = computed(() => {
     networks: options,
   }));
 });
-const kinds = computed(() => paymentKindOrder.filter((item) => props.options.some((option) => option.asset === asset.value && paymentKind(option.network) === item)));
+const networks = computed(() => props.options.filter((option) => option.asset === asset.value));
+const kinds = computed(() => paymentKindOrder.filter((item) => networks.value.some((option) => paymentKind(option.network) === item)));
 const kindTabs = computed(() => kinds.value.map((item) => ({
   label: t(`payment.kind.${item}`),
   tag: item === "chain" ? undefined : t("checkout.zero_fee"),
   value: item,
 })));
-const networks = computed(() => props.options.filter((item) => item.asset === asset.value && paymentKind(item.network) === kind.value));
 const selectedAsset = computed(() => assets.value.find((item) => item.asset === asset.value));
 
 function chooseAsset(next: string) {
@@ -86,6 +88,7 @@ function chooseAsset(next: string) {
     <div class="checkout-network-list">
       <button
         v-for="item in networks"
+        v-show="paymentKind(item.network) === kind"
         :key="item.value"
         :disabled="disabled"
         type="button"

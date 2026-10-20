@@ -198,6 +198,8 @@ function money(amount: unknown, currency: unknown) {
         <template v-else>
           <PaymentSelector
             :disabled="expired(checkout.order)"
+            :initial-asset="changingPayment ? checkout.order.payment.currency : ''"
+            :initial-network="changingPayment ? checkout.order.payment.driver : ''"
             :options="paymentOptions"
             @select="selectPayment"
           />

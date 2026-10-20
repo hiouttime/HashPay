@@ -47,6 +47,7 @@ const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
 const selectedNetworks = computed(() => Object.keys(selection.evm));
 const kindOptions = computed(() => payment.kinds.map((item) => ({ ...item, label: t(item.label) })));
+const driverChoices = payment.kinds.flatMap((item) => payment.choices(payment.drivers, item.value));
 
 async function load() {
   methods.value = await api.payments.list();
@@ -358,9 +359,10 @@ onMounted(load);
         <div v-if="!isEdit" class="form-section">
           <h3>{{ t("payment.channel_network") }}</h3>
           <n-empty v-if="!drivers.length" :description="t(selection.kind === 'wallet' ? 'payment.network_empty_wallet' : 'payment.network_empty_kind')" />
-          <div v-else class="network-choice-grid">
+          <div v-show="drivers.length" class="network-choice-grid">
             <button
-              v-for="driver in drivers"
+              v-for="driver in driverChoices"
+              v-show="driver.kind === selection.kind"
               :key="driver.id"
               :class="{ 'is-active': form.driver === driver.id }"
               type="button"
