@@ -27,6 +27,7 @@ const checks: Record<string, Probe> = {
   xlayer,
 };
 const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const logSpan = 100;
 
 export function canProbeInBrowser(payment: ProbePayment) {
   return Boolean(payment.address && checks[key(payment.driver)]);
@@ -83,21 +84,20 @@ async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbeP
   const token = evmAssets[key(payment.driver)]?.[asset];
   if (!token || !payment.address) return [];
   const latest = Number.parseInt(await rpc<string>(endpoint, "eth_blockNumber", []), 16);
-  const checkedAt = Math.floor(Date.now() / 1000);
-  const createdAt = Number(order.createdAt ?? checkedAt);
-  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / blockSeconds) - 1000);
-  const logs = await rpc<Array<Record<string, unknown>>>(endpoint, "eth_getLogs", [{
+  const from = latest - Math.ceil((Date.now() / 1000 - Number(order.createdAt ?? 0)) / blockSeconds);
+  const spans = Array.from({ length: Math.ceil((latest - from + 1) / logSpan) }, (_, index) => from + index * logSpan);
+  const chunks = await Promise.all(spans.map((start) => rpc<Array<Record<string, unknown>>>(endpoint, "eth_getLogs", [{
     address: token.contract,
-    fromBlock: hex(fromBlock),
-    toBlock: hex(latest),
+    fromBlock: hex(start),
+    toBlock: hex(Math.min(latest, start + logSpan - 1)),
     topics: [transferTopic, null, topicAddress(payment.address)],
-  }]);
-  return valid(logs.map((log) => ({
+  }])));
+  return valid(chunks.flat().map((log) => ({
     amount: amount(log.data, token.decimals),
     currency: asset,
     hash: String(log.transactionHash ?? ""),
     raw: { ...log, contract: token.contract },
-    timestamp: checkedAt,
+    timestamp: Math.floor(Date.now() / 1000),
     to: payment.address,
   })));
 }

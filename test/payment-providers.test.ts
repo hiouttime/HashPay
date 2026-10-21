@@ -254,6 +254,39 @@ describe("EVM provider", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
   });
 
+  it("splits an older BSC order into short log ranges", async () => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const spans: number[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        method?: string;
+        params?: Array<{ fromBlock?: string; toBlock?: string }>;
+      };
+      if (body.method === "eth_blockNumber") return json({ result: "0x1000" });
+      if (body.method === "eth_getLogs") {
+        const from = Number.parseInt(body.params?.[0]?.fromBlock ?? "0", 16);
+        const to = Number.parseInt(body.params?.[0]?.toBlock ?? "0", 16);
+        spans.push(to - from);
+        return json({ result: [] });
+      }
+      return json({ result: null });
+    }));
+
+    await checkPayment({
+      channel: channel({ address, driver: "bep20" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: 0.01, driver: "bep20" }), {
+        createdAt: now - 400,
+        expireAt: now + 100,
+      })],
+    });
+
+    expect(spans.length).toBeGreaterThan(1);
+    expect(spans.every((span) => span <= 99)).toBe(true);
+  });
+
   it("matches BSC payments when the RPC rejects the latest log range tag", async () => {
     const now = 1_800_000_120;
     vi.useFakeTimers();

@@ -8,6 +8,7 @@ import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
 const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const logSpan = 100;
 
 type Chain = {
   blockSeconds: number;
@@ -25,7 +26,6 @@ const chains: Record<string, Chain> = {
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
   polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },
-  // Official rpc.xlayer.tech rejects eth_getLogs ranges above 100 blocks.
   xlayer: { blockSeconds: 1, native: "okb", rpc: "https://xlayer-mainnet.rpc.sentio.xyz" },
 };
 
@@ -101,16 +101,15 @@ async function rpcScan(chain: Chain, address: string, asset: string, network: st
 
 async function tokenLogs(chain: Chain, address: string, asset: string, contract: string, decimals: number, createdAt: number) {
   const latest = Number.parseInt(await rpc<string>(chain, "eth_blockNumber", []), 16);
-  const checkedAt = Math.floor(Date.now() / 1000);
-  const fromBlock = Math.max(0, latest - Math.ceil((checkedAt - createdAt) / chain.blockSeconds) - 1000);
-  const logs = await rpc<Array<Record<string, unknown>>>(chain, "eth_getLogs", [{
+  const from = latest - Math.ceil((Date.now() / 1000 - createdAt) / chain.blockSeconds);
+  const spans = Array.from({ length: Math.ceil((latest - from + 1) / logSpan) }, (_, index) => from + index * logSpan);
+  const chunks = await Promise.all(spans.map((start) => rpc<Array<Record<string, unknown>>>(chain, "eth_getLogs", [{
     address: contract,
-    fromBlock: hex(fromBlock),
-    // bloXroute rejects the "latest" log tag even for small ranges.
-    toBlock: hex(latest),
+    fromBlock: hex(start),
+    toBlock: hex(Math.min(latest, start + logSpan - 1)),
     topics: [transferTopic, null, topicAddress(address)],
-  }]);
-  return logs.map((log) => ({
+  }])));
+  return chunks.flat().map((log) => ({
     amount: amount(log.data, decimals),
     currency: asset,
     hash: String(log.transactionHash ?? ""),
