@@ -563,6 +563,22 @@ describe("Solana provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects Solana instructions that are not SPL transfers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, signature: "solana-approve" }] });
+      if (body.method === "getTransaction") return json({ result: solanaTx({ account, type: "approve" }) });
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("rejects Solana transfers with a different mint", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
@@ -1063,7 +1079,7 @@ function aptosTx(input: { address: string; asset?: string; type?: string }) {
   };
 }
 
-function solanaTx(input: { account: string; err?: unknown; mint?: string }) {
+function solanaTx(input: { account: string; err?: unknown; mint?: string; programId?: string; type?: string }) {
   return {
     blockTime: 120,
     meta: { err: input.err ?? null, innerInstructions: [] },
@@ -1076,8 +1092,9 @@ function solanaTx(input: { account: string; err?: unknown; mint?: string }) {
               mint: input.mint ?? solanaAssets.usdc.contract,
               tokenAmount: { amount: "5250000", decimals: 6, uiAmountString: "5.25" },
             },
-            type: "transferChecked",
+            type: input.type ?? "transferChecked",
           },
+          programId: input.programId ?? "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
         }],
       },
     },

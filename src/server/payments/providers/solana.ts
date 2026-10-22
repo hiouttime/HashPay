@@ -7,118 +7,110 @@ import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
 
 const endpoint = "https://public.rpc.solanavibestation.com/";
+const tokenPrograms = new Set([
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+]);
+const transferTypes = new Set(["transfer", "transferChecked"]);
+
+type Commitment = "confirmed" | "finalized";
+type Instruction = {
+  parsed?: {
+    info?: {
+      amount?: string;
+      destination?: string;
+      mint?: string;
+      tokenAmount?: { amount?: string };
+    };
+    type?: string;
+  };
+  programId?: string;
+};
+type Transaction = {
+  blockTime?: number;
+  meta?: { err?: unknown; innerInstructions?: Array<{ instructions?: Instruction[] }> };
+  transaction?: { message?: { instructions?: Instruction[] } };
+};
 
 export async function check(channel: PaymentChannel) {
-  const token = channel.assets.map((asset) => solanaAssets[key(asset)]).find(Boolean);
-  if (!token) throw new Error("Solana asset is not configured");
-  await tokenAccounts(channel.address, token.contract, "finalized");
+  const asset = channel.assets.map(key).find((item) => solanaAssets[item]);
+  if (!asset) throw new Error("Solana asset is not configured");
+  await tokenAccounts(channel.address, solanaAssets[asset]!.contract, "finalized");
 }
 
 export async function scan(input: PaymentCheckInput) {
-  const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
+  return paymentMatches(input.orders, await transactions(input), match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
-  const owner = String(input.channel?.address ?? input.orders[0]?.snapshot.address ?? "");
-  if (!owner) return [];
+  const owner = input.channel?.address || input.orders[0]!.snapshot.address!;
   const createdAt = Math.min(...input.orders.map((order) => order.createdAt));
   const expireAt = Math.max(...input.orders.map((order) => order.expireAt));
-  const commitment = input.fastConfirm ? "confirmed" : "finalized";
-  const txs = [];
-  for (const asset of Array.from(new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean)))) {
-    txs.push(...await scanAsset(owner, asset, createdAt, expireAt, commitment));
+  const commitment: Commitment = input.fastConfirm ? "confirmed" : "finalized";
+  const txs: TxCandidate[] = [];
+  for (const asset of new Set(input.orders.map((order) => key(order.snapshot.currency)))) {
+    const token = solanaAssets[asset];
+    if (!token) continue;
+    for (const account of await tokenAccounts(owner, token.contract, commitment)) {
+      const signatures = await rpc<Array<{ blockTime?: number | null; err?: unknown; signature: string }>>("getSignaturesForAddress", [
+        account,
+        { commitment, limit: 50 },
+      ]);
+      for (const row of signatures) {
+        if (row.err || !row.blockTime || row.blockTime < createdAt || row.blockTime > expireAt) continue;
+        const tx = await rpc<Transaction | null>("getTransaction", [
+          row.signature,
+          { commitment, encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
+        ]);
+        if (!tx?.transaction || tx.meta?.err != null) continue;
+        txs.push(...candidates(tx, { account, asset, decimals: token.decimals, mint: token.contract, owner, signature: row.signature }));
+      }
+    }
   }
   return txs;
 }
 
-async function scanAsset(owner: string, asset: string, createdAt: number, expireAt: number, commitment: string) {
-  const token = solanaAssets[asset];
-  if (!token) return [];
-  const accounts = await tokenAccounts(owner, token.contract, commitment);
-  const out = [];
-  for (const account of accounts) {
-    const signatures = await rpc<Array<{ blockTime?: number; err?: unknown; signature: string }>>("getSignaturesForAddress", [
-      account,
-      { commitment, limit: 50 },
-    ]);
-    for (const row of signatures.filter((item) => item.err == null && item.blockTime && item.blockTime >= createdAt && item.blockTime <= expireAt)) {
-      const tx = await transaction(row.signature, commitment);
-      if (!tx) continue;
-      out.push(...transfers(tx, {
-        account,
-        asset,
-        decimals: token.decimals,
-        mint: token.contract,
-        owner,
-        signature: row.signature,
-      }));
-    }
-  }
-  return out;
-}
-
-async function tokenAccounts(owner: string, mint: string, commitment: string) {
-  const payload = await rpc<{ value?: Array<{ pubkey?: string }> }>("getTokenAccountsByOwner", [
+async function tokenAccounts(owner: string, mint: string, commitment: Commitment) {
+  const payload = await rpc<{ value: Array<{ pubkey: string }> }>("getTokenAccountsByOwner", [
     owner,
     { mint },
     { commitment, encoding: "jsonParsed" },
   ]);
-  return (payload.value ?? []).map((item) => String(item.pubkey ?? "")).filter(Boolean);
+  return payload.value.map((item) => item.pubkey);
 }
 
-async function transaction(signature: string, commitment: string) {
-  const tx = await rpc<Record<string, unknown> | null>("getTransaction", [
-    signature,
-    { commitment, encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
-  ]);
-  return tx && typeof tx === "object" ? tx : null;
-}
-
-function transfers(tx: Record<string, unknown>, input: { account: string; asset: string; decimals: number; mint: string; owner: string; signature: string }) {
-  const meta = tx.meta as { err?: unknown } | undefined;
-  if (meta?.err != null) return [];
-  return instructions(tx)
-    .map((instruction) => transfer(instruction, tx, input))
-    .filter((item): item is TxCandidate => item !== null);
-}
-
-function transfer(instruction: Record<string, unknown>, tx: Record<string, unknown>, input: { account: string; asset: string; decimals: number; mint: string; owner: string; signature: string }): TxCandidate | null {
-  const parsed = instruction.parsed as { info?: Record<string, unknown>; type?: string } | undefined;
-  const info = parsed?.info;
-  if (!info || !String(parsed?.type ?? "").startsWith("transfer")) return null;
-  if (String(info.destination ?? "") !== input.account) return null;
-  const mint = String(info.mint ?? input.mint);
-  if (mint !== input.mint) return null;
-  return {
-    amount: tokenAmount(info, input.decimals),
-    currency: input.asset,
-    hash: input.signature,
-    raw: { instruction, mint },
-    timestamp: Number(tx.blockTime ?? 0),
-    to: input.owner,
-  };
-}
-
-function instructions(tx: Record<string, unknown>) {
-  const transaction = tx.transaction as { message?: { instructions?: unknown[] } } | undefined;
-  const meta = tx.meta as { innerInstructions?: Array<{ instructions?: unknown[] }> } | undefined;
-  return [
-    ...(transaction?.message?.instructions ?? []),
-    ...(meta?.innerInstructions ?? []).flatMap((group) => group.instructions ?? []),
-  ].filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+function candidates(tx: Transaction, input: { account: string; asset: string; decimals: number; mint: string; owner: string; signature: string }) {
+  const instructions = [
+    ...(tx.transaction?.message?.instructions ?? []),
+    ...(tx.meta?.innerInstructions ?? []).flatMap((group) => group.instructions ?? []),
+  ];
+  return instructions.flatMap((instruction) => {
+    const info = instruction.parsed?.info;
+    const type = instruction.parsed?.type ?? "";
+    if (!info || !tokenPrograms.has(instruction.programId ?? "") || !transferTypes.has(type) || info.destination !== input.account) return [];
+    const raw = info.tokenAmount?.amount ?? info.amount;
+    const mint = info.mint ?? input.mint;
+    if (!raw || mint !== input.mint) return [];
+    return [{
+      amount: new Decimal(raw).div(new Decimal(10).pow(input.decimals)).toNumber(),
+      currency: input.asset,
+      hash: input.signature,
+      raw: { mint },
+      timestamp: Number(tx.blockTime),
+      to: input.owner,
+    }];
+  });
 }
 
 function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expire: number) {
   const asset = key(snapshot.currency);
-  const token = solanaAssets[asset];
-  const valid = Boolean(tx.hash)
+  const paid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
-    && (!token || mint(tx.raw) === token.contract)
+    && solanaAssets[asset]?.contract === (tx.raw as { mint?: string }).mint
     && snapshot.address === tx.to;
-  return valid ? tx.amount : null;
+  return paid ? tx.amount : null;
 }
 
 async function rpc<T>(method: string, params: unknown[]) {
@@ -128,27 +120,9 @@ async function rpc<T>(method: string, params: unknown[]) {
     method: "POST",
   });
   if (!res.ok) throw new Error(`Solana ${host(endpoint)} ${method}: HTTP ${res.status} ${reason(text || res.statusText)}`.trim());
-  const payload = parseRpc<T>(text, method);
+  const payload = JSON.parse(text) as { error?: { message?: string }; result?: T };
   if (payload.error || payload.result === undefined) {
     throw new Error(`Solana ${host(endpoint)} ${method}: ${reason(payload.error?.message ?? "response is invalid")}`);
   }
   return payload.result;
-}
-
-function parseRpc<T>(text: string, method: string) {
-  try {
-    return JSON.parse(text || "{}") as { error?: { message?: string }; result?: T };
-  } catch {
-    throw new Error(`Solana ${host(endpoint)} ${method}: invalid JSON ${reason(text)}`);
-  }
-}
-
-function tokenAmount(info: Record<string, unknown>, decimals: number) {
-  const token = info.tokenAmount as { amount?: unknown; uiAmountString?: unknown } | undefined;
-  if (token?.uiAmountString != null) return Number(token.uiAmountString);
-  return new Decimal(String(token?.amount ?? info.amount ?? "0")).div(new Decimal(10).pow(decimals)).toNumber();
-}
-
-function mint(raw: unknown) {
-  return String((raw as Record<string, unknown>).mint ?? "");
 }
