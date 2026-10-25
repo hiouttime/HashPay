@@ -86,6 +86,20 @@ describe("frontend api http client", () => {
     expect(new Headers(init?.headers).get("content-type")).toBe("image/webp");
     expect(init?.body).toBe(body);
   });
+
+  it("submits a screenshot as multipart data with a browser-generated boundary", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ ok: true }));
+    const image = new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" });
+
+    await expect(api.checkout.review("order", { answer: "answer", image })).resolves.toEqual({ ok: true });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/checkout/order/review");
+    expect(new Headers(init?.headers).has("content-type")).toBe(false);
+    const body = init?.body as FormData;
+    expect(body.get("answer")).toBe("answer");
+    expect(body.get("image")).toMatchObject({ type: "image/jpeg", size: 3, name: "payment.jpg" });
+  });
 });
 
 function jsonResponse(body: unknown, status = 200) {

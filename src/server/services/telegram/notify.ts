@@ -2,7 +2,7 @@ import { getConfig, one } from "@/server/db";
 import { paymentExplorerUrl } from "@/server/payments/driver";
 import { marketAmount, rateContext } from "@/server/services/app/settings";
 import { getMerchant } from "@/server/services/merchants";
-import { sendTelegramMessage, sendTelegramPhoto } from "@/server/services/telegram/api";
+import { sendTelegramImage, sendTelegramMessage } from "@/server/services/telegram/api";
 import { ceilAmount } from "@/shared/amount";
 import { t } from "@/shared/i18n";
 import { assetName, paymentAssetTelegramEmojiId } from "@/shared/payments";
@@ -31,7 +31,10 @@ export async function notifyReview(env: AppEnv, order: Order, answer: string, im
   try {
     const adminId = Number(await getConfig(env, "admin_id"));
     if (!adminId) return;
-    await sendTelegramPhoto(env, adminId, image);
+    const imageNotice = await sendTelegramImage(env, adminId, image).then(() => "", (error) => {
+      console.error("telegram:review_image_failed", error);
+      return t("zh-CN", "telegram.review_notice.image_unavailable");
+    });
     const text = [
       t("zh-CN", "telegram.review_notice.title", {
         amount: formatAmount(order.amount),
@@ -40,6 +43,7 @@ export async function notifyReview(env: AppEnv, order: Order, answer: string, im
       t("zh-CN", "telegram.review_notice.order_id", { orderId: `<code>${html(order.id)}</code>` }),
       "",
       html(answer),
+      ...(imageNotice ? ["", imageNotice] : []),
     ].join("\n");
     await sendTelegramMessage(env, adminId, text, {
       inline_keyboard: [[

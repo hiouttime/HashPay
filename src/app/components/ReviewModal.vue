@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useMessage } from "naive-ui";
+import type { UploadFileInfo } from "naive-ui";
 import * as pay from "@/app/payments";
-import { api } from "@/app/api";
+import { api, type Order } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { prepareReviewImage } from "@/app/utils/images";
 import {
   ceilDisplayAmount,
   formatExactDisplayAmount as formatExactAmount,
@@ -11,12 +13,7 @@ import {
 } from "@/app/utils/format";
 
 const props = defineProps<{
-  order: any;
-  orderId: string;
-  payment: any;
-  selectedAsset?: string;
-  selectedNetwork?: string;
-  selectedOption?: pay.CheckoutOption;
+  order: Order;
   show: boolean;
 }>();
 
@@ -28,8 +25,9 @@ const emit = defineEmits<{
 const message = useMessage();
 const { t } = useI18n();
 const answers = ref<Record<string, string>>({});
-const image = ref("");
-const imageName = ref("");
+const image = shallowRef<{ name: string; blob: Blob } | null>(null);
+const imageTask = shallowRef<Promise<Blob> | null>(null);
+const imageProcessing = computed(() => imageTask.value !== null);
 const loading = ref(false);
 const returnStep = ref(0);
 const step = ref(0);
@@ -40,9 +38,9 @@ const visible = computed({
   set: (show) => emit("update:show", show),
 });
 const questions = computed(() => {
-  const asset = pay.assetKey(props.payment?.currency || props.selectedAsset || "usdt");
-  const network = pay.networkKey(props.payment?.driver || props.selectedNetwork || "trc20");
-  const amount = Number(props.payment?.amount || props.selectedOption?.amount || props.order?.amount || 0);
+  const asset = pay.assetKey(props.order.payment.currency ?? "usdt");
+  const network = pay.networkKey(props.order.payment.driver ?? "trc20");
+  const amount = props.order.payment.amount ?? props.order.amount;
   const networkCorrect = pay.networkName(network);
   const assetCorrect = pay.assetName(asset);
   const amountCorrect = `${formatExactAmount(amount)} ${assetCorrect}`;
@@ -77,31 +75,25 @@ const finalRisk = computed(() => {
   return `${wrong?.risk ?? t("review.network_issue")}\n\n${t("review.upload_help_suffix")}`;
 });
 const canNext = computed(() => Boolean(question.value && answers.value[question.value.id]));
-const canSubmit = computed(() => credentialStep.value && Boolean(txid.value.trim()) && Boolean(image.value));
+const canSubmit = computed(() => credentialStep.value && !imageProcessing.value && Boolean(txid.value.trim()) && Boolean(image.value));
 
 watch(() => props.show, (show) => {
+  imageTask.value = null;
   if (show) reset();
 });
 
+onBeforeUnmount(() => { imageTask.value = null; });
+
 function reset() {
   answers.value = {};
-  image.value = "";
-  imageName.value = "";
+  image.value = null;
   returnStep.value = 0;
   step.value = 0;
   txid.value = "";
 }
 
-function choose(questionId: string, answer: string) {
-  answers.value = { ...answers.value, [questionId]: answer };
-}
-
 function next() {
-  const item = question.value;
-  if (!item || !answers.value[item.id]) {
-    message.warning(t("review.choose_answer"));
-    return;
-  }
+  const item = question.value!;
   returnStep.value = step.value;
   if (answers.value[item.id] !== item.correct || step.value >= questions.value.length - 1) {
     step.value = questions.value.length;
@@ -118,42 +110,29 @@ function previous() {
   step.value = Math.max(0, step.value - 1);
 }
 
-async function upload(options: { file: { file?: File | null }; onError?: () => void; onFinish?: () => void }) {
+async function selectImage(options: { file: UploadFileInfo }): Promise<false> {
   const file = options.file.file;
-  if (!file) return;
-  if (!file.type.startsWith("image/")) {
-    message.warning(t("review.upload_image_first"));
-    options.onError?.();
-    return;
-  }
-  if (file.size > 2_000_000) {
-    message.warning(t("review.image_too_large"));
-    options.onError?.();
-    return;
-  }
+  if (!file) return false;
+  const task = prepareReviewImage(file);
+  imageTask.value = task;
   try {
-    imageName.value = file.name;
-    image.value = await fileToWebp(file);
-    options.onFinish?.();
+    const blob = await task;
+    if (imageTask.value === task) image.value = { name: file.name, blob };
   } catch {
-    options.onError?.();
+    if (imageTask.value === task) message.warning(t("review.image_process_failed"));
+  } finally {
+    if (imageTask.value === task) imageTask.value = null;
   }
+  return false;
 }
 
 async function submit() {
-  if (!txid.value.trim()) {
-    message.warning(t("review.tx_required"));
-    return;
-  }
-  if (!image.value) {
-    message.warning(t("review.screenshot_required"));
-    return;
-  }
+  if (!canSubmit.value || loading.value) return;
   loading.value = true;
   try {
-    await api.checkout.review(props.orderId, {
+    await api.checkout.review(props.order.id, {
       answer: answerText(),
-      image: image.value,
+      image: image.value!.blob,
     });
     visible.value = false;
     emit("submitted");
@@ -168,25 +147,6 @@ function answerText() {
     ...questions.value.map((item) => `${item.title}\n${answers.value[item.id] || t("review.not_asked")}`),
     `${t("review.tx_label")}\n${txid.value.trim()}`,
   ].join("\n\n");
-}
-
-function fileToWebp(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      canvas.getContext("2d")?.drawImage(image, 0, 0);
-      URL.revokeObjectURL(image.src);
-      resolve(canvas.toDataURL("image/webp", 0.86));
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(image.src);
-      reject(new Error("image_load_failed"));
-    };
-    image.src = URL.createObjectURL(file);
-  });
 }
 
 function options(correct: string, candidates: string[]) {
@@ -214,7 +174,7 @@ function shuffle(items: string[]) {
 }
 
 function score(value: string) {
-  let out = props.orderId.length;
+  let out = props.order.id.length;
   for (let index = 0; index < value.length; index += 1) {
     out = (out * 31 + value.charCodeAt(index)) % 997;
   }
@@ -242,7 +202,7 @@ function score(value: string) {
                 :key="option"
                 :class="{ 'is-active': answers[question.id] === option }"
                 type="button"
-                @click="choose(question.id, option)"
+                @click="answers[question.id] = option"
               >
                 {{ option }}
               </button>
@@ -259,15 +219,17 @@ function score(value: string) {
           />
           <n-upload
             accept="image/*"
-            :custom-request="upload"
+            :default-upload="false"
+            :disabled="imageProcessing || loading"
+            :on-before-upload="selectImage"
             directory-dnd
             :max="1"
             :show-file-list="false"
           >
             <n-upload-dragger>
-              <div class="checkout-upload-dragger">
-                <strong>{{ imageName || t('review.upload_screenshot') }}</strong>
-                <span>{{ t('review.screenshot_help') }}</span>
+              <div class="checkout-upload-dragger" aria-live="polite" :aria-busy="imageProcessing">
+                <strong>{{ imageProcessing ? t('review.image_processing') : image?.name || t('review.upload_screenshot') }}</strong>
+                <span>{{ imageProcessing ? t('review.image_wait') : image ? t('review.image_replace') : t('review.screenshot_help') }}</span>
               </div>
             </n-upload-dragger>
           </n-upload>

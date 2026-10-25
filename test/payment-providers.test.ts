@@ -251,7 +251,7 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "bsc-order", txid: "0xbsc-paid" }], status: "ok" });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc-rpc.publicnode.com");
   });
 
   it("splits an older BSC order into short log ranges", async () => {

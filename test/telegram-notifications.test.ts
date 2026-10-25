@@ -108,7 +108,7 @@ describe("Telegram payment notifications", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     const answer = "你通过哪种网络完成付款？\nBEP20\n\n你支付了哪种币种？\nUSDT";
-    const image = new Uint8Array([1, 2, 3]).buffer;
+    const image = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer;
 
     await notifyReview(env(new Map([["admin_id", "123456"]])), order(), answer, image);
 
@@ -117,6 +117,7 @@ describe("Telegram payment notifications", () => {
     expect(photoUrl).toBe("https://api.telegram.org/bottoken/sendPhoto");
     expect(photoInit.body).toBeInstanceOf(FormData);
     expect((photoInit.body as FormData).get("chat_id")).toBe("123456");
+    expect((photoInit.body as FormData).get("photo")).toMatchObject({ type: "image/jpeg", name: "payment.jpg" });
 
     const [messageUrl, messageInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect(messageUrl).toBe("https://api.telegram.org/bottoken/sendMessage");
@@ -132,6 +133,35 @@ describe("Telegram payment notifications", () => {
     });
     expect(message.text).toContain("💁 有订单需审核 （60 CNY）");
     expect(message.text).toContain(answer);
+  });
+
+  it("sends the screenshot as a file when Telegram rejects it as a photo", async () => {
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith("/sendPhoto")
+      ? { ok: false, description: "PHOTO_INVALID_DIMENSIONS" }
+      : { ok: true, result: {} }), { status: url.endsWith("/sendPhoto") ? 400 : 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await notifyReview(env(new Map([["admin_id", "123456"]])), order(), "answer", new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer);
+
+    expect(fetchMock.mock.calls.map(([url]) => url.split("/").pop())).toEqual(["sendPhoto", "sendDocument", "sendMessage"]);
+    const document = (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as FormData;
+    expect(document.get("document")).toMatchObject({ type: "image/jpeg", name: "payment.jpg" });
+    expect(document.get("photo")).toBeNull();
+  });
+
+  it("still sends the review and action buttons if both image deliveries fail", async () => {
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith("/sendMessage")
+      ? { ok: true, result: {} }
+      : { ok: false, description: "upload failed" }), { status: url.endsWith("/sendMessage") ? 200 : 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await notifyReview(env(new Map([["admin_id", "123456"]])), order(), "answer", new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const message = JSON.parse(String((fetchMock.mock.calls[2] as unknown as [string, RequestInit])[1].body));
+    expect(message.text).toContain("付款截图暂未送达，请在后台订单详情中查看。");
+    expect(message.reply_markup.inline_keyboard[0]).toHaveLength(2);
   });
 });
 

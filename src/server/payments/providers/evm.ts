@@ -22,7 +22,7 @@ const chains: Record<string, Chain> = {
   bep20: {
     blockSeconds: 0.4,
     native: "bnb",
-    rpc: "https://bsc.rpc.blxrbdn.com",
+    rpc: "https://bsc-rpc.publicnode.com",
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
   polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },

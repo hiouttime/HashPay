@@ -7,7 +7,7 @@ import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/p
 import { getOrder, listPendingChannelOrders, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
 import { notifyPayment, notifyReview } from "@/server/services/telegram/notify";
-import { clearReviewImage, imageData, saveReview } from "@/server/services/orders/review";
+import { clearReviewImage, saveReview } from "@/server/services/orders/review";
 import { ezfpReturnUrl, preserveEzfpContext } from "@/server/services/merchants/ezfp";
 import { payAmount, rateContext, systemSettings, toleranceOf } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
@@ -195,19 +195,15 @@ function txConflict(error: unknown) {
   return message.includes("orders.driver, orders.txid") || message.includes("orders_driver_txid_unique");
 }
 
-export async function submitPaymentReview(env: AppEnv, orderId: string, input: Record<string, unknown>) {
+export async function submitPaymentReview(env: AppEnv, orderId: string, input: { answer: string; image: Blob | null }) {
   const order = await getOrder(env, orderId);
   if (order.status === "paid") throw new AppError(400, "errors.order_paid");
   if (order.status === "invalid") throw new AppError(400, "errors.order_unavailable");
-  const image = String(input.image ?? "").trim();
-  const answer = String(input.answer ?? "").trim();
+  const answer = input.answer.trim();
   if (!answer) throw new AppError(400, "errors.review_answer_required");
-  if (image.length > 2_800_000) throw new AppError(400, "errors.review_image_too_large");
-  const data = imageData(image);
-  if (!data) throw new AppError(400, "errors.review_image_invalid");
-  const review = await saveReview(env, order.id, answer, data);
-  await notifyReview(env, order, answer, data);
-  return { review };
+  const image = await saveReview(env, order.id, answer, input.image);
+  await notifyReview(env, order, answer, image);
+  return { ok: true };
 }
 
 export async function checkOrderPayment(env: AppEnv, orderId: string) {

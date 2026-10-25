@@ -18,11 +18,18 @@ export async function sendTelegramMessage(env: AppEnv, chatId: number, text: str
   });
 }
 
-export async function sendTelegramPhoto(env: AppEnv, chatId: number, image: ArrayBuffer) {
+export async function sendTelegramImage(env: AppEnv, chatId: number, image: ArrayBuffer) {
+  const file = new File([image], "payment.jpg", { type: "image/jpeg" });
   const body = new FormData();
   body.set("chat_id", String(chatId));
-  body.set("photo", new Blob([image], { type: "image/webp" }), "review.webp");
-  await call(env, "sendPhoto", body);
+  body.set("photo", file);
+  try {
+    await call(env, "sendPhoto", body);
+  } catch {
+    body.delete("photo");
+    body.set("document", file);
+    await call(env, "sendDocument", body);
+  }
 }
 
 export async function getBotInfo(env: AppEnv) {

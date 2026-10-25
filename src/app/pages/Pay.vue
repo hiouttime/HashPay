@@ -291,8 +291,6 @@ function money(amount: unknown, currency: unknown) {
       v-model:show="reviewVisible"
       v-if="checkout"
       :order="checkout.order"
-      :order-id="orderId"
-      :payment="checkout.order.payment"
       @submitted="load"
     />
   </n-layout>

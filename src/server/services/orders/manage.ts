@@ -36,7 +36,7 @@ export async function getOrderDetail(env: AppEnv, id: string) {
       status: row.status,
     })),
     order: publicOrder(order),
-    review: review ? { answer: review.answer, image: review.image, imageUrl: review.imageUrl } : null,
+    review,
   };
 }
 

@@ -39,8 +39,12 @@ function endpoints(options: ApiRequestOptions = {}) {
         put<Record<string, unknown>>(`/api/checkout/${id(orderId)}/payment`, input, options),
       check: (orderId: string) =>
         post<Record<string, unknown>>(`/api/checkout/${id(orderId)}/check`, undefined, options),
-      review: (orderId: string, input: { answer: string; image: string }) =>
-        post<{ review: unknown }>(`/api/checkout/${id(orderId)}/review`, input, options),
+      review: (orderId: string, input: { answer: string; image: Blob }) => {
+        const body = new FormData();
+        body.set("answer", input.answer);
+        body.set("image", input.image, "payment.jpg");
+        return post<{ ok: true }>(`/api/checkout/${id(orderId)}/review`, body, options);
+      },
     },
     dashboard: {
       get: () => get<Dashboard>("/api/admin/dashboard", options),

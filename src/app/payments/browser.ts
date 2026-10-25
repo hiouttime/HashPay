@@ -72,7 +72,7 @@ function polygon(payment: ProbePayment, order: ProbeOrder) {
 }
 
 async function bep20(payment: ProbePayment, order: ProbeOrder) {
-  return tokenLogs("https://bsc.rpc.blxrbdn.com", 0.4, payment, order);
+  return tokenLogs("https://bsc-rpc.publicnode.com", 0.4, payment, order);
 }
 
 function xlayer(payment: ProbePayment, order: ProbeOrder) {
@@ -82,7 +82,8 @@ function xlayer(payment: ProbePayment, order: ProbeOrder) {
 async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbePayment, order: ProbeOrder) {
   const asset = key(payment.currency);
   const token = evmAssets[key(payment.driver)]?.[asset];
-  if (!token || !payment.address) return [];
+  const address = payment.address;
+  if (!token || !address) return [];
   const latest = Number.parseInt(await rpc<string>(endpoint, "eth_blockNumber", []), 16);
   const from = latest - Math.ceil((Date.now() / 1000 - Number(order.createdAt ?? 0)) / blockSeconds);
   const spans = Array.from({ length: Math.ceil((latest - from + 1) / logSpan) }, (_, index) => from + index * logSpan);
@@ -90,7 +91,7 @@ async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbeP
     address: token.contract,
     fromBlock: hex(start),
     toBlock: hex(Math.min(latest, start + logSpan - 1)),
-    topics: [transferTopic, null, topicAddress(payment.address)],
+    topics: [transferTopic, null, topicAddress(address)],
   }])));
   return valid(chunks.flat().map((log) => ({
     amount: amount(log.data, token.decimals),
@@ -98,7 +99,7 @@ async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbeP
     hash: String(log.transactionHash ?? ""),
     raw: { ...log, contract: token.contract },
     timestamp: Math.floor(Date.now() / 1000),
-    to: payment.address,
+    to: address,
   })));
 }
 

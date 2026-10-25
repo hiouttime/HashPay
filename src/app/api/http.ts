@@ -94,7 +94,7 @@ function buildRequest(options: ApiRequestOptions): RequestInit {
 
 function buildBody(body: unknown, headers: Headers): BodyInit | null | undefined {
   if (body == null) return body as null | undefined;
-  if (body instanceof ArrayBuffer || (typeof Blob !== "undefined" && body instanceof Blob)) return body;
+  if (body instanceof ArrayBuffer || body instanceof Blob || body instanceof FormData) return body;
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
   return JSON.stringify(body);
 }

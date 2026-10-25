@@ -38,7 +38,13 @@ app.put("/api/checkout/:orderId/payment", checkoutJson(async (c) => {
 }));
 app.post("/api/checkout/:orderId/check", checkoutJson((c) => checkOrderPayment(c.env, String(c.req.param("orderId") ?? ""))));
 app.post("/api/checkout/:orderId/review", checkoutJson(async (c) => {
-  return submitPaymentReview(c.env, String(c.req.param("orderId") ?? ""), (await c.req.json()) as Record<string, unknown>);
+  const form = await c.req.formData();
+  const answer = form.get("answer");
+  const image = form.get("image");
+  return submitPaymentReview(c.env, c.req.param("orderId")!, {
+    answer: typeof answer === "string" ? answer : "",
+    image: image instanceof File ? image : null,
+  });
 }));
 
 app.post("/telegram/webhook/:secret", async (c) => {
