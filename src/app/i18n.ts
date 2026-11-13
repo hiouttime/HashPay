@@ -1,12 +1,12 @@
 import { computed, ref } from "vue";
-import { normalizeLocale, t as translate, type I18nParams, type Locale, type MessageKey } from "@/shared/i18n";
+import { normalizeLocale, t, type I18nParams, type Locale, type MessageKey } from "@/shared/i18n";
 
 const storageKey = "hashpay.locale";
 const locale = ref<Locale>(initialLocale());
 
 export const localeOptions = computed(() => [
-  { label: translate(locale.value, "locale.zh"), value: "zh-CN" },
-  { label: translate(locale.value, "locale.en"), value: "en-US" },
+  { label: t(locale.value, "locale.zh"), value: "zh-CN" },
+  { label: t(locale.value, "locale.en"), value: "en-US" },
 ]);
 
 export function useI18n() {
@@ -19,7 +19,7 @@ export function useI18n() {
 }
 
 export function appT(key: MessageKey | string, params?: I18nParams) {
-  return translate(locale.value, key, params);
+  return t(locale.value, key, params);
 }
 
 export function setLocale(value: Locale | string) {

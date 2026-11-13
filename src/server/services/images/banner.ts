@@ -10,15 +10,9 @@ export async function ensureDefaultBanner(env: AppEnv) {
   return new Uint8Array(banner);
 }
 
-export async function uploadBanner(env: AppEnv, banner: ArrayBuffer) {
+export async function saveBanner(env: AppEnv, banner = defaultBannerBytes()) {
   await setConfig(env, "banner", "webp", banner);
   return { url: "/banner.webp" };
-}
-
-export async function restoreDefaultBanner(env: AppEnv) {
-  const banner = defaultBannerBytes();
-  await setConfig(env, "banner", "webp", banner);
-  return new Uint8Array(banner);
 }
 
 function defaultBannerBytes() {

@@ -11,7 +11,6 @@ export async function copyText(value: unknown, options: { message?: CopyMessage 
     options.message?.warning(appT("common.copy_failed_manual"));
     return false;
   }
-
   try {
     await navigator.clipboard.writeText(text);
     options.message?.success(appT("common.copied"));

@@ -97,7 +97,7 @@ export async function listOrders(env: AppEnv, input: { limit?: number; q?: strin
   return (await all<ListedOrderRow>(env, `SELECT orders.*, payments.name AS channel_name FROM orders LEFT JOIN payments ON payments.id = orders.payway${where} ORDER BY orders.created_at DESC LIMIT ?`, ...params, limit)).map(order);
 }
 
-export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSize?: number; q?: string; status?: string } = {}) {
+export async function queryOrdersPage(env: AppEnv, input: { page?: number; pageSize?: number; q?: string; status?: string } = {}) {
   const pageSize = Math.min(Math.max(Number(input.pageSize) || 20, 1), 100);
   const page = Math.max(Number(input.page) || 1, 1);
   const offset = (page - 1) * pageSize;
@@ -135,12 +135,16 @@ export async function listReviewOrders(env: AppEnv, limit = 5) {
   )).map(order);
 }
 
+// Both writes are conditional on status: a scheduled check may mark the order paid between the
+// caller's read and this write, and a paid snapshot (with tx evidence) must never be replaced.
 export async function setOrderPayment(env: AppEnv, orderId: string, payway: number, payment: unknown, ts = now()) {
-  await run(env, "UPDATE orders SET payway = ?, payment = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderId);
+  const result = await run(env, "UPDATE orders SET payway = ?, payment = ?, updated_at = ? WHERE id = ? AND status = 'pending'", payway, JSON.stringify(payment), ts, orderId);
+  return result.meta.changes > 0;
 }
 
 export async function refreshOrderPaymentWindow(env: AppEnv, orderId: string, payway: number, payment: unknown, timeoutMinutes: number, ts = now()) {
-  await run(env, "UPDATE orders SET status = 'pending', payway = ?, payment = ?, paid_at = NULL, created_at = ?, expire_at = ?, updated_at = ? WHERE id = ?", payway, JSON.stringify(payment), ts, orderExpireAt(ts, timeoutMinutes), ts, orderId);
+  const result = await run(env, "UPDATE orders SET status = 'pending', payway = ?, payment = ?, paid_at = NULL, created_at = ?, expire_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired')", payway, JSON.stringify(payment), ts, orderExpireAt(ts, timeoutMinutes), ts, orderId);
+  return result.meta.changes > 0;
 }
 
 export function publicOrder(order: Order): ApiOrder {

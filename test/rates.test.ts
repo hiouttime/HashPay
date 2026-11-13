@@ -127,7 +127,6 @@ function env(configs: Map<string, string | null>) {
 
 function rate(rates: Awaited<ReturnType<typeof syncMarketRates>>, rateAdjust = 0) {
   return {
-    rateAdjust,
     rates,
     settings: {
       currency: "CNY",

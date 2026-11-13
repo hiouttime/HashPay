@@ -65,9 +65,8 @@ describe("scheduled jobs", () => {
     expect(mocks.checkChannels).toHaveBeenCalledWith(env, "error");
     expect(mocks.checkPendingPayments).toHaveBeenCalledWith(env);
     expect(mocks.all).toHaveBeenCalledWith(env, expect.stringContaining("SELECT id FROM notify"), 1234);
-    expect(env.QUEUE_NOTIFY?.send).toHaveBeenCalledTimes(2);
-    expect(env.QUEUE_NOTIFY?.send).toHaveBeenNthCalledWith(1, { notifyId: 11 });
-    expect(env.QUEUE_NOTIFY?.send).toHaveBeenNthCalledWith(2, { notifyId: 12 });
+    expect(env.QUEUE_NOTIFY?.sendBatch).toHaveBeenCalledTimes(1);
+    expect(env.QUEUE_NOTIFY?.sendBatch).toHaveBeenCalledWith([{ body: { notifyId: 11 } }, { body: { notifyId: 12 } }]);
   });
 
   it("runs hourly rate sync without blocking the rest of the schedule", async () => {
@@ -81,6 +80,21 @@ describe("scheduled jobs", () => {
     expect(mocks.checkChannels).toHaveBeenCalledWith(env, "error");
     expect(mocks.checkPendingPayments).toHaveBeenCalledWith(env);
     expect(mocks.all).toHaveBeenCalledWith(env, expect.stringContaining("SELECT id FROM notify"), 1234);
+  });
+
+  it("still queues due notifications when a payment check stage fails", async () => {
+    const env = envWithQueue();
+    mocks.all.mockResolvedValue([{ id: 7 }]);
+    mocks.checkChannels.mockRejectedValue(new Error("credentials cannot be decrypted"));
+    mocks.checkPendingPayments.mockRejectedValue(new Error("provider down"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await runJobs(env, new Date("2026-07-04T08:01:00Z"));
+
+    expect(mocks.checkPendingPayments).toHaveBeenCalledWith(env);
+    expect(env.QUEUE_NOTIFY?.sendBatch).toHaveBeenCalledWith([{ body: { notifyId: 7 } }]);
+    expect(logged).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
   });
 
   it("acks queue messages after notify retry state is written in D1", async () => {
@@ -111,6 +125,7 @@ function envWithQueue() {
   return {
     QUEUE_NOTIFY: {
       send: vi.fn().mockResolvedValue(undefined),
+      sendBatch: vi.fn().mockResolvedValue(undefined),
     },
   } as unknown as AppEnv;
 }

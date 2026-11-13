@@ -7,12 +7,14 @@ import type { PaymentSnapshot } from "@/shared/types/domain";
 import { trc20Candidate, trc20ContractMatches, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
 
-export async function check(channel: PaymentChannel) {
+export const trc20 = { check, scan };
+
+async function check(channel: PaymentChannel) {
   const result = await fetchJson<{ data?: unknown[] }>(`https://api.trongrid.io/v1/accounts/${encodeURIComponent(channel.address)}`);
   if (!Array.isArray(result.data)) throw new Error("TronGrid response is invalid");
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
   return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }

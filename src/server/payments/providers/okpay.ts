@@ -8,9 +8,11 @@ import { key } from "@/shared/payments";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
+export const okpay = { check, create, scan };
+
 const api = "https://api.okaypay.me/shop";
 
-export async function create(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
+async function create(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
   const payload = await post(channel, "payLink", {
     amount: snapshot.amount,
     coin: key(snapshot.currency).toUpperCase(),
@@ -29,11 +31,11 @@ export async function create(channel: PaymentChannel, order: Order, snapshot: Pa
   };
 }
 
-export async function check(channel: PaymentChannel) {
+async function check(channel: PaymentChannel) {
   await post(channel, "checkTransferByTxid", { txid: "0" });
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   const channel = input.channel;
   if (!channel) return [];
   const matches = [];
@@ -49,24 +51,6 @@ export async function scan(input: PaymentCheckInput) {
     matches.push({ amount, orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
   }
   return matches;
-}
-
-export function verify(channel: PaymentChannel, input: Record<string, unknown>) {
-  const current = String(input.sign ?? "");
-  const data = { ...input };
-  delete data.sign;
-  return Boolean(current) && current === signature(channel, clean(data));
-}
-
-export function notifyData(input: Record<string, unknown>) {
-  const nested = typeof input.data === "string" ? parseJson(input.data) : input.data;
-  const source = nested && typeof nested === "object" ? nested as Record<string, unknown> : input;
-  return {
-    amount: Number(source.amount),
-    coin: key(source.coin),
-    orderId: String(source.order_id ?? ""),
-    uniqueId: String(source.unique_id ?? ""),
-  };
 }
 
 async function post(channel: PaymentChannel, path: string, data: Record<string, unknown>) {
@@ -109,12 +93,4 @@ function responseData(payload: Record<string, unknown>) {
   if (Array.isArray(data)) return (data[0] ?? {}) as Record<string, unknown>;
   if (data && typeof data === "object") return data as Record<string, unknown>;
   return {};
-}
-
-function parseJson(input: string) {
-  try {
-    return JSON.parse(input);
-  } catch {
-    return {};
-  }
 }

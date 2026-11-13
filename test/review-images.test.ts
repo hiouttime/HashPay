@@ -6,6 +6,7 @@ import publicRoutes from "@/server/http/routes/public";
 import { getOrder } from "@/server/services/orders/repository";
 import { notifyReview } from "@/server/services/telegram/notify";
 import type { AppEnv } from "@/server/types/env";
+import { sqliteEnv } from "./sqlite";
 
 vi.mock("@/server/services/orders/repository", async (original) => ({
   ...await original<typeof import("@/server/services/orders/repository")>(),
@@ -65,6 +66,15 @@ describe("review image storage", () => {
     expect(vi.mocked(notifyReview)).not.toHaveBeenCalled();
   });
 
+  it("accepts only one review per order", async () => {
+    const { env } = sqliteEnv();
+    const image = new Blob([new Uint8Array(formats[0]!.bytes)]);
+    await expect(submitPaymentReview(env, "order", { answer: "answer", image })).resolves.toEqual({ ok: true });
+    await expect(submitPaymentReview(env, "order", { answer: "changed", image })).rejects.toMatchObject({ key: "errors.review_submitted", status: 409 });
+    expect((await getReview(env, "order"))?.answer).toBe("answer");
+    expect(notifyReview).toHaveBeenCalledOnce();
+  });
+
   it("accepts multipart screenshots through the public route", async () => {
     const bytes = new Uint8Array(formats[0]!.bytes);
     const env = reviewEnv(bytes.buffer);
@@ -104,7 +114,7 @@ function reviewEnv(image: ArrayBuffer) {
         return {
           bind(...values: unknown[]) { params = values; return this; },
           async first() { return { id: 1, answer: "answer", image, image_url: null }; },
-          async run() { writes.push(params); return { success: true }; },
+          async run() { writes.push(params); return { meta: { changes: 1 }, success: true }; },
         };
       },
     },

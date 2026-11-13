@@ -8,6 +8,7 @@ const checkoutVisibleErrors = new Set<string>([
   "errors.review_answer_required",
   "errors.review_image_invalid",
   "errors.review_image_too_large",
+  "errors.review_submitted",
 ]);
 
 const checkoutPendingErrors = new Set<string>([

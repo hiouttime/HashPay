@@ -1,9 +1,8 @@
-import { deleteConfig, getConfig, jsonParseObject, now, setConfig } from "@/server/db";
+import { getConfig, jsonParseObject, now, one, setConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { timingSafeEqualString } from "@/server/utils/crypto";
+import { bytesToHex, hmacSha256, timingSafeEqualString } from "@/server/utils/crypto";
 import type { AppEnv, TelegramUser } from "@/server/types/env";
 
-const encoder = new TextEncoder();
 const loginPinKey = "login_pin";
 const pinTtlSeconds = 2 * 60;
 
@@ -24,9 +23,7 @@ function assertPin(pin: string) {
 
 async function hmacHex(env: AppEnv, value: string) {
   if (!env.APP_SECRET) throw new AppError(500, "errors.app_secret_missing");
-  const key = await crypto.subtle.importKey("raw", encoder.encode(env.APP_SECRET), { hash: "SHA-256", name: "HMAC" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
-  return Array.from(new Uint8Array(signature)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return bytesToHex(await hmacSha256(new TextEncoder().encode(env.APP_SECRET), value));
 }
 
 async function pinHash(env: AppEnv, pin: string) {
@@ -74,12 +71,16 @@ export async function confirmLoginPin(env: AppEnv, pin: string, user: TelegramUs
 
 export async function consumeLoginPin(env: AppEnv, pin: string, challengeToken: string) {
   await verifyChallenge(env, pin, challengeToken);
-  const record = jsonParseObject<LoginPinRecord>(await getConfig(env, loginPinKey), {});
-  if (!record.pinHash || !record.expiresAt || !record.user?.id) return null;
-  if (record.expiresAt < now()) return null;
-  if (!timingSafeEqualString(record.pinHash, await pinHash(env, pin))) return null;
-  await deleteConfig(env, loginPinKey);
-  return record.user;
+  // Compare and delete in one statement so a confirmed PIN issues at most one session.
+  const consumed = await one<{ value: string }>(
+    env,
+    "DELETE FROM configs WHERE key = ? AND json_extract(value, '$.pinHash') = ? AND json_extract(value, '$.expiresAt') >= ? RETURNING value",
+    loginPinKey,
+    await pinHash(env, pin),
+    now(),
+  );
+  if (consumed) return jsonParseObject<LoginPinRecord>(consumed.value, {}).user ?? null;
+  return null;
 }
 
 export async function requireInstalledAdmin(env: AppEnv) {

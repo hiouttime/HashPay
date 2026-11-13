@@ -20,11 +20,9 @@ export function bytesToHex(bytes: ArrayBuffer) {
     .join("");
 }
 
-function base64ToArrayBuffer(value: string) {
-  const binary = atob(value.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes.buffer;
+export async function hmacSha256(key: BufferSource, value: string) {
+  const cryptoKey = await crypto.subtle.importKey("raw", key, { hash: "SHA-256", name: "HMAC" }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value));
 }
 
 function arrayBufferToBase64(value: ArrayBuffer) {
@@ -36,10 +34,6 @@ function arrayBufferToBase64(value: ArrayBuffer) {
 
 function pemBlock(label: string, value: ArrayBuffer) {
   return `-----BEGIN ${label}-----\n${arrayBufferToBase64(value)}\n-----END ${label}-----`;
-}
-
-function normalizePublicKeyPem(value: string) {
-  return value.trim().replace(/\r\n/g, "\n");
 }
 
 export async function generateRsaKeyPair() {
@@ -58,29 +52,18 @@ export async function generateRsaKeyPair() {
   };
 }
 
-async function importRsaPublicKey(publicKeyPem: string) {
-  const normalized = normalizePublicKeyPem(publicKeyPem);
-  const body = normalized
-    .replace("-----BEGIN PUBLIC KEY-----", "")
-    .replace("-----END PUBLIC KEY-----", "");
-  if (!normalized.includes("-----BEGIN PUBLIC KEY-----") || !normalized.includes("-----END PUBLIC KEY-----")) {
-    throw new Error("RSA public key must be SPKI PEM");
-  }
-  return crypto.subtle.importKey(
+export async function verifyRsaSha256(publicKeyPem: string, signatureBase64: string, payload: string) {
+  const publicKey = await crypto.subtle.importKey(
     "spki",
-    base64ToArrayBuffer(body),
+    pemBody(publicKeyPem, "PUBLIC KEY"),
     { hash: "SHA-256", name: "RSASSA-PKCS1-v1_5" },
     false,
     ["verify"],
   );
-}
-
-export async function verifyRsaSha256(publicKeyPem: string, signatureBase64: string, payload: string) {
-  const publicKey = await importRsaPublicKey(publicKeyPem);
   return crypto.subtle.verify(
     { name: "RSASSA-PKCS1-v1_5" },
     publicKey,
-    base64ToArrayBuffer(signatureBase64),
+    unbase64Bytes(signatureBase64),
     encoder.encode(payload),
   );
 }
@@ -130,7 +113,7 @@ function pemBody(pem: string, label: string) {
   const begin = `-----BEGIN ${label}-----`;
   const end = `-----END ${label}-----`;
   if (!normalized.includes(begin) || !normalized.includes(end)) throw new Error(`RSA key must be ${label} PEM`);
-  return base64ToArrayBuffer(normalized.replace(begin, "").replace(end, ""));
+  return unbase64Bytes(normalized.replace(begin, "").replace(end, ""));
 }
 
 export function timingSafeEqualString(left: string, right: string) {
@@ -166,10 +149,18 @@ export async function decryptSecret(env: AppEnv, value: string) {
   }
 }
 
-async function secretKey(env: AppEnv) {
-  if (!env.APP_SECRET) throw new AppError(500, "errors.app_secret_missing");
-  const material = await crypto.subtle.digest("SHA-256", encoder.encode(`HashPay credential box:${env.APP_SECRET}`));
-  return crypto.subtle.importKey("raw", material, "AES-GCM", false, ["decrypt", "encrypt"]);
+// Every channel listing decrypts each channel's credentials, so derive the key once per isolate.
+const credentialKeys = new Map<string, Promise<CryptoKey>>();
+
+function secretKey(env: AppEnv) {
+  const secret = env.APP_SECRET;
+  if (!secret) throw new AppError(500, "errors.app_secret_missing");
+  const cached = credentialKeys.get(secret);
+  if (cached) return cached;
+  const key = crypto.subtle.digest("SHA-256", encoder.encode(`HashPay credential box:${secret}`))
+    .then((material) => crypto.subtle.importKey("raw", material, "AES-GCM", false, ["decrypt", "encrypt"]));
+  credentialKeys.set(secret, key);
+  return key;
 }
 
 function base64Bytes(bytes: Uint8Array) {

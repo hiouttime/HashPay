@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCard, NForm, NFormItem, NFormItemGi, NGrid, NInput, NInputNumber, NModal, NSelect, NSwitch, NUpload, useMessage } from "naive-ui";
 import DomainInput from "@/app/components/DomainInput.vue";
 import { api, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";

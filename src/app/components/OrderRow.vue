@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { NCheckbox } from "naive-ui";
+import { formatAmount } from "@/app/utils/format";
 import { appT } from "@/app/i18n";
 import { formatTime } from "@/app/utils/format";
 import { assetName } from "@/shared/payments";

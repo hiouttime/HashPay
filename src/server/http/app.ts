@@ -16,10 +16,6 @@ export function createApp() {
     if (status >= 500) console.error(error);
     return c.json(body, status as never);
   });
-  app.use("*", async (c, next) => {
-    c.set("requestId", crypto.randomUUID());
-    await next();
-  });
   app.use("/api/*", secureHeaders());
   app.use("/api/*", cors({ credentials: true, origin: apiCorsOrigin }));
   app.use("/api/*", async (c, next) => {

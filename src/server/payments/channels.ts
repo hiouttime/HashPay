@@ -20,7 +20,8 @@ const columns = "id, driver, name, status, address, assets, credentials, created
 async function payment(env: AppEnv, row: PaymentRow): Promise<PaymentChannel> {
   return {
     address: row.address,
-    assets: (JSON.parse(row.assets) as string[]).map(key).filter(Boolean),
+    // Stored lists may name assets the network no longer offers; drop them on read.
+    assets: (JSON.parse(row.assets) as string[]).map(key).filter((asset) => paymentById(row.driver)?.assets.includes(asset)),
     createdAt: row.createdAt,
     data: jsonParseObject<Record<string, string>>(await decryptSecret(env, row.credentials), {}),
     driver: row.driver,
@@ -40,10 +41,16 @@ export function publicPayment(payment: PaymentChannel): Payment {
   return out;
 }
 
-async function getPayment(env: AppEnv, id: number) {
+// Loads and decrypts a single channel; a deleted channel is null so existing orders keep working.
+export async function findPayment(env: AppEnv, id: number) {
   const row = await one<PaymentRow>(env, `SELECT ${columns} FROM payments WHERE id = ?`, id);
-  if (!row) throw new AppError(404, "errors.payment_not_found");
-  return payment(env, row);
+  return row ? payment(env, row) : null;
+}
+
+async function getPayment(env: AppEnv, id: number) {
+  const found = await findPayment(env, id);
+  if (!found) throw new AppError(404, "errors.payment_not_found");
+  return found;
 }
 
 export async function savePayment(env: AppEnv, input: { address: string; assets: string[]; data?: Record<string, string>; driver: string; id?: number; name: string; status?: Payment["status"] }) {
@@ -51,6 +58,10 @@ export async function savePayment(env: AppEnv, input: { address: string; assets:
   const assets = Array.from(new Set((input.assets ?? []).map(key).filter(Boolean)));
   const payment = validateChannel({ address, assets, driver: input.driver });
   const existing = input.id ? await getPayment(env, input.id) : null;
+  // A payment is attributed by network + address + amount, so one address gets one channel per network.
+  if (await one(env, "SELECT id FROM payments WHERE driver = ? AND address = ? COLLATE NOCASE AND id <> ?", payment.id, address, input.id ?? 0)) {
+    throw new AppError(409, "errors.payment_duplicate");
+  }
   const nextData = Object.fromEntries(Object.entries(input.data ?? {}).filter(([, value]) => String(value).trim()));
   const data = existing ? { ...existing.data, ...nextData } : nextData;
   if (payment.data?.some((field) => !field.optional && !data[field.id]?.trim())) {

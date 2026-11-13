@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { getConfig, setConfig, setConfigs } from "@/server/db";
+import { getConfig, getConfigs, now, setConfig, setConfigs } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { configureBotMiniApp, refreshBotInfo } from "@/server/services/telegram/api";
 import { ceilAmount, type AmountTolerance } from "@/shared/amount";
@@ -51,7 +51,6 @@ export interface MarketRates {
 }
 
 export interface RateContext {
-  rateAdjust: number;
   rates: MarketRates;
   settings: SystemSettings;
 }
@@ -59,12 +58,17 @@ export interface RateContext {
 let memoryRates: { expiresAt: number; snapshot: MarketRates } | null = null;
 
 export async function adminSettings(env: AppEnv) {
+  const [settings, config, rates] = await Promise.all([
+    systemSettings(env),
+    getConfigs(env, ["bot_username", "domain", "title"]),
+    currentMarketRates(env),
+  ]);
   return {
-    ...(await systemSettings(env)),
-    botUsername: await getConfig(env, "bot_username") || "",
-    domain: await getConfig(env, "domain") || "",
-    marketRates: publicMarketRates(await currentMarketRates(env)),
-    title: await getConfig(env, "title") || "HashPay",
+    ...settings,
+    botUsername: config.bot_username || "",
+    domain: config.domain || "",
+    marketRates: rates,
+    title: config.title || "HashPay",
   };
 }
 
@@ -98,38 +102,21 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
     ...settings,
     botUsername: botUsername || "",
     domain,
-    marketRates: publicMarketRates(await currentMarketRates(env)),
+    marketRates: await currentMarketRates(env),
     title,
   };
 }
 
-function publicMarketRates(rates: MarketRates) {
-  return {
-    assetUSD: rates.assetUSD,
-    fiatPerUSD: rates.fiatPerUSD,
-    messageKey: rates.messageKey,
-    syncedAt: rates.syncedAt,
-  };
-}
-
 export async function systemSettings(env: AppEnv): Promise<SystemSettings> {
-  const [currency, timeout, rateAdjust, fastConfirm, dynamicMatch, matchMin, matchMax] = await Promise.all([
-    getConfig(env, "currency"),
-    getConfig(env, "timeout"),
-    getConfig(env, "rate_adjust"),
-    getConfig(env, "fast_confirm"),
-    getConfig(env, "dynamic_match"),
-    getConfig(env, "match_min"),
-    getConfig(env, "match_max"),
-  ]);
+  const config = await getConfigs(env, ["currency", "dynamic_match", "fast_confirm", "match_max", "match_min", "rate_adjust", "timeout"]);
   return {
-    currency: normalizeCurrency(currency || "CNY"),
-    dynamicMatch: dynamicMatch === "true",
-    fastConfirm: fastConfirm === "true",
-    matchMax: normalizeMatchBound(matchMax, 1),
-    matchMin: normalizeMatchBound(matchMin, 0),
-    rateAdjust: normalizeRateAdjust(rateAdjust),
-    timeout: normalizeTimeoutMinutes(timeout),
+    currency: normalizeCurrency(config.currency || "CNY"),
+    dynamicMatch: config.dynamic_match === "true",
+    fastConfirm: config.fast_confirm === "true",
+    matchMax: normalizeMatchBound(config.match_max, 1),
+    matchMin: normalizeMatchBound(config.match_min, 0),
+    rateAdjust: normalizeRateAdjust(config.rate_adjust),
+    timeout: normalizeTimeoutMinutes(config.timeout),
   };
 }
 
@@ -139,21 +126,23 @@ export function toleranceOf(settings: Pick<SystemSettings, "dynamicMatch" | "mat
 }
 
 export async function rateContext(env: AppEnv): Promise<RateContext> {
-  const settings = await systemSettings(env);
-  return {
-    rateAdjust: settings.rateAdjust,
-    rates: await currentMarketRates(env),
-    settings,
-  };
+  return { rates: await currentMarketRates(env), settings: await systemSettings(env) };
 }
 
 export function marketAmount(amount: number, from: string, to: string, rate: RateContext) {
   return convert(amount, from || rate.settings.currency, to, rate).toNumber();
 }
 
+// Order currencies must be convertible, otherwise checkout pricing throws for every option.
+export function orderCurrency(value: unknown) {
+  const currency = String(value ?? "").trim().toUpperCase();
+  if (currency in defaultFiatPerUSD || currency in defaultAssetUSD) return currency;
+  throw new AppError(400, "errors.currency_invalid");
+}
+
 export function payAmount(amount: number, from: string, to: string, rate: RateContext) {
   const adjusted = convert(amount, from || rate.settings.currency, to, rate)
-    .div(new Decimal(1).plus(new Decimal(rate.rateAdjust).div(100)));
+    .div(new Decimal(1).plus(new Decimal(rate.settings.rateAdjust).div(100)));
   return ceilAmount(adjusted);
 }
 
@@ -197,7 +186,7 @@ function normalizeTimeoutMinutes(value: unknown) {
   return Math.min(Math.max(Math.round(parsed), 1), 30);
 }
 
-function normalizeDomain(value: unknown) {
+export function normalizeDomain(value: unknown) {
   try {
     return toHttpsSiteUrl(value);
   } catch {
@@ -219,7 +208,7 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
   const out = defaultMarketRates();
   try {
     out.fiatPerUSD = await fetchFiatRates();
-    out.syncedAt = nowSeconds();
+    out.syncedAt = now();
   } catch {
     out.fiatPerUSD = current.fiatPerUSD;
     out.messageKey = "settings.rate_error_fiat";
@@ -227,7 +216,7 @@ export async function syncMarketRates(env: AppEnv): Promise<MarketRates> {
   }
   try {
     out.assetUSD = await fetchCryptoRates();
-    out.syncedAt = out.syncedAt || nowSeconds();
+    out.syncedAt = out.syncedAt || now();
   } catch {
     out.assetUSD = current.assetUSD;
     out.messageKey = out.messageKey ?? "settings.rate_error_crypto";
@@ -264,7 +253,7 @@ function parseMarketRates(value: string | null) {
 
 async function fetchFiatRates() {
   const response = await fetch("https://open.er-api.com/v6/latest/USD", {
-    signal: timeoutSignal(5000),
+    signal: AbortSignal.timeout(5000),
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw new Error(`fiat rates status ${response.status}`);
@@ -282,7 +271,7 @@ async function fetchFiatRates() {
 }
 
 async function fetchCryptoRates() {
-  const signal = timeoutSignal(5000);
+  const signal = AbortSignal.timeout(5000);
   const [bybitResponse, tonResponse] = await Promise.all([
     fetch("https://api.bybit.com/v5/market/tickers?category=spot", {
       signal,
@@ -328,14 +317,4 @@ function usd(snapshot: MarketRates, currency: string) {
   if (currency === "USD") return new Decimal(1);
   if (snapshot.assetUSD[currency] > 0) return new Decimal(snapshot.assetUSD[currency]);
   return new Decimal(1).div(snapshot.fiatPerUSD[currency]);
-}
-
-function timeoutSignal(ms: number) {
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), ms);
-  return controller.signal;
-}
-
-function nowSeconds() {
-  return Math.floor(Date.now() / 1000);
 }

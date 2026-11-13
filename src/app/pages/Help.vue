@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useMessage } from "naive-ui";
+import { NInput, useMessage } from "naive-ui";
 import { useRoute } from "vue-router";
 import BinanceHelp from "@/app/components/BinanceHelp.vue";
 import { useI18n } from "@/app/i18n";
@@ -13,13 +13,11 @@ const props = defineProps<{
 const message = useMessage();
 const { t } = useI18n();
 const route = useRoute();
-const helpBase = "/admin/help";
 const topics = [
   { id: "telegram", summary: "help.telegram.summary", title: "help.telegram.title" },
   { id: "binance", summary: "help.binance.summary", title: "help.binance.title" },
 ] as const;
 const topic = computed(() => String(route.params.topic || ""));
-const activeTopic = computed(() => topic.value || topics[0].id);
 const bot = computed(() => `@${props.username}`);
 </script>
 
@@ -30,8 +28,8 @@ const bot = computed(() => `@${props.username}`);
       <router-link
         v-for="item in topics"
         :key="item.id"
-        :class="{ 'is-active': activeTopic === item.id }"
-        :to="`${helpBase}/${item.id}`"
+        :class="{ 'is-active': (topic || topics[0].id) === item.id }"
+        :to="`/admin/help/${item.id}`"
       >
         <strong>{{ t(item.title) }}</strong>
         <span>{{ t(item.summary) }}</span>
@@ -39,9 +37,9 @@ const bot = computed(() => `@${props.username}`);
     </aside>
 
     <div class="help-main">
-      <router-link v-if="topic" class="help-back" :to="helpBase">{{ t('help.back') }}</router-link>
+      <router-link v-if="topic" class="help-back" :to="'/admin/help'">{{ t('help.back') }}</router-link>
 
-    <article v-if="activeTopic === 'telegram'" class="help-article grid">
+    <article v-if="(topic || topics[0].id) === 'telegram'" class="help-article grid">
       <header>
         <h2>{{ t('help.telegram.title') }}</h2>
         <p>{{ t('help.telegram.summary') }}</p>
@@ -82,7 +80,7 @@ const bot = computed(() => `@${props.username}`);
       </section>
     </article>
 
-    <article v-else-if="activeTopic === 'binance'" class="help-article grid">
+    <article v-else-if="(topic || topics[0].id) === 'binance'" class="help-article grid">
       <header>
         <h2>{{ t('help.binance.title') }}</h2>
       </header>

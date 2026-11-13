@@ -3,13 +3,17 @@ import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
-import { fetchText } from "@/server/utils/http";
+import { fetchText, reason, responseReason } from "@/server/utils/http";
 import { key } from "@/shared/payments";
 import type { PaymentSnapshot } from "@/shared/types/domain";
+
+export const okx = { check, scan, validate: check };
 
 const origin = "https://www.okx.com";
 const configApi = "/api/v5/account/config";
 const billsApi = "/api/v5/asset/bills";
+const billPageSize = 100;
+const maxBillPages = 5;
 
 interface OkxResponse<T> {
   code?: string;
@@ -29,7 +33,7 @@ interface OkxBill {
   type?: string | number;
 }
 
-export async function check(input: Pick<PaymentChannel, "address" | "data">) {
+async function check(input: Pick<PaymentChannel, "address" | "data">) {
   const rows = await signedGet<OkxConfig>(configApi, input.data);
   const uid = String(rows[0]?.uid ?? "").trim();
   if (!uid) throw new AppError(400, "errors.payment_account_id_invalid", { detail: "OKX API 返回中没有账户ID" });
@@ -38,19 +42,34 @@ export async function check(input: Pick<PaymentChannel, "address" | "data">) {
   }
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   const rows = await bills(input);
   return paymentMatches(input.orders, rows, match, (tx) => ({ time: timestamp(tx), txid: String(tx.billId) }), input.tolerance);
 }
 
 async function bills(input: PaymentCheckInput) {
-  if (!input.channel) return [];
+  const channel = input.channel;
+  if (!channel) return [];
+  const start = Math.min(...input.orders.map((order) => order.createdAt)) * 1000;
   const currencies = [...new Set(input.orders.map((order) => key(order.snapshot.currency)).filter(Boolean))];
-  const rows = await Promise.all(currencies.map((ccy) => signedGet<OkxBill>(billsApi, input.channel!.data, {
-    ccy: ccy.toUpperCase(),
-    limit: "100",
-  })));
-  return rows.flat();
+  const rows = (await Promise.all(currencies.map((ccy) => billsSince(channel.data, ccy.toUpperCase(), start)))).flat();
+  return [...new Map(rows.map((row) => [row.billId, row])).values()];
+}
+
+// Bills come newest first and `after` returns rows strictly older than a ms timestamp. Keep
+// paging until a page reaches the oldest order's start, bounded to stay within 6 req/s.
+async function billsSince(data: Record<string, string>, ccy: string, start: number, after = "", page = 1): Promise<OkxBill[]> {
+  const rows = await signedGet<OkxBill>(billsApi, data, { ccy, limit: String(billPageSize), ...(after ? { after } : {}) });
+  if (rows.length < billPageSize) return rows;
+  const oldest = Math.min(...rows.map((row) => Number(row.ts)));
+  if (!Number.isFinite(oldest) || oldest < start) return rows;
+  if (page >= maxBillPages) {
+    console.warn(`okx bills truncated: more than ${billPageSize * maxBillPages} ${ccy} bills since ${start}`);
+    return rows;
+  }
+  // Step one ms past the oldest row so bills sharing its timestamp are not skipped; the
+  // overlap is dropped by billId in the caller.
+  return [...rows, ...await billsSince(data, ccy, start, String(oldest + 1), page + 1)];
 }
 
 async function signedGet<T>(path: string, data: Record<string, string>, query: Record<string, string> = {}) {
@@ -77,29 +96,9 @@ async function signedGet<T>(path: string, data: Record<string, string>, query: R
   }
   const payload = JSON.parse(text || "{}") as OkxResponse<T>;
   if (payload.code && payload.code !== "0") {
-    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: `${payload.code} ${payload.msg ?? ""}`.replace(/\s+/g, " ").trim() });
+    throw new AppError(400, "errors.payment_api_credential_invalid", { detail: reason(`${payload.code} ${payload.msg ?? ""}`) });
   }
   return payload.data ?? [];
-}
-
-function responseReason(res: Response, text: string) {
-  const fallback = `HTTP ${res.status}`;
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const body = parseJson(text);
-    const code = String(body.code ?? "").trim();
-    const msg = String(body.msg ?? "").trim();
-    return ([code, msg].filter(Boolean).join(" ") || fallback).replace(/\s+/g, " ").trim();
-  }
-  return (text || fallback).replace(/\s+/g, " ").trim();
-}
-
-function parseJson(text: string) {
-  try {
-    return JSON.parse(text || "{}") as Record<string, unknown>;
-  } catch {
-    return {};
-  }
 }
 
 function match(snapshot: PaymentSnapshot, row: OkxBill, created: number, expire: number) {

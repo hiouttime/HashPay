@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCard, NEmpty, NImage, NModal, NSpin, NTag, useMessage } from "naive-ui";
 import { txUrl } from "@/app/payments";
 import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
-import { formatDisplayAmount as formatAmount, formatTime } from "@/app/utils/format";
+import { formatAmount, formatTime } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
 import { ask } from "@/app/utils/telegram";
 import { assetName } from "@/shared/payments";

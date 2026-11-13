@@ -1,11 +1,9 @@
 import { getConfig, one } from "@/server/db";
-import { paymentExplorerUrl } from "@/server/payments/driver";
 import { marketAmount, rateContext } from "@/server/services/app/settings";
 import { getMerchant } from "@/server/services/merchants";
-import { sendTelegramImage, sendTelegramMessage } from "@/server/services/telegram/api";
-import { ceilAmount } from "@/shared/amount";
+import { sendTelegramImage, sendTelegramMessage, telegramAmount, telegramHtml, telegramTime } from "@/server/services/telegram/api";
 import { t } from "@/shared/i18n";
-import { assetName, paymentAssetTelegramEmojiId } from "@/shared/payments";
+import { assetName, paymentAssetTelegramEmojiId, paymentExplorerUrl } from "@/shared/payments";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import type { AppEnv } from "@/server/types/env";
@@ -37,12 +35,12 @@ export async function notifyReview(env: AppEnv, order: Order, answer: string, im
     });
     const text = [
       t("zh-CN", "telegram.review_notice.title", {
-        amount: formatAmount(order.amount),
+        amount: telegramAmount(order.amount),
         currency: assetName(order.currency),
       }),
-      t("zh-CN", "telegram.review_notice.order_id", { orderId: `<code>${html(order.id)}</code>` }),
+      t("zh-CN", "telegram.review_notice.order_id", { orderId: `<code>${telegramHtml(order.id)}</code>` }),
       "",
-      html(answer),
+      telegramHtml(answer),
       ...(imageNotice ? ["", imageNotice] : []),
     ].join("\n");
     await sendTelegramMessage(env, adminId, text, {
@@ -64,51 +62,26 @@ export function paymentNoticeText(
   systemAmount = { amount: order.amount, currency: order.currency },
 ) {
   const txUrl = paymentExplorerUrl(payment.driver, payment.tx?.txid);
-  const amount = formatAmount(systemAmount.amount);
+  const amount = telegramAmount(systemAmount.amount);
   const currency = assetName(systemAmount.currency);
-  const orderAmount = formatAmount(order.amount);
+  const orderAmount = telegramAmount(order.amount);
   const orderCurrency = assetName(order.currency);
-  const paidAmount = formatAmount(payment.tx?.amount ?? payment.amount);
+  const paidAmount = telegramAmount(payment.tx?.amount ?? payment.amount);
   const paidCurrency = assetName(payment.currency);
   const emojiId = paymentAssetTelegramEmojiId(payment.currency);
+  const paidAt = Number(payment.tx?.timestamp);
   const emoji = emojiId ? `<tg-emoji emoji-id="${emojiId}">💵</tg-emoji>` : "💵";
   const lines = [
     t("zh-CN", "telegram.payment_notice.title", { amount, currency }),
     "",
     t("zh-CN", "telegram.payment_notice.order_id"),
-    `<pre>${html(order.id)}</pre>`,
+    `<pre>${telegramHtml(order.id)}</pre>`,
     t("zh-CN", "telegram.payment_notice.order_amount", { amount: orderAmount, currency: orderCurrency }),
     t("zh-CN", "telegram.payment_notice.paid_amount", { amount: paidAmount, currency: paidCurrency, emoji }),
-    t("zh-CN", "telegram.payment_notice.channel", { channel: html(channel) }),
-    t("zh-CN", "telegram.payment_notice.paid_at", { time: formatTime(Number(payment.tx?.timestamp)) }),
-    t("zh-CN", "telegram.payment_notice.source", { source: html(source) }),
+    t("zh-CN", "telegram.payment_notice.channel", { channel: telegramHtml(channel) }),
+    t("zh-CN", "telegram.payment_notice.paid_at", { time: paidAt > 0 ? telegramTime(paidAt, "zh-CN") : "--" }),
+    t("zh-CN", "telegram.payment_notice.source", { source: telegramHtml(source) }),
   ];
-  if (txUrl) lines.push("", `<a href="${html(txUrl)}">${t("zh-CN", "telegram.payment_notice.view_tx")}</a>`);
+  if (txUrl) lines.push("", `<a href="${telegramHtml(txUrl)}">${t("zh-CN", "telegram.payment_notice.view_tx")}</a>`);
   return lines.join("\n");
-}
-
-function formatAmount(amount: number) {
-  return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
-}
-
-function formatTime(timestamp: number) {
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "--";
-  return new Date(timestamp * 1000).toLocaleString("zh-CN", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "2-digit",
-    second: "2-digit",
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-  }).replaceAll("/", "-");
-}
-
-function html(value: unknown) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('\"', "&quot;");
 }

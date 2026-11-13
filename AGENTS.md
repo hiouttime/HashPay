@@ -86,7 +86,7 @@ HashPay/
 - API 成功响应直接返回业务 JSON，不包 `{ data }`；错误统一走 `{ error: { key, params } }`，前端负责按当前语言翻译。
 - `/api/*` 请求会先执行 `migrateD1(c.env)`，但 `/api/state` 例外；`appState()` 自行尝试迁移并把 DB 错误转成状态字段。
 - 未命中后端路由时回落到 `ASSETS.fetch()`，用于服务 SPA。
-- Cron 每分钟执行 `runJobs()`：迁移、整点同步汇率、过期订单、检查待支付订单、把到期通知放入队列。
+- Cron 每分钟执行 `runJobs()`：迁移、整点同步汇率、过期订单、检查待支付订单、把到期通知批量放入队列。
 - Queue 消费 `QUEUE_NOTIFY`，消息体需要包含 `notifyId`，失败时延迟重试。
 
 ## Cloudflare 绑定
@@ -96,6 +96,7 @@ HashPay/
 - `ASSETS`：Workers Assets，目录 `dist`，SPA fallback。
 - `DB`：D1 数据库，迁移目录 `src/server/db/d1/migrations`。
 - `QUEUE_NOTIFY`：通知投递队列。
+- `RATE_LIMIT`：按 IP 限流，用于 PIN 登录、订单查账等公开接口（10 次 / 10 秒）。
 - Cron：`* * * * *`。
 
 环境变量：
@@ -112,7 +113,7 @@ HashPay/
 
 ## 数据模型
 
-D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
+D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`，后续迁移依次增加交易唯一索引，以及 `orders.checked_at`（公开查账限流）和查询索引：
 
 - `configs`：系统配置、Bot 状态、管理员、Banner blob、汇率缓存等。
 - `merchants`：商户、公钥、回调 URL、状态和类型。
@@ -141,7 +142,9 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 - Telegram Mini App 登录走 `/api/admin/session/telegram`，使用 `validateWebAppInitData()` 校验 initData。
 - 浏览器 PIN 登录走 `/api/admin/session/pin` 创建 challenge，再由管理员在 Bot 中发送 `/login <pin>` 确认。
-- Session Cookie 名称为 `hashpay_session`，JWT 由 `APP_SECRET` 签名，有效期 7 天。
+- Session Cookie 名称为 `hashpay_session`，JWT 由 `APP_SECRET` 签名，有效期 7 天；无效或过期的 Token 返回 401 `errors.session_invalid`。
+- PIN 比较和消费在一条 SQL 内完成（`DELETE ... RETURNING`），确认过的 PIN 只能签发一次 Session，不再记录错误次数。
+- `/api/admin/session/pin` 的两个接口由 `RATE_LIMIT` Workers Rate Limiting 按客户端 IP 限流（IPv6 取 /64），超限返回 429 `errors.rate_limited`。不按 PIN 计数，避免攻击者锁死管理员的浏览器登录。
 - Admin 路由在 setup/session 之后统一 `requireAdmin()` 保护。
 
 ### 商户 API 和建单
@@ -159,15 +162,17 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 2. `checkoutData()` 用一次 `rateContext()` 为所有通道生成候选金额。
 3. 用户选择资产/网络后，`selectCheckoutPayment()` 随机选择可用通道，并写入 `orders.payment` 快照。
 4. 已写入的 `payment.amount` 是固定应付金额；除非用户重新选择网络/币种，不应随汇率变化。
-5. `uniqueAmount()` 会避开同一通道、同一地址、同一资产网络下其他未过期订单的相同金额。
-6. 前端 `Pay.vue` 展示订单状态、二维码/地址、倒计时、支付成功返回和人工审核入口。
+5. `uniqueAmount()` 按收款地址和资产避让：同一 driver 下地址相同的通道共用一个金额空间，避开其他未过期订单的相同金额。
+6. 快照写入带状态条件（`setOrderPayment` 只写 `pending`，`refreshOrderPaymentWindow` 只写 `pending` / `expired`），已付订单的快照不会被覆盖。
+7. 前端 `Pay.vue` 展示订单状态、二维码/地址、倒计时、支付成功返回和人工审核入口。
 
 不要在打开收银台或生成候选项时重新请求外部汇率。汇率同步归 `syncMarketRates()`，收银台读取归 `currentMarketRates()` / `rateContext()`。
 
 ### 支付确认
 
 - 自动检查入口：`checkOrderPayment()` 和 Cron 扫描待支付订单。
-- 浏览器和 Telegram 的“我已完成付款/检查付款”只触发一次服务端查账，不提交或信任浏览器交易候选。
+- 浏览器和 Telegram 的“我已完成付款/检查付款”只触发一次服务端查账，不提交或信任浏览器交易候选。这些公开入口走 `checkPublicOrderPayment()`，每个订单每 10 秒最多触发一次 provider 查询；后台手动检查和 Cron 走 `checkOrderPayment()`，不限流。
+- OKPay 回调只是触发器：验签后按 `unique_id` 找到订单，再通过 OKPay API 查询确认，不信任回调里的金额和状态。
 - 服务端查账：`server/payments/driver.ts` 根据 `snapshot.driver` 派发 provider，并只使用 provider 从链上、交易所或钱包 API 拉取的数据匹配订单。
 - 当前自动查账 provider 包括 TRC20、EVM、TON、Aptos、Solana、Binance Pay、OKX；OKPay 主要走回调/创建返回流程。
 - 交易所查账以收款通道的 `address` 作为 Binance ID / OKX UID，API Key、Secret、Passphrase 等细节放在 `PaymentData` / `credentials` 内。
@@ -194,7 +199,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 - `src/server/http/app.ts`：只负责 Hono 装配、中间件、迁移触发、路由挂载和 Assets 回退。
 - `src/server/http/routes/*`：只做 HTTP 参数解析、鉴权边界和调用 service；复杂业务放到 services。
-- `src/server/db/index.ts`：D1 原语、配置读写和 JSON helper；不要把业务查询堆到这里。
+- `src/server/db/index.ts`：D1 原语、配置读写和 JSON helper；不要把业务查询堆到这里。一次读多个配置用 `getConfigs()`，不要连续调用 `getConfig()`。
 - `src/server/db/migrations.ts`：D1 SQL 文件加载和迁移状态；新增迁移必须放在 `d1/migrations/` 并保持文件名排序。
 - `src/server/services/app/*`：系统状态、设置、汇率缓存和后台统计。
 - `src/server/services/auth/*`：Session、PIN、Telegram initData 校验；不要在页面组件里复制认证逻辑。
@@ -211,14 +216,15 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 - `src/app/api/*`：前端请求封装和 API 模块；不要在页面里拼重复 fetch 逻辑。
 - `src/app/pages/Admin.vue`：后台应用壳、会话初始化和导航。
 - `src/app/pages/Pay.vue` + `src/app/utils/checkout.ts`：公开收银台 UI 和轮询/查账状态机。
-- `src/app/payments/index.ts`：前端支付展示、EVM 组合选择和通道展示元数据。
+- `src/app/payments/index.ts`：前端支付展示和 EVM 组合选择；资产名、图标、`key()` 等直接从 `src/shared/payments.ts` 导入，不在这里转发。
 
 ## 代码结构和命名约定
 
 - 命名优先表达当前模块语境，不把实现细节堆进函数名。例：收银台选择付款用 `selectCheckoutPayment()`，Telegram 选择付款用 `selectTelegramPayment()`，不要写成长串 `selectOrderPaymentByAssetNetwork()`。
 - Server 内部把 `payments` 表的业务对象称为 `PaymentChannel`；前端 API DTO 使用 `Payment` 作为展示层接口名，不要把旧 method 命名重新带回 server。
 - 每个收款通道只保留一个基础 `address`；API Key、Secret、Passphrase 等附加字段放在 `data` / `credentials`，不要为单个交易所新增平行字段。
-- 支付通道函数统一使用 `listPayments()`、`savePayment()`、`deletePayment()`、`recordCheck()`、`paymentHealth()`。
+- 支付通道函数统一使用 `listPayments()`、`findPayment()`、`savePayment()`、`deletePayment()`、`recordCheck()`、`paymentHealth()`。只需要一个通道时用 `findPayment()`，不要 `listPayments()` 后再查找。
+- 每个 provider 文件导出一个与文件同名的对象（如 `export const trc20 = { check, scan, scheduled: true }`），`driver.ts` 直接按名字导入；不使用 `import { check as checkX }` 这类别名导入，也不使用 `import * as`。
 - 订单确认统一走 `markPaid()`；只有后台手动确认时写入 `confirmedBy: "admin"`，自动检查、用户触发查账、Cron 命中都默认是 system。
 - 不新增只做换名或一行转发的 helper。允许保留的短函数必须承担明确边界：DB helper、row -> DTO 映射、领域公式、加密/SQL 转义等。
 - 如果一个 helper 只是为了“看起来分层”而没有隐藏复杂度、没有统一规则、没有隔离边界，应直接内联。
@@ -254,7 +260,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 
 - 路由集中在 `src/app/main.ts`。
 - 全局样式在 `src/app/styles.scss`，页面优先复用现有 panel、grid、section-title、orders-table 等样式。
-- UI 组件使用 Naive UI；支付/网络图标通过 `AppIcon` 和 `public/icons.svg`。
+- UI 组件使用 Naive UI，在每个 `.vue` 文件里按需导入用到的组件（`import { NButton } from "naive-ui"`），不做全局注册，这样各路由只打包自己用到的组件；支付/网络图标通过 `AppIcon` 和 `public/icons.svg`。
 - 后台页面由 `Admin.vue` 统一承载，页面组件在 `src/app/pages/`。
 - 公开收银台独立在 `Pay.vue`，不要把后台登录态、管理菜单或内部设置泄漏到收银台。
 - 前端接口类型从 `@/app/api` 导出，源头是 `src/shared/types/api.ts`。
@@ -273,6 +279,7 @@ D1 初始 schema 在 `src/server/db/d1/migrations/0001_init.sql`：
 当前测试覆盖重点：
 
 - `test/d1-migrations.test.ts`：迁移加载、迁移状态、并发迁移。
+- `test/sqlite.ts`：基于 Node 内置 SQLite 的 D1 测试环境，会应用全部迁移；依赖真实 SQL 语义（`json_extract`、`RETURNING`、`GROUP BY`）的测试用它，不要再写按字符串匹配 SQL 的假 D1。
 - `test/merchant-auth.test.ts`、`test/merchant-api.test.ts`：RSA 签名和商户 API。
 - `test/payment-model.test.ts`、`test/payment-channels.test.ts`、`test/payment-providers.test.ts`、`test/app-payments.test.ts`：支付模型、通道保存、查账和前端展示。
 - `test/checkout-payments.test.ts`、`test/jobs.test.ts`、`test/notify.test.ts`：收银台选择、定时任务和通知投递。

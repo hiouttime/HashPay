@@ -101,15 +101,9 @@ function buildBody(body: unknown, headers: Headers): BodyInit | null | undefined
 
 function apiError(status: number, payload: ApiErrorPayload | null) {
   const error = payload?.error;
-  const key = error?.key || "errors.http";
-  const params = error?.params || { status };
-  return new ApiError(
-    status,
-    key,
-    params,
-    appT(key, params),
-    payload,
-  );
+  const key = error?.key ?? "errors.http";
+  const params = error?.params ?? { status };
+  return new ApiError(status, key, params, appT(key, params), payload);
 }
 
 function showError(error: ApiError, silent?: boolean) {

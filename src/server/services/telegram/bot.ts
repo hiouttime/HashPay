@@ -1,13 +1,14 @@
 import { Bot, InlineKeyboard, webhookCallback } from "grammy";
 import type { Context as GrammyContext } from "grammy";
+import type { UserFromGetMe } from "grammy/types";
 import type { Context } from "hono";
 import { getConfig, jsonParseObject, now } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { confirmLoginPin } from "@/server/services/auth/pin";
 import { createTelegramOrder, deleteOrder } from "@/server/services/orders/create";
-import { checkOrderPayment, checkoutData, confirmOrder, selectTelegramPayment } from "@/server/services/orders/checkout";
+import { checkoutData, checkPublicOrderPayment, confirmOrder, selectTelegramPayment } from "@/server/services/orders/checkout";
 import { getOrder } from "@/server/services/orders/repository";
-import { botToken } from "@/server/services/telegram/api";
+import { botToken, telegramAmount, telegramHtml, telegramTime } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
 import { timingSafeEqualString } from "@/server/utils/crypto";
 import {
@@ -16,13 +17,12 @@ import {
   key,
   paymentAssetTelegramEmojiId,
   paymentById,
+  paymentExplorerUrl,
   paymentKind,
   paymentKindOrder,
   paymentNetworkTelegramEmojiId,
 } from "@/shared/payments";
-import { paymentExplorerUrl } from "@/server/payments/driver";
 import { normalizeLocale, t, type Locale } from "@/shared/i18n";
-import { ceilAmount } from "@/shared/amount";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import type { Order } from "@/server/services/orders/repository";
 import type { AppEnv, HonoEnv } from "@/server/types/env";
@@ -33,8 +33,12 @@ type TelegramPaymentOption = {
   network: string;
 };
 
+// grammY calls getMe before handling an update. Each webhook request builds a new Bot, so the
+// result is kept per isolate instead of paying a Telegram round trip on every update.
+const botInfos = new Map<string, UserFromGetMe>();
+
 export async function createBot(env: AppEnv) {
-  const bot = new Bot(botToken(env));
+  const bot = new Bot(botToken(env), { botInfo: botInfos.get(botToken(env)) });
   bot.catch((error) => {
     console.error("Telegram bot update failed", error.error);
   });
@@ -77,7 +81,7 @@ export async function createBot(env: AppEnv) {
     const orderId = ctx.match[1];
     await answerCallback(ctx, t(locale, "telegram.checking"));
     try {
-      const snapshot = await checkOrderPayment(env, orderId);
+      const snapshot = await checkPublicOrderPayment(env, orderId);
       await editMessage(ctx, paidText(orderId, snapshot, locale), new InlineKeyboard(), await siteUrl(env, "/banner.webp"), "telegram:paid_banner_edit_failed");
     } catch (error) {
       await refreshReviewKeyboardIfNeeded(ctx, env, orderId, locale);
@@ -234,10 +238,6 @@ function parseInlineResultId(resultId: string) {
   return { amount, currency: (parts[2] || "USDT").toUpperCase(), timestamp: parts[3] };
 }
 
-function telegramAmount(amount: number) {
-  return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
-}
-
 async function isAdmin(env: AppEnv, userId?: number) {
   return Boolean(userId && Number(await getConfig(env, "admin_id")) === userId);
 }
@@ -284,7 +284,7 @@ function networkMenu(orderId: string, options: TelegramPaymentOption[], asset: s
   const networks = [...new Set(
     options
       .filter((option) => key(option.asset) === targetAsset && paymentKind(option.network) === kind)
-      .map((option) => option.network.trim().toLowerCase())
+      .map((option) => key(option.network))
       .filter(Boolean),
   )].sort((a, b) => t(locale, networkLabel(a)).localeCompare(t(locale, networkLabel(b))));
   for (const network of networks) {
@@ -377,27 +377,6 @@ function paymentText(order: Pick<Order, "expireAt" | "id">, snapshot: PaymentSna
   ].join("\n");
 }
 
-function telegramTime(timestamp: number, locale: Locale) {
-  return new Date(timestamp * 1000).toLocaleString(locale, {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "2-digit",
-    second: "2-digit",
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-  }).replaceAll("/", "-");
-}
-
-function telegramHtml(value: unknown) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('\"', "&quot;");
-}
-
 function payError(error: unknown, locale: Locale) {
   const errorKey = error instanceof AppError ? error.key : "";
   if (errorKey === "errors.order_paid") return t(locale, "telegram.error.order_paid");
@@ -412,15 +391,7 @@ function telegramLocale(ctx: GrammyContext) {
 }
 
 async function answerCallback(ctx: GrammyContext, options?: string | { show_alert?: boolean; text?: string }) {
-  try {
-    if (typeof options === "string") {
-      await ctx.answerCallbackQuery(options);
-      return;
-    }
-    await ctx.answerCallbackQuery(options);
-  } catch (error) {
-    console.warn("telegram:answer_callback_failed", error);
-  }
+  await ctx.answerCallbackQuery(options).catch((error) => console.warn("telegram:answer_callback_failed", error));
 }
 
 async function editInline(ctx: GrammyContext, inlineMessageId: string, text: string, keyboard?: InlineKeyboard, mediaUrl = "") {
@@ -509,5 +480,7 @@ export async function handleTelegramWebhook(c: Context<HonoEnv>) {
   const expected = await getConfig(c.env, "bot_secret");
   if (!expected || !timingSafeEqualString(expected, secret ?? "")) throw new AppError(404, "errors.webhook_not_found");
   const bot = await createBot(c.env);
+  await bot.init();
+  botInfos.set(botToken(c.env), bot.botInfo);
   return webhookCallback(bot, "hono")(c);
 }

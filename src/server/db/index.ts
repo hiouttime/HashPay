@@ -52,6 +52,11 @@ export async function getConfig(env: AppEnv, key: string) {
   return row?.value ?? null;
 }
 
+export async function getConfigs<K extends string>(env: AppEnv, keys: readonly K[]) {
+  const rows = await all<{ key: K; value: string | null }>(env, `SELECT key, value FROM configs WHERE key IN (${keys.map(() => "?").join(", ")})`, ...keys);
+  return Object.fromEntries(rows.map((row) => [row.key, row.value])) as Partial<Record<K, string | null>>;
+}
+
 export async function getConfigBlob(env: AppEnv, key: string) {
   const row = await one<{ blob: ArrayBuffer | null }>(env, "SELECT blob FROM configs WHERE key = ?", key);
   return row?.blob ?? null;
@@ -73,19 +78,6 @@ export async function setConfig(env: AppEnv, key: string, value: string | null, 
     blob ?? null,
     now(),
   );
-}
-
-export async function deleteConfig(env: AppEnv, key: string) {
-  await run(env, "DELETE FROM configs WHERE key = ?", key);
-}
-
-export async function listConfigs(env: AppEnv) {
-  const rows = await all<{ key: string; value: string | null }>(env, "SELECT key, value FROM configs ORDER BY key");
-  const out: Record<string, string> = {};
-  for (const row of rows) {
-    if (row.value != null) out[row.key] = row.value;
-  }
-  return out;
 }
 
 export async function setConfigs(env: AppEnv, values: Record<string, string>) {

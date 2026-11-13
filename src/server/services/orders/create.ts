@@ -1,11 +1,11 @@
 import { batch, now } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { randomBase62 } from "@/server/utils/crypto";
-import { systemSettings } from "@/server/services/app/settings";
+import { orderCurrency, systemSettings } from "@/server/services/app/settings";
 import { findExistingMerchantOrder, insertOrder, orderExpireAt } from "@/server/services/orders/repository";
 import { normalizeCallbackUrl } from "@/server/utils/url";
 import { ezfpInitialPayment, type EzfpOrderContext } from "@/server/services/merchants/ezfp";
-import type { Merchant } from "@/server/services/merchants";
+import type { Merchant } from "@/shared/types/api";
 import type { Order } from "@/server/services/orders/repository";
 import type { AppEnv } from "@/server/types/env";
 
@@ -18,11 +18,11 @@ export async function createMerchantOrder(env: AppEnv, merchant: Merchant, input
   return createOrder(env, {
     amount,
     callback: merchant.callback,
-    currency: String(input.currency ?? settings.currency).trim().toUpperCase(),
+    currency: orderCurrency(input.currency ?? settings.currency),
     description: String(input.description ?? "").trim() || null,
     merchant: merchant.id,
     merchantNo,
-    redirectUrl: String(input.return_url ?? "").trim() || null,
+    redirectUrl: normalizeCallbackUrl(input.return_url),
     timeout: settings.timeout,
   });
 }
@@ -65,7 +65,7 @@ export async function createTelegramOrder(env: AppEnv, input: { amount: number; 
   return createOrder(env, {
     amount,
     callback: null,
-    currency: String(input.currency || "USDT").trim().toUpperCase(),
+    currency: orderCurrency(input.currency || "USDT"),
     description: String(input.description || "").trim() || null,
     merchant: "INLINE",
     merchantNo: input.timestamp.trim(),

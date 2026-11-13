@@ -1,4 +1,4 @@
-import type { Context as GrammyContext } from "grammy";
+import type { Context } from "grammy";
 import { getConfig, setConfig, setConfigs } from "@/server/db";
 import { syncMarketRates } from "@/server/services/app/settings";
 import { ensureDefaultBanner } from "@/server/services/images/banner";
@@ -15,7 +15,7 @@ export async function startTelegramSetup(env: AppEnv, domain: string) {
   return { webhook };
 }
 
-export async function bindSetupAdmin(env: AppEnv, ctx: GrammyContext) {
+export async function bindSetupAdmin(env: AppEnv, ctx: Context) {
   const adminId = await getConfig(env, "admin_id");
   if (adminId) return false;
   const user = ctx.from;

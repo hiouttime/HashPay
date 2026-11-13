@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppEnv } from "@/server/types/env";
+import { sqliteEnv } from "./sqlite";
 
 vi.mock("@/server/payments/channels", () => ({
   checkChannels: vi.fn(async () => ({})),
@@ -84,58 +84,13 @@ describe("dashboard", () => {
 });
 
 function env(configs: Map<string, string | null>, orders: Array<Record<string, unknown>>) {
-  return {
-    DB: {
-      prepare(sql: string) {
-        let values: unknown[] = [];
-        return {
-          bind(...args: unknown[]) {
-            values = args;
-            return this;
-          },
-          async all() {
-            if (sql.includes("FROM orders WHERE created_at")) return { results: rowsByCreatedAt(orders, values) };
-            if (sql.includes("FROM orders WHERE status = 'paid'")) return { results: paidRows(orders, values) };
-            return { results: [] };
-          },
-          async first() {
-            if (sql.includes("SELECT value FROM configs")) {
-              const key = String(values[0]);
-              return configs.has(key) ? { value: configs.get(key) } : null;
-            }
-            if (sql.includes("COUNT(*) AS count FROM orders WHERE status = 'pending'")) {
-              return { count: orders.filter((order) => order.status === "pending").length };
-            }
-            return null;
-          },
-        };
-      },
-    },
-  } as unknown as AppEnv;
-}
-
-function rowsByCreatedAt(orders: Array<Record<string, unknown>>, values: unknown[]) {
-  const [start, bucketSize, rangeStart, rangeEnd] = values.map(Number);
-  const counts = new Map<number, number>();
-  for (const order of orders) {
+  const { env, sqlite } = sqliteEnv();
+  const insertConfig = sqlite.prepare("INSERT INTO configs(key, value, updated_at) VALUES(?, ?, 0)");
+  for (const [key, value] of configs) insertConfig.run(key, value);
+  const insertOrder = sqlite.prepare("INSERT INTO orders(id, merchant, merchant_no, status, amount, currency, expire_at, paid_at, created_at, updated_at) VALUES(?, 'INLINE', ?, ?, ?, ?, ?, ?, ?, ?)");
+  orders.forEach((order, index) => {
     const createdAt = Number(order.created_at);
-    if (createdAt < rangeStart || createdAt >= rangeEnd) continue;
-    const bucket = Math.trunc((createdAt - start) / bucketSize);
-    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
-  }
-  return Array.from(counts, ([bucket, count]) => ({ bucket, count }));
-}
-
-function paidRows(orders: Array<Record<string, unknown>>, values: unknown[]) {
-  const [start, bucketSize, rangeStart, rangeEnd] = values.map(Number);
-  return orders
-    .filter((order) => {
-      const paidAt = Number(order.paid_at);
-      return order.status === "paid" && paidAt >= rangeStart && paidAt < rangeEnd;
-    })
-    .map((order) => ({
-      amount: Number(order.amount),
-      bucket: Math.trunc((Number(order.paid_at) - start) / bucketSize),
-      currency: String(order.currency),
-    }));
+    insertOrder.run(`order-${index}`, `order-${index}`, String(order.status), Number(order.amount), String(order.currency), createdAt + 300, order.paid_at == null ? null : Number(order.paid_at), createdAt, createdAt);
+  });
+  return env;
 }

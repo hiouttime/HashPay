@@ -1,17 +1,4 @@
 export type PaymentKind = "chain" | "exchange" | "wallet";
-export type NetworkKey =
-  | "aptos"
-  | "base"
-  | "binance"
-  | "bep20"
-  | "erc20"
-  | "okpay"
-  | "okx"
-  | "polygon"
-  | "solana"
-  | "ton"
-  | "trc20"
-  | "xlayer";
 
 export type PaymentAssetKey =
   | "bnb"
@@ -407,8 +394,6 @@ export const payments: Payment[] = [
 const byId = new Map(payments.map((payment) => [payment.id, payment]));
 const byNetwork = new Map(payments.map((payment) => [payment.network, payment]));
 
-export const evmPayments = payments.filter((payment) => payment.evm);
-export const defaultPayment = payments[0]!;
 
 export function paymentById(id: unknown) {
   return byId.get(String(id));

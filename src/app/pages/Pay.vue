@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRoute } from "vue-router";
-import { useMessage } from "naive-ui";
+import { NButton, NGi, NGrid, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NModal, NProgress, NSpace, NStatistic, NTag, NText, useMessage } from "naive-ui";
 import PaymentDetails from "@/app/components/PaymentDetails.vue";
 import PaymentSelector from "@/app/components/PaymentSelector.vue";
 import ReviewModal from "@/app/components/ReviewModal.vue";
 import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import { useCheckout } from "@/app/utils/checkout";
 import type { Order } from "@/app/api";
-import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { networkName, txUrl } from "@/app/payments";
+import { formatAmount, formatTime } from "@/app/utils/format";
+import { assetName } from "@/shared/payments";
 import { copyText } from "@/app/utils/clipboard";
-import { formatTime } from "@/app/utils/format";
 import { useI18n } from "@/app/i18n";
 
 const route = useRoute();
@@ -32,11 +32,6 @@ const {
   returnToMerchant,
   selectPayment,
 } = useCheckout(orderId, message);
-
-function shortText(value: unknown, start = 10, end = 8) {
-  const text = String(value || "");
-  return text.length > start + end + 3 ? `${text.slice(0, start)}...${text.slice(-end)}` : text;
-}
 
 function expired(order: Order) {
   return order.status === "expired" || Number(order.expireAt) * 1000 <= nowMs.value;
@@ -72,16 +67,12 @@ function showPaymentReview(order: Order) {
   if (order.status !== "pending" || expired(order) || !order.payment?.driver) return false;
   const createdAt = Number(order.createdAt) * 1000;
   const expireAt = Number(order.expireAt) * 1000;
-  return Boolean(createdAt && expireAt > createdAt && nowMs.value - createdAt >= (expireAt - createdAt) / 2);
-}
-
-function hasReturnUrl(order: Order) {
-  return Boolean(order.returnUrl?.trim());
+  return !!(createdAt && expireAt > createdAt && nowMs.value - createdAt >= (expireAt - createdAt) / 2);
 }
 
 function money(amount: unknown, currency: unknown) {
   const value = Number(amount);
-  return value ? `${formatAmount(value)} ${pay.assetName(currency)}` : "";
+  return value ? `${formatAmount(value)} ${assetName(currency)}` : "";
 }
 </script>
 
@@ -108,7 +99,7 @@ function money(amount: unknown, currency: unknown) {
         </div>
         <div class="checkout-amount-block">
           <span>{{ t('checkout.order_amount') }}</span>
-          <strong>{{ formatAmount(checkout.order.amount) }} {{ pay.assetName(checkout.order.currency) }}</strong>
+          <strong>{{ formatAmount(checkout.order.amount) }} {{ assetName(checkout.order.currency) }}</strong>
         </div>
         <div v-if="checkout.order.status === 'pending' && !expired(checkout.order)" class="checkout-countdown">
           <n-progress
@@ -155,7 +146,7 @@ function money(amount: unknown, currency: unknown) {
           <dl class="checkout-paid-meta">
             <div>
               <dt>{{ t('orders.column.payment') }}</dt>
-              <dd>{{ pay.networkName(checkout.order.payment.driver) }} / {{ pay.assetName(checkout.order.payment.currency) }}</dd>
+              <dd>{{ networkName(checkout.order.payment.driver) }} / {{ assetName(checkout.order.payment.currency) }}</dd>
             </div>
             <div>
               <dt>{{ t('order.received_amount') }}</dt>
@@ -164,16 +155,16 @@ function money(amount: unknown, currency: unknown) {
             <div v-if="checkout.order.payment.tx?.txid">
               <dt>{{ t('order.tx_hash') }}</dt>
               <dd>
-                <a v-if="pay.txUrl(checkout.order.payment)" :href="pay.txUrl(checkout.order.payment)" target="_blank" rel="noreferrer">{{ t('telegram.tx_link') }}</a>
-                <span v-else>{{ shortText(checkout.order.payment.tx.txid, 10, 8) }}</span>
+                <a v-if="txUrl(checkout.order.payment)" :href="txUrl(checkout.order.payment)" target="_blank" rel="noreferrer">{{ t('telegram.tx_link') }}</a>
+                <code v-else>{{ checkout.order.payment.tx.txid }}</code>
               </dd>
             </div>
           </dl>
-          <div v-if="hasReturnUrl(checkout.order) && !noticeOpen" class="checkout-return-actions">
+          <div v-if="checkout.order.returnUrl && !noticeOpen" class="checkout-return-actions">
             <n-button block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
             <span>{{ t('checkout.return_countdown', { seconds: paidReturnSeconds }) }}</span>
           </div>
-          <p v-else-if="!hasReturnUrl(checkout.order)" class="checkout-return-hint">{{ t('checkout.return_hint') }}</p>
+          <p v-else-if="!checkout.order.returnUrl" class="checkout-return-hint">{{ t('checkout.return_hint') }}</p>
         </template>
 
         <template v-else-if="expired(checkout.order)">
@@ -182,7 +173,7 @@ function money(amount: unknown, currency: unknown) {
             <span>{{ t('checkout.expired_warning') }}</span>
             <span>{{ t('checkout.expired_return') }}</span>
           </div>
-          <n-button v-if="hasReturnUrl(checkout.order)" block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
+          <n-button v-if="checkout.order.returnUrl" block type="primary" @click="returnToMerchant">{{ t('checkout.return_merchant') }}</n-button>
           <n-button block secondary type="warning" @click="reviewVisible = true">{{ t('checkout.review_button') }}</n-button>
         </template>
 

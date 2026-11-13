@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NEmpty, useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";

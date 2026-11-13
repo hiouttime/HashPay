@@ -2,13 +2,18 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { deletePayment, listPayments, publicPayment, savePayment } from "@/server/payments/channels";
 import { consumePin, createPin, endSession, telegramLogin } from "@/server/services/auth/login";
+import { rateLimit } from "@/server/http/api";
 import { requireAdmin } from "@/server/services/auth/session";
-import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
-import { createMerchant, deleteMerchant, listMerchants, rotateCredential, updateMerchant, type MerchantInput } from "@/server/services/merchants";
-import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
+import { saveBanner } from "@/server/services/images/banner";
+import { createMerchant, deleteMerchant, listMerchants, rotateCredential, updateMerchant } from "@/server/services/merchants";
+import { checkOrderPayment, confirmOrder } from "@/server/services/orders/checkout";
+import { deleteOrder } from "@/server/services/orders/create";
+import { getOrderDetail, listOrdersPage } from "@/server/services/orders/manage";
+import { resendNotify } from "@/server/services/orders/notifications";
 import { checkDashboard, dashboard } from "@/server/services/app";
 import { adminSettings, rebindBot, saveAdminSettings } from "@/server/services/app/settings";
 import { startSetup } from "@/server/services/app/setup";
+import type { MerchantInput } from "@/shared/types/api";
 import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();
@@ -31,6 +36,8 @@ session.get("/", json((c) => requireAdmin(c)));
 
 session.post("/telegram", json(async (c) => telegramLogin(c, await reqJson(c))));
 
+// Limit by IP, not by PIN: a PIN-wide counter would let anyone lock out the admin's browser login.
+session.use("/pin/*", rateLimit("login"));
 session.post("/pin", json(async (c) => createPin(c, await reqJson(c))));
 session.get("/pin/:pin", json((c) => consumePin(c, c.req.param("pin")!, c.req.query("challenge"))));
 app.route("/session", session);
@@ -89,10 +96,7 @@ app.post("/orders/:id/notify", json((c) => resendNotify(c.env, c.req.param("id")
 app.get("/settings", json((c) => adminSettings(c.env)));
 app.put("/settings", json(async (c) => saveAdminSettings(c.env, await reqJson(c))));
 app.post("/settings/bot/rebind", json((c) => rebindBot(c.env)));
-app.put("/banner", json(async (c) => uploadBanner(c.env, await c.req.arrayBuffer())));
-app.post("/banner/restore", json(async (c) => {
-  await restoreDefaultBanner(c.env);
-  return { url: "/banner.webp" };
-}));
+app.put("/banner", json(async (c) => saveBanner(c.env, await c.req.arrayBuffer())));
+app.post("/banner/restore", json((c) => saveBanner(c.env)));
 
 export default app;

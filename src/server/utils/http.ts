@@ -1,3 +1,5 @@
+import { jsonParseObject } from "@/server/db";
+
 const timeoutMs = 8000;
 
 export async function fetchText(url: string, init: RequestInit = {}) {
@@ -21,6 +23,14 @@ export async function fetchJson<T>(url: string, init: RequestInit = {}) {
   } catch {
     throw new Error(`${host(url)} invalid JSON ${reason(text)}`);
   }
+}
+
+// Short failure reason for an exchange API response: `code msg` from a JSON body, else the raw text.
+export function responseReason(res: Response, text: string) {
+  const fallback = `HTTP ${res.status}`;
+  if (!(res.headers.get("content-type") ?? "").includes("application/json")) return reason(text || fallback);
+  const body = jsonParseObject<{ code?: unknown; msg?: unknown }>(text, {});
+  return reason([body.code, body.msg].map((part) => String(part ?? "").trim()).filter(Boolean).join(" ") || fallback);
 }
 
 export function reason(value: unknown) {

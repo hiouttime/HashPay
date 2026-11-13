@@ -1,23 +1,6 @@
 import { AppError } from "@/server/http/api";
-import { bytesToHex, timingSafeEqualString } from "@/server/utils/crypto";
+import { bytesToHex, hmacSha256, timingSafeEqualString } from "@/server/utils/crypto";
 import type { TelegramUser } from "@/server/types/env";
-
-const encoder = new TextEncoder();
-
-async function hmacSha256(key: ArrayBuffer | Uint8Array, value: string) {
-  const keyData: ArrayBuffer =
-    key instanceof Uint8Array
-      ? key.buffer.slice(key.byteOffset, key.byteOffset + key.byteLength) as ArrayBuffer
-      : key;
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyData,
-    { hash: "SHA-256", name: "HMAC" },
-    false,
-    ["sign"],
-  );
-  return crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value));
-}
 
 export async function validateWebAppInitData(initData: string, token: string): Promise<TelegramUser> {
   const params = new URLSearchParams(initData);
@@ -28,7 +11,7 @@ export async function validateWebAppInitData(initData: string, token: string): P
   const pairs = Array.from(params.entries())
     .map(([key, value]) => `${key}=${value}`)
     .sort();
-  const secret = await hmacSha256(encoder.encode("WebAppData"), token);
+  const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), token);
   const expected = bytesToHex(await hmacSha256(secret, pairs.join("\n")));
   if (!timingSafeEqualString(expected, hash)) {
     throw new AppError(401, "errors.telegram_hash_invalid");

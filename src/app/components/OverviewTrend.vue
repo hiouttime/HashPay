@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import NSegmented from "@/app/components/NSegmented.vue";
 import { computed, ref } from "vue";
 import type { Dashboard } from "@/app/api";
 import { useI18n } from "@/app/i18n";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { formatAmount } from "@/app/utils/format";
 
 type TrendField = "amount" | "orders";
 type TrendRange = keyof Dashboard["trends"];

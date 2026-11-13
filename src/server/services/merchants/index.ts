@@ -3,7 +3,7 @@ import { AppError } from "@/server/http/api";
 import { generateRsaKeyPair, randomBase62, verifyRsaSha256 } from "@/server/utils/crypto";
 import { normalizeCallbackUrl } from "@/server/utils/url";
 import { authMode, type AuthMode } from "@/shared/merchants";
-import type { Merchant as ApiMerchant, MerchantInput as ApiMerchantInput } from "@/shared/types/api";
+import type { Merchant, MerchantInput } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
 
 interface MerchantRow {
@@ -16,9 +16,6 @@ interface MerchantRow {
   type: string;
   updated_at: number;
 }
-
-export type Merchant = ApiMerchant;
-export type MerchantInput = ApiMerchantInput;
 
 function merchant(row: MerchantRow): Merchant {
   return {

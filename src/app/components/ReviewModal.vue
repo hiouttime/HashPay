@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCard, NInput, NModal, NUpload, NUploadDragger, useMessage } from "naive-ui";
 import type { UploadFileInfo } from "naive-ui";
-import * as pay from "@/app/payments";
+import { networkKey, networkName, reviewAssetOptions, reviewNetworkOptions } from "@/app/payments";
 import { api, type Order } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { prepareReviewImage } from "@/app/utils/images";
-import {
-  ceilDisplayAmount,
-  formatExactDisplayAmount as formatExactAmount,
-  formatIntegerDisplayAmount as formatIntegerAmount,
-} from "@/app/utils/format";
+import { ceilDisplayAmount, formatExactAmount, formatIntegerAmount } from "@/app/utils/format";
+import { assetName, key } from "@/shared/payments";
 
 const props = defineProps<{
   order: Order;
@@ -38,24 +35,24 @@ const visible = computed({
   set: (show) => emit("update:show", show),
 });
 const questions = computed(() => {
-  const asset = pay.assetKey(props.order.payment.currency ?? "usdt");
-  const network = pay.networkKey(props.order.payment.driver ?? "trc20");
+  const asset = key(props.order.payment.currency ?? "usdt");
+  const network = networkKey(props.order.payment.driver ?? "trc20");
   const amount = props.order.payment.amount ?? props.order.amount;
-  const networkCorrect = pay.networkName(network);
-  const assetCorrect = pay.assetName(asset);
+  const networkCorrect = networkName(network);
+  const assetCorrect = assetName(asset);
   const amountCorrect = `${formatExactAmount(amount)} ${assetCorrect}`;
   return [
     {
       correct: networkCorrect,
       id: "network",
-      options: options(networkCorrect, pay.reviewNetworkOptions()),
+      options: options(networkCorrect, reviewNetworkOptions()),
       risk: t("review.network_risk", { network: networkCorrect }),
       title: t("review.network_question"),
     },
     {
       correct: assetCorrect,
       id: "asset",
-      options: options(assetCorrect, pay.reviewAssetOptions()),
+      options: options(assetCorrect, reviewAssetOptions()),
       risk: t("review.asset_risk", { asset: assetCorrect }),
       title: t("review.asset_question"),
     },

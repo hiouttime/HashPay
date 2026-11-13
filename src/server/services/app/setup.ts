@@ -1,7 +1,7 @@
 import { getConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
+import { normalizeDomain } from "@/server/services/app/settings";
 import { startTelegramSetup } from "@/server/services/telegram/setup";
-import { toHttpsSiteUrl } from "@/shared/domain";
 import type { Context } from "hono";
 import type { HonoEnv } from "@/server/types/env";
 
@@ -11,12 +11,4 @@ export async function startSetup(c: Context<HonoEnv>, input: Record<string, unkn
   const domain = normalizeDomain(input.domain);
   const setup = await startTelegramSetup(c.env, domain);
   return { domain, ...setup };
-}
-
-function normalizeDomain(value: unknown) {
-  try {
-    return toHttpsSiteUrl(value);
-  } catch {
-    throw new AppError(400, "errors.domain_invalid");
-  }
 }

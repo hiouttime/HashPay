@@ -40,7 +40,10 @@ export function clearSessionCookie(c: Context) {
 }
 
 export async function verifySession(env: AppEnv, token: string): Promise<TelegramUser> {
-  const result = await jwtVerify(token, secret(env));
+  // jose throws its own error types for a tampered or expired token; without this they surface as HTTP 500.
+  const result = await jwtVerify(token, secret(env), { algorithms: ["HS256"] }).catch(() => {
+    throw new AppError(401, "errors.session_invalid");
+  });
   const id = Number(result.payload.sub);
   if (!Number.isFinite(id)) throw new AppError(401, "errors.session_invalid");
   return {
@@ -56,6 +59,5 @@ export async function requireAdmin(c: Context<HonoEnv>) {
   const user = await verifySession(c.env, token);
   const adminId = Number(await getConfig(c.env, "admin_id"));
   if (!adminId || user.id !== adminId) throw new AppError(403, "errors.admin_forbidden");
-  c.set("tgUser", user);
   return user;
 }

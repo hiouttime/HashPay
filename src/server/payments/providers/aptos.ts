@@ -1,16 +1,18 @@
-import Decimal from "decimal.js";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson } from "@/server/utils/http";
+import { unitAmount } from "@/shared/amount";
 import { aptosAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
+export const aptos = { check, scan };
+
 const endpoint = "https://api.mainnet.aptoslabs.com/v1/graphql";
 const depositTypes = ["0x1::fungible_asset::Deposit", "0x1::fungible_asset::DepositEvent"];
 
-export async function check(channel: PaymentChannel) {
+async function check(channel: PaymentChannel) {
   const rows = await graphql<{ fungible_asset_activities?: unknown[] }>(`
     query($owner: String!) {
       fungible_asset_activities(where: { owner_address: { _eq: $owner } }, limit: 1) {
@@ -21,7 +23,7 @@ export async function check(channel: PaymentChannel) {
   if (!Array.isArray(rows.fungible_asset_activities)) throw new Error("Aptos response is invalid");
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
   return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
@@ -100,17 +102,13 @@ function tx(row: Record<string, unknown>) {
   const asset = Object.entries(aptosAssets).find(([, item]) => item.contract === row.asset_type)?.[0] ?? "";
   const token = aptosAssets[asset];
   return {
-    amount: amount(row.amount, token?.decimals ?? 0),
+    amount: unitAmount(row.amount, token?.decimals ?? 0),
     currency: asset,
     hash: String(row.transaction_version ?? ""),
     raw: row,
     timestamp: Math.floor(Date.parse(String(row.transaction_timestamp)) / 1000),
     to: String(row.owner_address ?? ""),
   };
-}
-
-function amount(value: unknown, decimals: number) {
-  return new Decimal(String(value ?? "0")).div(new Decimal(10).pow(decimals)).toNumber();
 }
 
 function contract(raw: unknown) {

@@ -1,9 +1,8 @@
 import { all, getConfig, jsonParseObject, now, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { getMerchant } from "@/server/services/merchants";
-import { assignPayment, checkPayment, checksOnSchedule, createPayment, paymentOptions } from "@/server/payments/driver";
-import { listPayments, recordCheck, type PaymentChannel } from "@/server/payments/channels";
-import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/payments/providers/okpay";
+import { assignPayment, checkPayment, createPayment, paymentOptions } from "@/server/payments/driver";
+import { findPayment, listPayments, recordCheck, type PaymentChannel } from "@/server/payments/channels";
 import { getOrder, listPendingChannelOrders, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
 import { notifyPayment, notifyReview } from "@/server/services/telegram/notify";
@@ -31,21 +30,14 @@ export async function checkoutData(env: AppEnv, orderId: string) {
     rateContext(env),
     getConfig(env, "title"),
   ]);
-  const channels = payments.filter((item) => item.status === "enabled");
-  const options = [];
-  for (const channel of channels) {
-    for (const option of paymentOptions(channel)) {
-      options.push({
-        amount: payAmount(order.amount, order.currency, option.asset, rate),
-        asset: option.asset,
-        network: option.network,
-      });
-    }
-  }
   return {
     fastConfirm: rate.settings.fastConfirm,
     merchant: merchant ? { id: merchant.id, name: merchant.name } : { id: "INLINE", name: "Telegram" },
-    options,
+    options: payments.filter((channel) => channel.status === "enabled").flatMap(paymentOptions).map((option) => ({
+      amount: payAmount(order.amount, order.currency, option.asset, rate),
+      asset: option.asset,
+      network: option.network,
+    })),
     order: checkoutOrder(order, merchant),
     title: title || "HashPay",
   };
@@ -55,7 +47,7 @@ export async function checkoutStatus(env: AppEnv, orderId: string) {
   let order = await getOrder(env, orderId);
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (order.status === "pending" && snapshot.url) {
-    await checkOrderPayment(env, order.id).catch(() => undefined);
+    await checkClaimedOrder(env, order).catch(() => undefined);
     order = await getOrder(env, orderId);
   }
   const merchant = order.merchant === "INLINE" ? null : await getMerchant(env, order.merchant);
@@ -65,12 +57,6 @@ export async function checkoutStatus(env: AppEnv, orderId: string) {
 function checkoutOrder(order: Order, merchant: Awaited<ReturnType<typeof getMerchant>> | null) {
   const returnUrl = merchant?.type === "ezfp" ? ezfpReturnUrl(order, merchant) : order.redirectUrl;
   return { ...publicOrder(order), returnUrl };
-}
-
-function randomIndex(length: number) {
-  const data = new Uint32Array(1);
-  crypto.getRandomValues(data);
-  return data[0] % length;
 }
 
 export async function selectCheckoutPayment(env: AppEnv, orderId: string, asset: string, network: string) {
@@ -90,16 +76,10 @@ export async function selectTelegramPayment(env: AppEnv, orderId: string, asset:
 async function selectPayment(env: AppEnv, order: Order, asset: string, network: string, refreshWindow: boolean) {
   const targetAsset = key(asset);
   const targetNetwork = key(network);
-  const channels = [];
-  for (const channel of (await listPayments(env)).filter((item) => item.status === "enabled")) {
-    for (const quote of paymentOptions(channel)) {
-      if (key(quote.asset) === targetAsset && key(quote.network) === targetNetwork) {
-        channels.push(channel);
-      }
-    }
-  }
+  const channels = (await listPayments(env)).filter((channel) => channel.status === "enabled"
+    && paymentOptions(channel).some((option) => key(option.asset) === targetAsset && key(option.network) === targetNetwork));
   if (!channels.length) throw new AppError(400, "errors.payment_network_unavailable");
-  const channel = channels[randomIndex(channels.length)];
+  const channel = channels[crypto.getRandomValues(new Uint32Array(1))[0] % channels.length];
   const rate = await rateContext(env);
   const amount = await uniqueAmount(env, channel, order.id, targetAsset, payAmount(order.amount, order.currency, targetAsset, rate));
   const snapshot = preserveEzfpContext(
@@ -107,20 +87,21 @@ async function selectPayment(env: AppEnv, order: Order, asset: string, network: 
     await createPayment(channel, order, assignPayment(channel, amount, targetAsset)),
   );
   const ts = now();
-  if (refreshWindow) {
-    await refreshOrderPaymentWindow(env, order.id, channel.id, snapshot, rate.settings.timeout, ts);
-  } else {
-    await setOrderPayment(env, order.id, channel.id, snapshot, ts);
-  }
+  const saved = refreshWindow
+    ? await refreshOrderPaymentWindow(env, order.id, channel.id, snapshot, rate.settings.timeout, ts)
+    : await setOrderPayment(env, order.id, channel.id, snapshot, ts);
+  if (!saved) throw new AppError(400, "errors.order_unavailable");
   return snapshot;
 }
 
+// Amounts are reserved per receiving address and asset, not per channel row: two channels
+// may share one address, and a payment is attributed only by address + amount.
 async function uniqueAmount(env: AppEnv, channel: PaymentChannel, orderId: string, asset: string, amount: number) {
   const rows = await all<{ id: string; payment: string }>(
     env,
-    "SELECT id, payment FROM orders WHERE status = 'pending' AND expire_at > ? AND payway = ? AND id <> ?",
+    "SELECT id, payment FROM orders WHERE status = 'pending' AND expire_at > ? AND json_extract(payment, '$.driver') = ? AND id <> ?",
     now(),
-    channel.id,
+    channel.driver,
     orderId,
   );
   const used = rows.flatMap((row) => {
@@ -153,27 +134,24 @@ export async function markPaid(env: AppEnv, order: Order, tx: PaymentTxInput) {
     },
   };
   const ts = now();
-  const sql = manual
-    ? "UPDATE orders SET status = 'paid', payment = ?, driver = ?, txid = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('pending', 'expired') AND NOT EXISTS (SELECT 1 FROM orders claimed WHERE claimed.driver = ? AND claimed.txid = ?)"
-    : "UPDATE orders SET status = 'paid', payment = ?, driver = ?, txid = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'pending' AND NOT EXISTS (SELECT 1 FROM orders claimed WHERE claimed.driver = ? AND claimed.txid = ?)";
-  let result;
-  try {
-    result = await run(
-      env,
-      sql,
-      JSON.stringify(paidPayment),
-      driver,
-      txid,
-      ts,
-      ts,
-      order.id,
-      driver,
-      txid,
-    );
-  } catch (error) {
+  // Only an admin may confirm an expired order. A transaction pays at most one order: the
+  // NOT EXISTS guard and the unique (driver, txid) index both reject a second claim.
+  const result = await run(
+    env,
+    `UPDATE orders SET status = 'paid', payment = ?, driver = ?, txid = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN (${manual ? "'pending', 'expired'" : "'pending'"}) AND NOT EXISTS (SELECT 1 FROM orders claimed WHERE claimed.driver = ? AND claimed.txid = ?)`,
+    JSON.stringify(paidPayment),
+    driver,
+    txid,
+    ts,
+    ts,
+    order.id,
+    driver,
+    txid,
+  ).catch((error) => {
     if (txConflict(error)) return null;
     throw error;
-  }
+  });
+  if (!result) return null;
   if (!result.meta.changes) {
     const current = await getOrder(env, order.id);
     return current.status === "paid" ? jsonParseObject<PaymentSnapshot>(current.payment, {} as PaymentSnapshot) : null;
@@ -206,15 +184,40 @@ export async function submitPaymentReview(env: AppEnv, orderId: string, input: {
   return { ok: true };
 }
 
+// Public checks hit exchange/chain APIs with the merchant's credentials and quotas,
+// so anonymous callers may trigger at most one provider query per order per window.
+const publicCheckIntervalSeconds = 10;
+
+export async function checkPublicOrderPayment(env: AppEnv, orderId: string) {
+  return checkClaimedOrder(env, await getOrder(env, orderId));
+}
+
 export async function checkOrderPayment(env: AppEnv, orderId: string) {
-  const order = await getOrder(env, orderId);
+  return checkLoadedOrder(env, await getOrder(env, orderId));
+}
+
+async function checkClaimedOrder(env: AppEnv, order: Order) {
+  if (order.status === "paid") return jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
+  const ts = now();
+  const claimed = await run(
+    env,
+    "UPDATE orders SET checked_at = ? WHERE id = ? AND status = 'pending' AND (checked_at IS NULL OR checked_at <= ?)",
+    ts,
+    order.id,
+    ts - publicCheckIntervalSeconds,
+  );
+  if (!claimed.meta.changes) throw new AppError(404, "errors.tx_not_found");
+  return checkLoadedOrder(env, order);
+}
+
+async function checkLoadedOrder(env: AppEnv, order: Order) {
   if (order.status === "paid") return jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (order.status !== "pending" || now() > order.expireAt) throw new AppError(400, "errors.order_unavailable");
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (!snapshot.driver) throw new AppError(400, "errors.payment_not_selected");
   const settings = await systemSettings(env);
   const result = await checkPayment({
-    channel: await orderChannel(env, order),
+    channel: order.payway ? await findPayment(env, order.payway) ?? undefined : undefined,
     fastConfirm: settings.fastConfirm,
     orders: await scanOrders(env, order, snapshot, settings.dynamicMatch),
     tolerance: toleranceOf(settings),
@@ -242,7 +245,7 @@ export async function checkPendingPayments(env: AppEnv) {
   const groups = new Map<number, Array<{ order: Order; snapshot: PaymentSnapshot }>>();
   for (const order of orders) {
     const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
-    if (!order.payway || !snapshot.driver || !checksOnSchedule(snapshot.driver)) continue;
+    if (!order.payway || !snapshot.driver) continue;
     if (!channelById.has(order.payway)) continue;
     groups.set(order.payway, [...(groups.get(order.payway) ?? []), { order, snapshot }]);
   }
@@ -251,8 +254,7 @@ export async function checkPendingPayments(env: AppEnv) {
       const pending = await listPendingChannelOrders(env, payway);
       const items = pending.flatMap((order) => {
         const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
-        if (!snapshot.driver || !checksOnSchedule(snapshot.driver)) return [];
-        return [{ order, snapshot }];
+        return snapshot.driver ? [{ order, snapshot }] : [];
       });
       if (items.length) groups.set(payway, items);
     }
@@ -274,11 +276,6 @@ export async function checkPendingPayments(env: AppEnv) {
       if (item) await markPaid(env, item.order, { amount: match.amount, timestamp: match.time, txid: match.txid });
     }
   }
-}
-
-async function orderChannel(env: AppEnv, order: Order) {
-  if (!order.payway) return undefined;
-  return (await listPayments(env)).find((item) => item.id === order.payway);
 }
 
 async function scanOrders(env: AppEnv, order: Order, snapshot: PaymentSnapshot, dynamic: boolean) {
@@ -310,19 +307,4 @@ export async function confirmOrder(env: AppEnv, orderId: string) {
   });
   if (!payment) throw new AppError(400, "errors.order_unavailable");
   return payment;
-}
-
-export async function okpayNotify(env: AppEnv, input: Record<string, unknown>) {
-  const channel = (await listPayments(env)).find((item) => item.driver === "okpay" && item.address === String(input.id ?? ""));
-  if (!channel || !verifyOkpay(channel, input)) throw new AppError(400, "errors.bad_request");
-  if (input.status && String(input.status) !== "success") throw new AppError(400, "errors.bad_request");
-  if (input.code && Number(input.code) !== 10000) throw new AppError(400, "errors.bad_request");
-  const data = okpayNotifyData(input);
-  const order = await getOrder(env, data.uniqueId);
-  const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
-  if (snapshot.driver !== "okpay" || order.payway !== channel.id) throw new AppError(400, "errors.bad_request");
-  if (!sameAmount(data.amount, snapshot.amount) || data.coin !== key(snapshot.currency)) throw new AppError(400, "errors.bad_request");
-  if (order.status === "paid") return { status: "success" };
-  await markPaid(env, order, { amount: data.amount, txid: data.orderId });
-  return { status: "success" };
 }

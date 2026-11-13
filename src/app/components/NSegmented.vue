@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NRadioButton, NRadioGroup } from "naive-ui";
 type SegmentedValue = string | number | boolean;
 
 defineOptions({

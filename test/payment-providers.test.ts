@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkChannel, checkPayment, createPayment } from "@/server/payments/driver";
-import { check as checkBinance } from "@/server/payments/providers/binance";
-import { check as checkOkx } from "@/server/payments/providers/okx";
+import { binance } from "@/server/payments/providers/binance";
+import { okx } from "@/server/payments/providers/okx";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { Order } from "@/server/services/orders/repository";
 import { aptosAssets, evmAssets, solanaAssets, tonAssets, trc20Assets } from "@/shared/payments";
@@ -715,7 +715,7 @@ describe("Binance Pay provider", () => {
     const fetchMock = vi.fn(async () => json({ uid: 34355667 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(checkBinance({
+    await expect(binance.check({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).resolves.toBeUndefined();
@@ -730,7 +730,7 @@ describe("Binance Pay provider", () => {
   it("rejects Binance ID mismatches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ uid: 34355667 })));
 
-    await expect(checkBinance({
+    await expect(binance.check({
       address: "999999",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -747,7 +747,7 @@ describe("Binance Pay provider", () => {
       { headers: { "content-type": "application/json" }, status: 401 },
     )));
 
-    await expect(checkBinance({
+    await expect(binance.check({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -760,7 +760,7 @@ describe("Binance Pay provider", () => {
   it("reports Binance account responses without a UID", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({})));
 
-    await expect(checkBinance({
+    await expect(binance.check({
       address: "34355667",
       data: { apiKey: "api-key", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -892,6 +892,42 @@ describe("Binance Pay provider", () => {
       status: "ok",
     });
   });
+
+  it("splits a full Binance history window until each half fits", async () => {
+    const row = (transactionId: string, amount: string, transactionTime: number) => ({
+      amount,
+      currency: "USDT",
+      receiverInfo: { binanceId: "34355667" },
+      transactionId,
+      transactionTime,
+    });
+    const filler = Array.from({ length: 100 }, (_, index) => row(`filler-${index}`, "1", 1_800_000_200_000));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ code: "000000", data: filler, success: true }))
+      .mockResolvedValueOnce(json({ code: "000000", data: [row("binance-tx", "12.5", 1_800_000_010_000)], success: true }))
+      .mockResolvedValueOnce(json({ code: "000000", data: filler.slice(0, 40), success: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: binanceChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "34355667", driver: "binance" }), {
+        createdAt: 1_800_000_000,
+        expireAt: 1_800_000_300,
+        id: "binance-order",
+      })],
+    })).resolves.toMatchObject({ matches: [{ orderId: "binance-order", txid: "binance-tx" }], status: "ok" });
+
+    const windows = fetchMock.mock.calls.map(([url]) => {
+      const params = new URL(String(url)).searchParams;
+      return [params.get("startTime"), params.get("endTime")];
+    });
+    expect(windows).toEqual([
+      ["1800000000000", "1800000300000"],
+      ["1800000000000", "1800000150000"],
+      ["1800000150001", "1800000300000"],
+    ]);
+  });
 });
 
 describe("OKX provider", () => {
@@ -901,7 +937,7 @@ describe("OKX provider", () => {
     const fetchMock = vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(checkOkx({
+    await expect(okx.check({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).resolves.toBeUndefined();
@@ -918,7 +954,7 @@ describe("OKX provider", () => {
   it("rejects OKX UID mismatches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{ uid: "888777" }] })));
 
-    await expect(checkOkx({
+    await expect(okx.check({
       address: "999999",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -931,7 +967,7 @@ describe("OKX provider", () => {
   it("reports OKX API failures with the platform reason", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "50113", msg: "Invalid signature" })));
 
-    await expect(checkOkx({
+    await expect(okx.check({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -944,7 +980,7 @@ describe("OKX provider", () => {
   it("reports OKX account responses without a UID", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ code: "0", data: [{}] })));
 
-    await expect(checkOkx({
+    await expect(okx.check({
       address: "888777",
       data: { apiKey: "api-key", passphrase: "passphrase", secretKey: "secret-key" },
     })).rejects.toMatchObject({
@@ -985,6 +1021,53 @@ describe("OKX provider", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://www.okx.com/api/v5/asset/bills?ccy=USDT&limit=100");
     expect((init.headers as Record<string, string>)["OK-ACCESS-KEY"]).toBe("api-key");
+  });
+
+  it("pages older OKX bills until the order window is covered", async () => {
+    const filler = Array.from({ length: 100 }, (_, index) => ({
+      balChg: "1",
+      billId: `filler-${index}`,
+      ccy: "USDT",
+      ts: "1800000200000",
+      type: "1",
+    }));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ code: "0", data: filler }))
+      .mockResolvedValueOnce(json({ code: "0", data: [filler[0], { balChg: "12.5", billId: "okx-bill", ccy: "USDT", ts: "1800000120000", type: "1" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: okxChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "888777", driver: "okx" }), {
+        createdAt: 1_800_000_000,
+        expireAt: 1_800_000_300,
+        id: "okx-order",
+      })],
+    })).resolves.toMatchObject({ matches: [{ orderId: "okx-order", txid: "okx-bill" }], status: "ok" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://www.okx.com/api/v5/asset/bills?ccy=USDT&limit=100&after=1800000200001");
+  });
+
+  it("stops paging OKX bills once a page is older than the order window", async () => {
+    const filler = Array.from({ length: 100 }, (_, index) => ({
+      balChg: "1",
+      billId: `old-${index}`,
+      ccy: "USDT",
+      ts: String(1_799_999_000_000 + index),
+      type: "1",
+    }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(json({ code: "0", data: filler }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await checkPayment({
+      channel: okxChannel(),
+      fastConfirm: false,
+      orders: [order(payment({ address: "888777", driver: "okx" }), { createdAt: 1_800_000_000, expireAt: 1_800_000_300, id: "okx-order" })],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignores OKX bills outside the order match", async () => {

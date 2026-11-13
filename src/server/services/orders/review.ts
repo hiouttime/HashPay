@@ -14,20 +14,9 @@ export async function saveReview(env: AppEnv, orderId: string, answer: string, f
   if (file.size > REVIEW_IMAGE_MAX_BYTES) throw new AppError(400, "errors.review_image_too_large");
   const image = await file.arrayBuffer();
   if (imageType(new Uint8Array(image)) !== "image/jpeg") throw new AppError(400, "errors.review_image_invalid");
-  await run(
-    env,
-    `
-      INSERT INTO review(order_id, answer, image, image_url)
-      VALUES(?, ?, ?, NULL)
-      ON CONFLICT(order_id) DO UPDATE SET
-        answer = excluded.answer,
-        image = excluded.image,
-        image_url = NULL
-    `,
-    orderId,
-    answer,
-    image,
-  );
+  // One review per order: a repeat would overwrite the evidence and notify the admin again.
+  const saved = await run(env, "INSERT INTO review(order_id, answer, image) VALUES(?, ?, ?) ON CONFLICT(order_id) DO NOTHING", orderId, answer, image);
+  if (!saved.meta.changes) throw new AppError(409, "errors.review_submitted");
   return image;
 }
 

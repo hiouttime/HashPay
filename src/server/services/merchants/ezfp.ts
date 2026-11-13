@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { jsonParseObject } from "@/server/db";
 import { timingSafeEqualString } from "@/server/utils/crypto";
-import type { Merchant } from "@/server/services/merchants";
+import type { Merchant } from "@/shared/types/api";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 

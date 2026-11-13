@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCard, NCollapse, NCollapseItem, NEmpty, NFormItem, NInput, NModal, NSwitch, useMessage } from "naive-ui";
 import AppIcon from "@/app/components/AppIcon.vue";
 import NSegmented from "@/app/components/NSegmented.vue";
 import { useI18n } from "@/app/i18n";
-import * as payment from "@/app/payments";
+import { choices, evmId, networkIcon, networkName, type DriverChoice } from "@/app/payments";
 import { api, type Payment } from "@/app/api";
 import { ask } from "@/app/utils/telegram";
+import { assetName, paymentById, paymentByNetwork, paymentKindOrder, type PaymentKind } from "@/shared/payments";
 
 interface PaymentForm {
   address: string;
@@ -27,44 +28,44 @@ const dialog = reactive({
 });
 const selection = reactive({
   evm: {} as Record<string, string[]>,
-  kind: "chain" as payment.Kind,
+  kind: "chain" as PaymentKind,
 });
 const form = reactive<PaymentForm>(defaultForm());
 
 const isEdit = computed(() => dialog.mode === "edit");
-const dialogOpen = computed(() => dialog.mode !== "" && payment.drivers.length > 0);
-const drivers = computed(() => payment.choices(payment.drivers, selection.kind, isEdit.value ? form.driver : ""));
+const drivers = computed(() => choices(selection.kind, isEdit.value ? form.driver : ""));
 const currentDriver = computed(() => drivers.value.find((driver) => driver.id === form.driver) ?? drivers.value[0]!);
-const editableFields = computed(() => {
-  const driver = payment.isEvm(currentDriver.value) ? payment.evmDriver(payment.drivers, payment.evmIconNetwork) : currentDriver.value;
-  return [payment.fieldFor(driver)];
-});
+// The EVM choice creates one channel per selected network. Editing always targets one real driver.
+const isEvm = computed(() => currentDriver.value.id === evmId);
 const dataFields = computed(() => currentDriver.value.data ?? []);
 const primaryDataFields = computed(() => dataFields.value.filter((field) => !field.optional));
 const advancedDataFields = computed(() => dataFields.value.filter((field) => field.optional));
-const selectedAssets = computed(() => form.assets);
-const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
-const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
 const selectedNetworks = computed(() => Object.keys(selection.evm));
-const kindOptions = computed(() => payment.kinds.map((item) => ({ ...item, label: t(item.label) })));
-const driverChoices = payment.kinds.flatMap((item) => payment.choices(payment.drivers, item.value));
+const kindOptions = computed(() => paymentKindOrder.map((kind) => ({ label: t(`payment.kind.${kind}`), value: kind })));
+const allChoices = paymentKindOrder.flatMap((kind) => choices(kind));
+const channelStatus = {
+  disabled: "common.disabled",
+  enabled: "common.enabled",
+  error: "payment.channel_error",
+} as const;
 
 async function load() {
   methods.value = await api.payments.list();
 }
 
 async function save() {
-  if (!validate()) return;
+  const error = formError();
+  if (error) {
+    message.error(error);
+    return;
+  }
 
   saving.value = true;
   try {
-    if (!isEdit.value && payment.isEvm(currentDriver.value.id)) {
-      await Promise.all(selectedNetworks.value.map((network) => api.payments.create(payload(payment.evmDriver(payment.drivers, network).id, network, selection.evm[network]))));
-    } else if (isEdit.value) {
-      await api.payments.update(dialog.method!.id, payload(currentDriver.value.id, selectedNetwork.value, selectedAssets.value));
-    } else {
-      await api.payments.create(payload(currentDriver.value.id, selectedNetwork.value, selectedAssets.value));
-    }
+    const inputs = isEvm.value
+      ? selectedNetworks.value.map((network) => payload(paymentByNetwork(network)!.id, network, selection.evm[network]))
+      : [payload(currentDriver.value.id, currentDriver.value.network, form.assets)];
+    await Promise.all(inputs.map((input) => isEdit.value ? api.payments.update(dialog.method!.id, input) : api.payments.create(input)));
     message.success(t(isEdit.value ? "payment.save_updated" : "payment.save_created"));
     await load();
     closeDialog();
@@ -73,13 +74,14 @@ async function save() {
   }
 }
 
-function payload(driverId: string, network: string, assets: string[]) {
+function payload(driver: string, network: string, assets: string[]) {
   return {
     address: form.address.trim(),
     assets,
     data: { ...form.data },
-    driver: driverId,
-    name: selectedNetworks.value.length > 1 && payment.isEvmDriver(payment.drivers, driverId) ? `${form.name.trim()} · ${networkName(network)}` : form.name.trim(),
+    driver,
+    // Channels created together from the EVM choice share one name, so the network tells them apart.
+    name: selectedNetworks.value.length > 1 ? `${form.name.trim()} · ${networkName(network)}` : form.name.trim(),
     status: isEdit.value && !form.enabled ? "disabled" as const : "enabled" as const,
   };
 }
@@ -91,76 +93,17 @@ async function remove(id: number) {
   await load();
 }
 
-function validate() {
-  if (!form.name.trim()) {
-    message.error(t("payment.validation.name_required"));
-    return false;
-  }
-
-  const missing = editableFields.value.find((field) => field.required && !form.address.trim());
-  if (missing) {
-    message.error(t("payment.validation.field_required", { field: missing.label }));
-    return false;
-  }
-
-  const addressError = payment.addressError(currentDriver.value, form.address.trim());
-  if (addressError) {
-    message.error(addressError);
-    return false;
-  }
-
-  const missingData = !isEdit.value ? primaryDataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
-  if (missingData) {
-    message.error(t("payment.validation.field_required", { field: t(missingData.nameKey) }));
-    return false;
-  }
-
-  if (!isEdit.value && payment.isEvm(currentDriver.value.id)) {
-    if (!selectedNetworks.value.length) {
-      message.error(t("payment.validation.evm_network_required"));
-      return false;
-    }
-    for (const network of selectedNetworks.value) {
-      if (!selection.evm[network].length) {
-        message.error(t("payment.validation.network_asset_required", { network: networkName(network) }));
-        return false;
-      }
-    }
-    return true;
-  }
-
-  if (!selectedAssets.value.length) {
-    message.error(t("payment.validation.asset_required"));
-    return false;
-  }
-  return true;
-}
-
-function resetForm() {
-  selection.kind = "chain";
-  selection.evm = {};
-  Object.assign(form, defaultForm());
-  const first = payment.drivers.find((driver) => driver.kind === selection.kind) ?? payment.drivers[0];
-  if (first) setDriver(first.id);
-}
-
-function fillForm() {
-  if (dialog.mode === "new") {
-    resetForm();
-    return;
-  }
-
-  const method = dialog.method!;
-  selection.kind = payment.kindOf(payment.drivers, method.driver);
-  selection.evm = payment.isEvmDriver(payment.drivers, method.driver) ? { [methodDriver(method)!.network]: method.assets } : {};
-  Object.assign(form, {
-    address: method.address,
-    assets: [...method.assets],
-    data: {},
-    driver: method.driver,
-    enabled: method.status !== "disabled",
-    name: method.name,
-  });
+function formError() {
+  const address = currentDriver.value.address;
+  if (!form.name.trim()) return t("payment.validation.name_required");
+  if (!form.address.trim()) return t("payment.validation.field_required", { field: t(address.nameKey) });
+  if (address.pattern && !address.pattern.test(form.address.trim())) return t("payment.validation.address_invalid", { field: t(address.nameKey) });
+  const missing = isEdit.value ? undefined : primaryDataFields.value.find((field) => !form.data[field.id]?.trim());
+  if (missing) return t("payment.validation.field_required", { field: t(missing.nameKey) });
+  if (!isEvm.value) return form.assets.length ? "" : t("payment.validation.asset_required");
+  if (!selectedNetworks.value.length) return t("payment.validation.evm_network_required");
+  const empty = selectedNetworks.value.find((network) => !selection.evm[network].length);
+  return empty ? t("payment.validation.network_asset_required", { network: networkName(empty) }) : "";
 }
 
 function closeDialog() {
@@ -171,56 +114,57 @@ function closeDialog() {
 function add() {
   dialog.mode = "new";
   dialog.method = null;
-  fillForm();
+  Object.assign(form, defaultForm());
+  setKind("chain");
 }
 
 function edit(method: Payment) {
   dialog.mode = "edit";
   dialog.method = method;
-  fillForm();
+  selection.kind = paymentById(method.driver)!.kind;
+  selection.evm = {};
+  Object.assign(form, {
+    address: method.address,
+    assets: [...method.assets],
+    data: {},
+    driver: method.driver,
+    enabled: method.status !== "disabled",
+    name: method.name,
+  });
 }
 
-function setKind(kind: payment.Kind) {
+function setKind(kind: PaymentKind) {
   selection.kind = kind;
-  const driver = payment.drivers.find((item) => item.kind === kind);
-  if (driver) setDriver(driver.id);
+  setDriver(drivers.value[0]!);
 }
 
-function setKindValue(value: string | number | boolean) {
-  setKind(value as payment.Kind);
-}
-
-function setDriver(driverId: string) {
-  const driver = drivers.value.find((item) => item.id === driverId)!;
-  const network = payment.driverNetwork(driver);
+function setDriver(driver: DriverChoice) {
   form.driver = driver.id;
   form.address = "";
   form.assets = [...driver.assets];
   form.data = {};
-  selection.evm = payment.isEvm(driver.id) ? { [network]: [...payment.assetsFor(driver, network)] } : {};
+  selection.evm = driver.id === evmId ? { [driver.network]: [...paymentByNetwork(driver.network)!.assets] } : {};
 }
 
 function toggleAsset(asset: string) {
-  if (selectedAssets.value.includes(asset) && selectedAssets.value.length === 1) {
+  if (form.assets.includes(asset) && form.assets.length === 1) {
     message.warning(t("payment.validation.asset_required"));
     return;
   }
-  form.assets = selectedAssets.value.includes(asset)
-    ? selectedAssets.value.filter((item) => item !== asset)
-    : [...selectedAssets.value, asset];
+  form.assets = form.assets.includes(asset) ? form.assets.filter((item) => item !== asset) : [...form.assets, asset];
 }
 
 function toggleEvmNetwork(network: string) {
   const next = { ...selection.evm };
-  if (next[network]) {
-    if (Object.keys(next).length === 1) {
-      message.warning(t("payment.validation.evm_network_required"));
-      return;
-    }
-    delete next[network];
-  } else {
-    next[network] = [...payment.assetsFor(currentDriver.value, network)];
+  if (!next[network]) {
+    selection.evm = { ...next, [network]: [...paymentByNetwork(network)!.assets] };
+    return;
   }
+  if (selectedNetworks.value.length === 1) {
+    message.warning(t("payment.validation.evm_network_required"));
+    return;
+  }
+  delete next[network];
   selection.evm = next;
 }
 
@@ -247,36 +191,6 @@ function defaultForm(): PaymentForm {
   };
 }
 
-function driverByNetwork(network: string) {
-  return payment.drivers.find((driver) => driver.network === network);
-}
-
-function methodDriver(method: Payment) {
-  return payment.drivers.find((driver) => driver.id === method.driver);
-}
-
-function networkName(network: string) {
-  return payment.networkName(network);
-}
-
-function networkIcon(network: string) {
-  return driverByNetwork(network)?.icon ?? "";
-}
-
-function driverIcon(driver: payment.DriverChoice, network = payment.driverNetwork(driver)) {
-  return payment.isEvm(driver) ? networkIcon(payment.evmIconNetwork) : driver.icon;
-}
-
-function driverIconLabel(driver: payment.DriverChoice, network = payment.driverNetwork(driver)) {
-  return payment.isEvm(driver) ? networkName(payment.evmIconNetwork) : payment.networkName(network);
-}
-
-const channelStatus = {
-  disabled: "common.disabled",
-  enabled: "common.enabled",
-  error: "payment.channel_error",
-} as const;
-
 onMounted(load);
 </script>
 
@@ -286,7 +200,7 @@ onMounted(load);
     <div>
       <h2>{{ t("payment.channel") }}</h2>
     </div>
-    <n-button type="primary" :disabled="!payment.drivers.length" @click="add">{{ t("payment.channel_add") }}</n-button>
+    <n-button type="primary" @click="add">{{ t("payment.channel_add") }}</n-button>
   </div>
 
   <section class="panel grid">
@@ -297,17 +211,17 @@ onMounted(load);
       class="list-card pay-card"
     >
       <div class="pay-card-main">
-        <span v-if="methodDriver(item)?.icon" class="pay-icon">
-          <AppIcon :name="methodDriver(item)!.icon" :label="payment.networkName(methodDriver(item)!.network)" />
+        <span v-if="networkIcon(item.driver)" class="pay-icon">
+          <AppIcon :name="networkIcon(item.driver)" :label="networkName(item.driver)" />
         </span>
         <div class="pay-info">
           <strong>{{ item.name }} <span class="muted">#{{ item.id }}</span></strong>
           <p>
-            {{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} /
+            {{ networkName(item.driver) }} /
             <span class="pay-status" :class="`is-${item.status}`">{{ t(channelStatus[item.status]) }}</span>
           </p>
           <div class="chip-row readonly">
-            <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ payment.assetName(asset) }}</span>
+            <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ assetName(asset) }}</span>
           </div>
           <p class="pay-address">{{ item.address || '--' }}</p>
         </div>
@@ -319,7 +233,7 @@ onMounted(load);
     </div>
   </section>
 
-  <n-modal :show="dialogOpen" @update:show="!$event && closeDialog()">
+  <n-modal :show="dialog.mode !== ''" @update:show="!$event && closeDialog()">
     <n-card
       :title="t(isEdit ? 'payment.channel_edit' : 'payment.channel_new')"
       closable
@@ -342,18 +256,18 @@ onMounted(load);
           <h3>{{ t("payment.channel") }}</h3>
           <div class="readonly-channel">
             <span v-if="currentDriver.icon" class="pay-icon">
-              <AppIcon :name="currentDriver.icon" :label="payment.networkName(selectedNetwork)" />
+              <AppIcon :name="currentDriver.icon" :label="networkName(currentDriver.network)" />
             </span>
             <div>
-              <strong>{{ payment.networkName(selectedNetwork) }}</strong>
-              <p>{{ t(payment.kinds.find((item) => item.value === selection.kind)!.label) }}</p>
+              <strong>{{ networkName(currentDriver.network) }}</strong>
+              <p>{{ t(`payment.kind.${selection.kind}`) }}</p>
             </div>
           </div>
         </div>
 
         <div v-if="!isEdit" class="form-section grid">
           <h3>{{ t("common.type") }}</h3>
-          <NSegmented :value="selection.kind" :options="kindOptions" @update:value="setKindValue" />
+          <NSegmented :value="selection.kind" :options="kindOptions" @update:value="setKind($event as PaymentKind)" />
         </div>
 
         <div v-if="!isEdit" class="form-section">
@@ -361,28 +275,23 @@ onMounted(load);
           <n-empty v-if="!drivers.length" :description="t(selection.kind === 'wallet' ? 'payment.network_empty_wallet' : 'payment.network_empty_kind')" />
           <div v-show="drivers.length" class="network-choice-grid">
             <button
-              v-for="driver in driverChoices"
+              v-for="driver in allChoices"
               v-show="driver.kind === selection.kind"
               :key="driver.id"
               :class="{ 'is-active': form.driver === driver.id }"
               type="button"
-              @click="setDriver(driver.id)"
+              @click="setDriver(driver)"
             >
               <span class="choice-driver-title">
-                <AppIcon
-                  v-if="driverIcon(driver, payment.choiceNetwork(driver))"
-                  class="choice-driver-icon"
-                  :name="driverIcon(driver, payment.choiceNetwork(driver))"
-                  :label="driverIconLabel(driver, payment.choiceNetwork(driver))"
-                />
-                <strong>{{ payment.networkName(payment.driverNetwork(driver)) }}</strong>
+                <AppIcon v-if="driver.icon" class="choice-driver-icon" :name="driver.icon" :label="networkName(driver.network)" />
+                <strong>{{ networkName(driver.network) }}</strong>
               </span>
             </button>
           </div>
-          <div v-if="payment.isEvm(currentDriver)" class="grid">
+          <div v-if="isEvm" class="grid">
             <div class="chip-row">
               <button
-                v-for="item in payment.driverNetworks(currentDriver)"
+                v-for="item in currentDriver.networks"
                 :key="item"
                 :class="{ 'is-active': selectedNetworks.includes(item) }"
                 type="button"
@@ -398,39 +307,37 @@ onMounted(load);
 
         <div class="form-section grid">
           <h3>{{ t("payment.currency") }}</h3>
-          <template v-if="!isEdit && payment.isEvm(currentDriver)">
+          <template v-if="isEvm">
             <div v-for="item in selectedNetworks" :key="item" class="form-field-block">
               <strong>{{ networkName(item) }} {{ t("payment.currency") }}</strong>
               <div class="chip-row">
                 <button
-                  v-for="asset in payment.assetsFor(currentDriver, item)"
+                  v-for="asset in paymentByNetwork(item)!.assets"
                   :key="`${item}-${asset}`"
                   :class="{ 'is-active': selection.evm[item].includes(asset) }"
                   type="button"
                   @click="toggleEvmAsset(item, asset)"
                 >
-                  {{ payment.assetName(asset) }}
+                  {{ assetName(asset) }}
                 </button>
               </div>
             </div>
           </template>
           <div v-else class="chip-row">
-            <button v-for="asset in availableAssets" :key="asset" :class="{ 'is-active': selectedAssets.includes(asset) }" type="button" @click="toggleAsset(asset)">
-              {{ payment.assetName(asset) }}
+            <button v-for="asset in currentDriver.assets" :key="asset" :class="{ 'is-active': form.assets.includes(asset) }" type="button" @click="toggleAsset(asset)">
+              {{ assetName(asset) }}
             </button>
           </div>
         </div>
 
         <div class="form-section grid">
           <h3>{{ t("payment.channel_info") }}</h3>
-          <template v-for="field in editableFields" :key="field.key">
-            <div class="form-field-block">
-              <n-form-item :show-label="false" class="field-form-item">
-                <n-input v-model:value="form.address" :placeholder="field.label" />
-              </n-form-item>
-              <small v-if="field.help" class="field-help">{{ field.help }}</small>
-            </div>
-          </template>
+          <div class="form-field-block">
+            <n-form-item :show-label="false" class="field-form-item">
+              <n-input v-model:value="form.address" :placeholder="t(currentDriver.address.nameKey)" />
+            </n-form-item>
+            <small v-if="currentDriver.address.helpKey" class="field-help">{{ t(currentDriver.address.helpKey) }}</small>
+          </div>
           <div v-for="field in primaryDataFields" :key="field.id" class="form-field-block">
             <n-form-item :show-label="false" class="field-form-item">
               <n-input

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NInput, NInputGroup, useMessage } from "naive-ui";
 import { useI18n } from "@/app/i18n";
 import { useSessionLogin } from "@/app/utils/session-login";
 

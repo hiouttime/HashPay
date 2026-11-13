@@ -2,8 +2,7 @@ import { Hono } from "hono";
 import { AppError } from "@/server/http/api";
 import { requireSignedMerchant } from "@/server/services/merchants";
 import { createMerchantOrder } from "@/server/services/orders/create";
-import { merchantOrderSummary, publicOrder } from "@/server/services/orders/repository";
-import { getOrder } from "@/server/services/orders/repository";
+import { getOrder, merchantOrderSummary, publicOrder } from "@/server/services/orders/repository";
 import type { HonoEnv } from "@/server/types/env";
 
 const app = new Hono<HonoEnv>();

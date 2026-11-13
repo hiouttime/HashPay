@@ -1,4 +1,4 @@
-import { all, getConfig, one } from "@/server/db";
+import { all, getConfigs, one } from "@/server/db";
 import { migrateD1 } from "@/server/db/migrations";
 import { checkChannels, listPayments, paymentHealth } from "@/server/payments/channels";
 import { marketAmount, rateContext, type RateContext } from "@/server/services/app/settings";
@@ -13,7 +13,7 @@ type Range = {
   start: number;
 };
 
-export async function appState(env: AppEnv, _requestUrl: string) {
+export async function appState(env: AppEnv) {
   let db: string | null = null;
   let domain: string | null = null;
   let adminId: string | null = null;
@@ -22,16 +22,12 @@ export async function appState(env: AppEnv, _requestUrl: string) {
   let username = "";
   try {
     await migrateD1(env);
-    const configs = await Promise.all([
-      getConfig(env, "domain"),
-      getConfig(env, "admin_id"),
-      getConfig(env, "bot_secret"),
-      getConfig(env, "bot_username"),
-      getConfig(env, "title"),
-    ]);
-    [domain, adminId, webhookSecret] = configs;
-    username = configs[3] || "";
-    title = configs[4] || title;
+    const config = await getConfigs(env, ["admin_id", "bot_secret", "bot_username", "domain", "title"]);
+    domain = config.domain ?? null;
+    adminId = config.admin_id ?? null;
+    webhookSecret = config.bot_secret ?? null;
+    username = config.bot_username || "";
+    title = config.title || title;
   } catch (error) {
     db = error instanceof Error ? error.message : "Database is not available";
   }
@@ -88,21 +84,20 @@ export async function checkDashboard(env: AppEnv) {
   };
 }
 
+// Two queries cover every range: yesterday + today hourly, and the last 30 days daily
+// (7d and 15d are suffixes of 30d), instead of re-reading overlapping rows per range.
 async function trendData(env: AppEnv, today: number, rate: RateContext) {
   const day = 86400;
-  const [td, yd, d7, d15, d30] = await Promise.all([
-    trend(env, { count: 24, label: hourLabel, size: 3600, start: today }, rate),
-    trend(env, { count: 24, label: hourLabel, size: 3600, start: today - day }, rate),
-    trend(env, { count: 7, label: dayLabel, size: day, start: today - 6 * day }, rate),
-    trend(env, { count: 15, label: dayLabel, size: day, start: today - 14 * day }, rate),
+  const [hours, days] = await Promise.all([
+    trend(env, { count: 48, label: hourLabel, size: 3600, start: today - day }, rate),
     trend(env, { count: 30, label: dayLabel, size: day, start: today - 29 * day }, rate),
   ]);
   return {
-    "15d": d15,
-    "30d": d30,
-    "7d": d7,
-    td,
-    yd,
+    "15d": days.slice(-15),
+    "30d": days,
+    "7d": days.slice(-7),
+    td: hours.slice(24),
+    yd: hours.slice(0, 24),
   };
 }
 
@@ -124,9 +119,11 @@ async function trend(env: AppEnv, range: Range, rate: RateContext) {
     paidOrders: 0,
     timestamp: range.start + bucket * range.size,
   }));
+  // Paid amounts are summed per bucket and currency in SQL, so the Worker converts a handful of
+  // aggregates instead of every paid order in the range.
   const [orders, paid] = await Promise.all([
     all<{ bucket: number; count: number }>(env, "SELECT CAST((created_at - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY bucket", range.start, range.size, range.start, end),
-    all<{ amount: number; bucket: number; currency: string }>(env, "SELECT CAST((paid_at - ?) / ? AS INTEGER) AS bucket, amount, currency FROM orders WHERE status = 'paid' AND paid_at >= ? AND paid_at < ?", range.start, range.size, range.start, end),
+    all<{ amount: number; bucket: number; count: number; currency: string }>(env, "SELECT CAST((paid_at - ?) / ? AS INTEGER) AS bucket, currency, SUM(amount) AS amount, COUNT(*) AS count FROM orders WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? GROUP BY bucket, currency", range.start, range.size, range.start, end),
   ]);
   for (const row of orders) {
     const point = points[Number(row.bucket)];
@@ -134,10 +131,9 @@ async function trend(env: AppEnv, range: Range, rate: RateContext) {
   }
   for (const row of paid) {
     const point = points[Number(row.bucket)];
-    if (point) {
-      point.amount += marketAmount(Number(row.amount), row.currency, rate.settings.currency, rate);
-      point.paidOrders += 1;
-    }
+    if (!point) continue;
+    point.amount += marketAmount(Number(row.amount), row.currency, rate.settings.currency, rate);
+    point.paidOrders += Number(row.count) || 0;
   }
   return points;
 }

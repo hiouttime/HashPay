@@ -1,8 +1,6 @@
 import { createApp } from "vue";
-import naive from "naive-ui";
 import { createRouter, createWebHistory } from "vue-router";
 import App from "@/app/App.vue";
-import NSegmented from "@/app/components/NSegmented.vue";
 import { initTelegram } from "@/app/utils/telegram";
 import "@/app/styles.scss";
 
@@ -22,4 +20,4 @@ const router = createRouter({
 
 initTelegram(router);
 
-createApp(App).use(naive).component("NSegmented", NSegmented).use(router).mount("#app");
+createApp(App).use(router).mount("#app");

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCard, NModal, NQrCode, useMessage } from "naive-ui";
 import AppIcon from "@/app/components/AppIcon.vue";
-import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { networkIcon, networkName, paymentInstruction } from "@/app/payments";
+import { formatAmount } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
 import { useI18n } from "@/app/i18n";
-import { paymentById } from "@/shared/payments";
+import { assetName, paymentAssetIcon, paymentById } from "@/shared/payments";
 
 const props = defineProps<{
   payment: any;
@@ -46,8 +46,8 @@ function splitAddress(value: unknown) {
     <div>
       <span>{{ t('checkout.method') }}</span>
       <strong class="checkout-network-title">
-        <AppIcon v-if="pay.networkIcon(payment.driver)" :name="pay.networkIcon(payment.driver)" :label="pay.networkName(payment.driver)" />
-        <span>{{ pay.networkName(payment.driver) }}</span>
+        <AppIcon v-if="networkIcon(payment.driver)" :name="networkIcon(payment.driver)" :label="networkName(payment.driver)" />
+        <span>{{ networkName(payment.driver) }}</span>
       </strong>
     </div>
     <n-button size="small" text type="primary" @click="emit('change')">{{ t('checkout.change') }}</n-button>
@@ -91,8 +91,8 @@ function splitAddress(value: unknown) {
     <div>
       <span>{{ t('checkout.amount_due') }}</span>
       <strong class="checkout-currency-title">
-        <AppIcon v-if="pay.assetIcon(payment.currency)" :name="pay.assetIcon(payment.currency)" :label="pay.assetName(payment.currency)" />
-        <span>{{ formatAmount(payment.amount) }} {{ pay.assetName(payment.currency) }}</span>
+        <AppIcon v-if="paymentAssetIcon(payment.currency)" :name="paymentAssetIcon(payment.currency)" :label="assetName(payment.currency)" />
+        <span>{{ formatAmount(payment.amount) }} {{ assetName(payment.currency) }}</span>
       </strong>
       <small>{{ t('checkout.amount_help') }}</small>
     </div>
@@ -100,7 +100,7 @@ function splitAddress(value: unknown) {
   </div>
 
   <div class="checkout-warning">
-    <strong>{{ pay.paymentInstruction(payment) }}</strong>
+    <strong>{{ paymentInstruction(payment) }}</strong>
     <span>{{ warning }}</span>
   </div>
 

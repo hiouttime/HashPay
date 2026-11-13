@@ -1,11 +1,39 @@
 import { getConfig, setConfig } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { fetchText, reason } from "@/server/utils/http";
+import { ceilAmount } from "@/shared/amount";
+import type { Locale } from "@/shared/i18n";
 import type { AppEnv } from "@/server/types/env";
 
 export function botToken(env: AppEnv) {
   if (!env.TGBOT_TOKEN) throw new AppError(500, "errors.bot_token_missing");
   return env.TGBOT_TOKEN;
+}
+
+// Messages are sent with parse_mode HTML, so every interpolated value goes through this.
+export function telegramHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+export function telegramAmount(amount: number) {
+  return ceilAmount(amount).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+}
+
+export function telegramTime(timestamp: number, locale: Locale) {
+  return new Date(timestamp * 1000).toLocaleString(locale, {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+  }).replaceAll("/", "-");
 }
 
 export async function sendTelegramMessage(env: AppEnv, chatId: number, text: string, replyMarkup?: Record<string, unknown>) {

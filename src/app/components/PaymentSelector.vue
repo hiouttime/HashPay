@@ -1,36 +1,37 @@
 <script setup lang="ts">
+import { NButton } from "naive-ui";
 import { computed, ref } from "vue";
 import AppIcon from "@/app/components/AppIcon.vue";
 import NSegmented from "@/app/components/NSegmented.vue";
-import * as pay from "@/app/payments";
-import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
+import { networkIcon, networkName, type CheckoutOption } from "@/app/payments";
+import { formatAmount } from "@/app/utils/format";
 import { useI18n } from "@/app/i18n";
-import { paymentKind, paymentKindOrder, type PaymentKind } from "@/shared/payments";
+import { assetName, key, paymentAssetIcon, paymentKind, paymentKindOrder, type PaymentKind } from "@/shared/payments";
 
 const props = defineProps<{
   disabled: boolean;
   initialAsset?: string;
   initialNetwork?: string;
-  options: pay.CheckoutOption[];
+  options: CheckoutOption[];
 }>();
 
 const emit = defineEmits<{
-  select: [option: pay.CheckoutOption];
+  select: [option: CheckoutOption];
 }>();
 
 const { t } = useI18n();
-const asset = ref(pay.assetKey(props.initialAsset));
+const asset = ref(key(props.initialAsset));
 const kind = ref<PaymentKind>(props.initialNetwork ? paymentKind(props.initialNetwork) : "chain");
 const assets = computed(() => {
-  const map = new Map<string, pay.CheckoutOption[]>();
+  const map = new Map<string, CheckoutOption[]>();
   for (const option of props.options) {
     const list = map.get(option.asset) ?? [];
     list.push(option);
     map.set(option.asset, list);
   }
-  return Array.from(map.entries()).map(([key, options]) => ({
+  return Array.from(map.entries()).map(([name, options]) => ({
     amount: options[0]?.amount,
-    asset: key,
+    asset: name,
     networks: options,
   }));
 });
@@ -64,10 +65,10 @@ function chooseAsset(next: string) {
         @click="chooseAsset(item.asset)"
       >
         <span class="checkout-currency-option-main">
-          <AppIcon v-if="pay.assetIcon(item.asset)" :name="pay.assetIcon(item.asset)" :label="pay.assetName(item.asset)" />
-          <strong>{{ pay.assetName(item.asset) }}</strong>
+          <AppIcon v-if="paymentAssetIcon(item.asset)" :name="paymentAssetIcon(item.asset)" :label="assetName(item.asset)" />
+          <strong>{{ assetName(item.asset) }}</strong>
         </span>
-        <span>{{ formatAmount(item.amount) }} {{ pay.assetName(item.asset) }}</span>
+        <span>{{ formatAmount(item.amount) }} {{ assetName(item.asset) }}</span>
       </button>
     </div>
   </div>
@@ -75,12 +76,12 @@ function chooseAsset(next: string) {
   <div v-else class="checkout-choice-stack">
     <div class="checkout-flow-head">
       <span>{{ t('checkout.select_network') }}</span>
-      <h1>{{ t('checkout.use_network', { asset: pay.assetName(asset) }) }}</h1>
+      <h1>{{ t('checkout.use_network', { asset: assetName(asset) }) }}</h1>
     </div>
     <div class="checkout-step-back">
       <span class="checkout-currency-text">
-        <AppIcon v-if="pay.assetIcon(selectedAsset?.asset)" :name="pay.assetIcon(selectedAsset?.asset)" :label="pay.assetName(selectedAsset?.asset)" />
-        <span>{{ formatAmount(selectedAsset?.amount) }} {{ pay.assetName(selectedAsset?.asset) }}</span>
+        <AppIcon v-if="paymentAssetIcon(selectedAsset?.asset)" :name="paymentAssetIcon(selectedAsset?.asset)" :label="assetName(selectedAsset?.asset)" />
+        <span>{{ formatAmount(selectedAsset?.amount) }} {{ assetName(selectedAsset?.asset) }}</span>
       </span>
       <n-button size="small" text type="primary" @click="asset = ''">{{ t('checkout.change_asset') }}</n-button>
     </div>
@@ -95,8 +96,8 @@ function chooseAsset(next: string) {
         @click="emit('select', item)"
       >
         <span class="checkout-network-option-main">
-          <AppIcon v-if="pay.networkIcon(item.network)" :name="pay.networkIcon(item.network)" :label="pay.networkName(item.network)" />
-          <strong>{{ pay.networkName(item.network) }}</strong>
+          <AppIcon v-if="networkIcon(item.network)" :name="networkIcon(item.network)" :label="networkName(item.network)" />
+          <strong>{{ networkName(item.network) }}</strong>
         </span>
       </button>
     </div>

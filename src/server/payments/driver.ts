@@ -1,28 +1,17 @@
 import { AppError } from "@/server/http/api";
 import type { PaymentChannel } from "@/server/payments/channels";
-import { check as checkAptos, scan as scanAptos } from "@/server/payments/providers/aptos";
-import { check as checkBinance, create as createBinance, scan as scanBinance } from "@/server/payments/providers/binance";
-import { check as checkEvm, scan as scanEvm } from "@/server/payments/providers/evm";
-import { check as checkOkpay, create as createOkpay, scan as scanOkpay } from "@/server/payments/providers/okpay";
-import { check as checkOkx, scan as scanOkx } from "@/server/payments/providers/okx";
-import { check as checkSolana, scan as scanSolana } from "@/server/payments/providers/solana";
-import { check as checkTon, scan as scanTon } from "@/server/payments/providers/ton";
-import { check as checkTrc20, scan as scanTrc20 } from "@/server/payments/providers/trc20";
-import {
-  defaultPayment,
-  evmPayments,
-  normalizeAssetCsv,
-  key,
-  paymentById,
-  paymentExplorerUrl,
-  payments,
-  type Payment,
-} from "@/shared/payments";
+import { aptos } from "@/server/payments/providers/aptos";
+import { binance } from "@/server/payments/providers/binance";
+import { evm } from "@/server/payments/providers/evm";
+import { okpay } from "@/server/payments/providers/okpay";
+import { okx } from "@/server/payments/providers/okx";
+import { solana } from "@/server/payments/providers/solana";
+import { ton } from "@/server/payments/providers/ton";
+import { trc20 } from "@/server/payments/providers/trc20";
+import { normalizeAssetCsv, key, paymentById, type Payment } from "@/shared/payments";
 import { ceilAmount, type AmountTolerance } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
-
-export { defaultPayment, evmPayments, paymentExplorerUrl, payments };
 
 export interface PaymentOption {
   asset: string;
@@ -66,29 +55,24 @@ type Create = (channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot)
 type Validate = (input: { address: string; data: Record<string, string> }) => Promise<void>;
 type Provider = {
   check: Check;
+  create?: Create;
   scan: Scan;
-  scheduled?: true;
   validate?: Validate;
 };
 
 const providers: Record<string, Provider> = {
-  aptos: { check: checkAptos, scan: scanAptos, scheduled: true },
-  base: { check: checkEvm, scan: scanEvm, scheduled: true },
-  bep20: { check: checkEvm, scan: scanEvm, scheduled: true },
-  binance: { check: checkBinance, scan: scanBinance, scheduled: true, validate: checkBinance },
-  erc20: { check: checkEvm, scan: scanEvm, scheduled: true },
-  okpay: { check: checkOkpay, scan: scanOkpay },
-  okx: { check: checkOkx, scan: scanOkx, scheduled: true, validate: checkOkx },
-  polygon: { check: checkEvm, scan: scanEvm, scheduled: true },
-  solana: { check: checkSolana, scan: scanSolana, scheduled: true },
-  ton: { check: checkTon, scan: scanTon, scheduled: true },
-  trc20: { check: checkTrc20, scan: scanTrc20, scheduled: true },
-  xlayer: { check: checkEvm, scan: scanEvm, scheduled: true },
-};
-
-const creators: Partial<Record<string, Create>> = {
-  binance: createBinance,
-  okpay: createOkpay,
+  aptos,
+  base: evm,
+  bep20: evm,
+  binance,
+  erc20: evm,
+  okpay,
+  okx,
+  polygon: evm,
+  solana,
+  ton,
+  trc20,
+  xlayer: evm,
 };
 
 export function validateChannel(input: { address?: string; assets?: string[]; driver: string }) {
@@ -118,7 +102,7 @@ export function assignPayment(channel: PaymentChannel, amount: number, targetAss
 }
 
 export function createPayment(channel: PaymentChannel, order: Order, snapshot: PaymentSnapshot) {
-  return creators[channel.driver]?.(channel, order, snapshot) ?? Promise.resolve(snapshot);
+  return providers[channel.driver]?.create?.(channel, order, snapshot) ?? Promise.resolve(snapshot);
 }
 
 export async function validateData(driver: string, address: string, data: Record<string, string>) {
@@ -143,10 +127,6 @@ export async function checkPayment(input: PaymentCheckInput): Promise<PaymentChe
   } catch (error) {
     return { error: errorText(error), matches: [], status: "error" };
   }
-}
-
-export function checksOnSchedule(driver: string) {
-  return providers[byId(driver).id].scheduled === true;
 }
 
 function byId(id: string) {

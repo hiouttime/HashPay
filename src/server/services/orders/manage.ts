@@ -1,9 +1,6 @@
 import { all } from "@/server/db";
 import { getMerchant } from "@/server/services/merchants";
-import { deleteOrder } from "@/server/services/orders/create";
-import { getDetailedOrder, listOrdersPage as queryOrdersPage, publicOrder } from "@/server/services/orders/repository";
-import { checkOrderPayment, confirmOrder } from "@/server/services/orders/checkout";
-import { resendNotify } from "@/server/services/orders/notifications";
+import { getDetailedOrder, publicOrder, queryOrdersPage } from "@/server/services/orders/repository";
 import { getReview } from "@/server/services/orders/review";
 import type { AppEnv } from "@/server/types/env";
 
@@ -39,5 +36,3 @@ export async function getOrderDetail(env: AppEnv, id: string) {
     review,
   };
 }
-
-export { checkOrderPayment, confirmOrder, deleteOrder, resendNotify };

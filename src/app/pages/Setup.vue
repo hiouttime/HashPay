@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from "naive-ui";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "@/app/components/AppIcon.vue";

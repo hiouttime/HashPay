@@ -13,12 +13,12 @@ export async function runJobs(env: AppEnv, time = new Date()) {
   if (isTopOfHour(time)) await syncMarketRates(env).catch(() => undefined);
   const ts = now();
   await run(env, "UPDATE orders SET status = 'expired', updated_at = ? WHERE status = 'pending' AND expire_at < ?", ts, ts);
-  await checkChannels(env, "error");
-  await checkPendingPayments(env);
-  const dueNotify = await all<{ id: number }>(env, "SELECT id FROM notify WHERE status IN ('pending', 'retry') AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 20", ts);
-  for (const { id: notifyId } of dueNotify) {
-    await env.QUEUE_NOTIFY?.send({ notifyId });
-  }
+  // Each stage is isolated: a channel that cannot be checked must not stall payment detection,
+  // and neither may stall the retry of merchant callbacks.
+  await checkChannels(env, "error").catch((error) => console.error("jobs:check_channels_failed", error));
+  await checkPendingPayments(env).catch((error) => console.error("jobs:check_payments_failed", error));
+  const due = await all<{ id: number }>(env, "SELECT id FROM notify WHERE status IN ('pending', 'retry') AND next_run_at <= ? ORDER BY next_run_at ASC LIMIT 20", ts);
+  if (due.length) await env.QUEUE_NOTIFY?.sendBatch(due.map((row) => ({ body: { notifyId: row.id } })));
 }
 
 export async function handleNotifyQueue(batch: MessageBatch<unknown>, env: AppEnv) {

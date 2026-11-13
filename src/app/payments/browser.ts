@@ -1,5 +1,4 @@
-import Decimal from "decimal.js";
-import { sameAmount } from "@/shared/amount";
+import { sameAmount, unitAmount } from "@/shared/amount";
 import { aptosAssets, evmAssets, key, tonAssets, trc20Assets } from "@/shared/payments";
 import { trc20Candidate, trxCandidate, type TronGridNativeTx, type TronGridTokenTx } from "@/shared/trongrid";
 import type { TxCandidate } from "@/shared/types/domain";
@@ -94,7 +93,7 @@ async function tokenLogs(endpoint: string, blockSeconds: number, payment: ProbeP
     topics: [transferTopic, null, topicAddress(address)],
   }])));
   return valid(chunks.flat().map((log) => ({
-    amount: amount(log.data, token.decimals),
+    amount: unitAmount(log.data, token.decimals),
     currency: asset,
     hash: String(log.transactionHash ?? ""),
     raw: { ...log, contract: token.contract },
@@ -117,7 +116,7 @@ async function blockscout(baseUrl: string, payment: ProbePayment) {
       const row = item as Record<string, unknown>;
       const total = row.total as { value?: unknown } | undefined;
       return {
-        amount: amount(total?.value, token.decimals),
+        amount: unitAmount(total?.value, token.decimals),
         currency: asset,
         hash: String(row.transaction_hash ?? ""),
         raw: row,
@@ -131,7 +130,7 @@ async function blockscout(baseUrl: string, payment: ProbePayment) {
   return valid((payload.items ?? []).map((item) => {
     const row = item as Record<string, unknown>;
     return {
-      amount: amount(row.value, 18),
+      amount: unitAmount(row.value, 18),
       currency: asset,
       hash: String(row.hash ?? ""),
       raw: row,
@@ -154,7 +153,7 @@ async function ton(payment: ProbePayment, order: ProbeOrder) {
       const row = item as Record<string, unknown>;
       const inMsg = row.in_msg as { value?: unknown } | undefined;
       return {
-        amount: amount(inMsg?.value, 9),
+        amount: unitAmount(inMsg?.value, 9),
         currency: asset,
         hash: String(row.hash ?? ""),
         raw: row,
@@ -171,7 +170,7 @@ async function ton(payment: ProbePayment, order: ProbeOrder) {
     const row = item as Record<string, unknown>;
     if (String(row.jetton_master ?? "") !== token.contract) return [];
     return [{
-      amount: amount(row.amount, token.decimals),
+      amount: unitAmount(row.amount, token.decimals),
       currency: asset,
       hash: String(row.transaction_hash ?? ""),
       raw: row,
@@ -222,7 +221,7 @@ async function aptos(payment: ProbePayment, order: ProbeOrder) {
   return valid((payload.data?.fungible_asset_activities ?? []).map((item) => {
     const row = item as Record<string, unknown>;
     return {
-      amount: amount(row.amount, token.decimals),
+      amount: unitAmount(row.amount, token.decimals),
       currency: asset,
       hash: String(row.transaction_version ?? ""),
       raw: row,
@@ -280,11 +279,6 @@ function sameAddress(a: unknown, b: unknown) {
 
 function addressOf(value: unknown) {
   return typeof value === "string" ? value : String((value as { hash?: unknown } | null)?.hash ?? "");
-}
-
-function amount(value: unknown, decimals: number) {
-  const text = String(value ?? "0");
-  return new Decimal(text.startsWith("0x") ? BigInt(text).toString() : text).div(new Decimal(10).pow(decimals)).toNumber();
 }
 
 function time(value: unknown) {

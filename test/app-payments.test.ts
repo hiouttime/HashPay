@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as payment from "@/app/payments";
+import { checkoutOptions, choices, networkIcon, networkName, paymentInstruction, txUrl } from "@/app/payments";
 import { browserMatches, canProbeInBrowser } from "@/app/payments/browser";
 import { setLocale } from "@/app/i18n";
-import { trc20Assets } from "@/shared/payments";
+import { assetName, paymentAssetIcon, paymentById, trc20Assets } from "@/shared/payments";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -11,12 +11,12 @@ afterEach(() => {
 
 describe("frontend payment module", () => {
   it("keeps asset display helpers frontend-only", () => {
-    expect(payment.assetName("gram")).toBe("GRAM (ex TON)");
-    expect(payment.assetIcon("gram")).toBe("icon-ton");
+    expect(assetName("gram")).toBe("GRAM (ex TON)");
+    expect(paymentAssetIcon("gram")).toBe("icon-ton");
   });
 
   it("normalizes checkout options and removes duplicate asset-network pairs", () => {
-    expect(payment.checkoutOptions([
+    expect(checkoutOptions([
       { amount: 10, asset: "USDT", network: "TRC20" },
       { amount: 11, asset: "usdt", network: "trc20" },
       { amount: 12, asset: "GRAM", network: "TON" },
@@ -39,26 +39,29 @@ describe("frontend payment module", () => {
   });
 
   it("exposes per-network frontend abilities", () => {
-    expect(payment.txUrl({ driver: "trc20", tx: { txid: "abc" } })).toBe("https://tronscan.org/#/transaction/abc");
-    expect(payment.txUrl({ driver: "ton", tx: { txid: "abc" } })).toBe("https://tonviewer.com/transaction/abc");
-    expect(payment.txUrl({ driver: "aptos", tx: { txid: "123" } })).toBe("https://explorer.aptoslabs.com/txn/123?network=mainnet");
-    expect(payment.txUrl({ driver: "solana", tx: { txid: "sig" } })).toBe("https://solscan.io/tx/sig");
-    expect(payment.txUrl({ driver: "base", tx: { txid: "0xabc" } })).toBe("https://basescan.org/tx/0xabc");
-    expect(payment.txUrl({ driver: "xlayer", tx: { txid: "0xabc" } })).toBe("https://web3.okx.com/explorer/x-layer/evm/tx/0xabc");
+    expect(txUrl({ driver: "trc20", tx: { txid: "abc" } })).toBe("https://tronscan.org/#/transaction/abc");
+    expect(txUrl({ driver: "ton", tx: { txid: "abc" } })).toBe("https://tonviewer.com/transaction/abc");
+    expect(txUrl({ driver: "aptos", tx: { txid: "123" } })).toBe("https://explorer.aptoslabs.com/txn/123?network=mainnet");
+    expect(txUrl({ driver: "solana", tx: { txid: "sig" } })).toBe("https://solscan.io/tx/sig");
+    expect(txUrl({ driver: "base", tx: { txid: "0xabc" } })).toBe("https://basescan.org/tx/0xabc");
+    expect(txUrl({ driver: "xlayer", tx: { txid: "0xabc" } })).toBe("https://web3.okx.com/explorer/x-layer/evm/tx/0xabc");
     expect(canProbeInBrowser({ address: "0x0000000000000000000000000000000000000001", driver: "xlayer" })).toBe(true);
-    const evm = payment.choices(payment.drivers, "chain").find((item) => item.id === "evm");
+    const evm = choices("chain").find((item) => item.id === "evm");
     expect(evm?.networks).toContain("xlayer");
-    expect(evm?.networkAssets?.xlayer).toEqual(["usdt", "usdc"]);
-    expect(payment.networkIcon("xlayer")).toBe("icon-xlayer");
+    expect(evm?.network).toBe("erc20");
+    expect(choices("chain").filter((item) => item.evm)).toHaveLength(1);
+    expect(choices("chain", "xlayer").map((item) => item.id)).toEqual(["xlayer"]);
+    expect(paymentById("xlayer")?.assets).toEqual(["usdt", "usdc"]);
+    expect(networkIcon("xlayer")).toBe("icon-xlayer");
   });
 
   it("uses exchange transfer wording for exchange drivers", () => {
     setLocale("zh-CN");
-    expect(payment.networkName("binance")).toBe("Binance 币安 内部");
-    expect(payment.networkName("okx")).toBe("OKX 欧易 内部");
-    expect(payment.networkName("trc20")).toBe("TRC20 (TRON)");
-    expect(payment.networkName("xlayer")).toBe("X Layer");
-    expect(payment.paymentInstruction({ currency: "usdt", driver: "binance" })).toBe("请通过 Binance 币安 内部转账 USDT");
+    expect(networkName("binance")).toBe("Binance 币安 内部");
+    expect(networkName("okx")).toBe("OKX 欧易 内部");
+    expect(networkName("trc20")).toBe("TRC20 (TRON)");
+    expect(networkName("xlayer")).toBe("X Layer");
+    expect(paymentInstruction({ currency: "usdt", driver: "binance" })).toBe("请通过 Binance 币安 内部转账 USDT");
   });
 
   it("probes browser-supported TRC20 payments before server checks", async () => {

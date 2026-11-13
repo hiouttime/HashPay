@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkOrderPayment, checkPendingPayments, confirmOrder, markPaid, selectCheckoutPayment } from "@/server/services/orders/checkout";
+import { checkOrderPayment, checkPendingPayments, checkPublicOrderPayment, confirmOrder, markPaid, selectCheckoutPayment } from "@/server/services/orders/checkout";
 import { trc20Assets } from "@/shared/payments";
 import type { AppEnv } from "@/server/types/env";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -31,6 +31,24 @@ describe("checkout payment selection", () => {
 
     expect(snapshot.amount).toBe(10.01);
     expect(JSON.parse(env.updatedPayment).amount).toBe(10.01);
+  });
+
+  it("bumps the payable amount when another channel shares the receiving address", async () => {
+    const env = checkoutEnv({
+      includeExisting: false,
+      pending: [{ ...orderRowForTest("other-channel-order", JSON.stringify(trc20Snapshot)), payway: 2 }],
+    });
+
+    const snapshot = await selectCheckoutPayment(env, "new-order", "usdt", "trc20");
+
+    expect(snapshot.amount).toBe(10.01);
+  });
+
+  it("does not overwrite a snapshot when the order was paid after it was read", async () => {
+    const env = checkoutEnv({ currentPayment: trc20Snapshot, includeExisting: false, paidAfterRead: "new-order" });
+
+    await expect(selectCheckoutPayment(env, "new-order", "usdt", "trc20")).rejects.toMatchObject({ key: "errors.order_unavailable" });
+    expect(env.updatedPayment).toBe("");
   });
 
   it("ignores the current order amount when the same order changes payment", async () => {
@@ -69,6 +87,17 @@ describe("checkout payment check", () => {
     await expect(checkOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
 
     expect(env.paidOrders).toEqual(new Set());
+  });
+
+  it("lets anonymous callers trigger one provider query per order per window", async () => {
+    const env = checkoutEnv({ currentPayment: trc20Snapshot, includeExisting: false });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPublicOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+    await expect(checkPublicOrderPayment(env, "new-order")).rejects.toMatchObject({ key: "errors.tx_not_found" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects manual checks after the payment window expires", async () => {
@@ -326,6 +355,7 @@ function checkoutEnv(options: {
   currentPayment?: PaymentSnapshot;
   expired?: boolean;
   includeExisting?: boolean;
+  paidAfterRead?: string;
   pending?: Array<Record<string, unknown>>;
 } = {}) {
   const ts = Math.floor(Date.now() / 1000);
@@ -354,6 +384,9 @@ function checkoutEnv(options: {
     updatedPayment: "",
     DB: db({
       all(sql, values) {
+        if (sql.includes("FROM configs WHERE key IN")) {
+          return values.flatMap((key) => options.configs?.[String(key)] == null ? [] : [{ key, value: options.configs[String(key)] }]);
+        }
         if (sql.includes("FROM payments")) return [paymentRow(ts, options.currentPayment ?? trc20Snapshot)];
         if (sql.includes("json_extract(payment, '$.driver')") && sql.includes("payway = ?")) {
           const [currentTime, payway] = values;
@@ -363,11 +396,11 @@ function checkoutEnv(options: {
             .filter((order) => order.payway === payway);
         }
         if (sql.includes("FROM orders WHERE status = 'pending'")) {
-          const [currentTime, payway, orderId] = values;
+          const [currentTime, driver, orderId] = values;
           return Array.from(orders.values())
             .filter((order) => order.status === "pending")
             .filter((order) => Number(order.expire_at) > Number(currentTime))
-            .filter((order) => order.payway === payway)
+            .filter((order) => JSON.parse(String(order.payment)).driver === driver)
             .filter((order) => order.id !== orderId)
             .map(({ id, payment }) => ({ id, payment }));
         }
@@ -380,11 +413,31 @@ function checkoutEnv(options: {
           const value = options.configs?.[key];
           return value == null ? null : { value };
         }
-        if (sql.includes("SELECT * FROM orders WHERE id = ?")) return orders.get(String(values[0])) ?? null;
+        if (sql.includes("SELECT * FROM orders WHERE id = ?")) {
+          const order = orders.get(String(values[0])) ?? null;
+          if (!order || order.id !== options.paidAfterRead) return order;
+          // Hand back the pending row, then let a concurrent check mark it paid.
+          const snapshot = { ...order };
+          order.status = "paid";
+          return snapshot;
+        }
         return null;
       },
       run(sql, values) {
-        if (sql.startsWith("UPDATE orders SET payway = ?")) env.updatedPayment = String(values[1]);
+        if (sql.startsWith("UPDATE orders SET checked_at")) {
+          const [checkedAt, id, threshold] = values;
+          const order = orders.get(String(id));
+          if (!order || order.status !== "pending" || (order.checked_at != null && Number(order.checked_at) > Number(threshold))) {
+            return { meta: { changes: 0, last_row_id: 0 } };
+          }
+          order.checked_at = checkedAt;
+          return { meta: { changes: 1, last_row_id: 0 } };
+        }
+        if (sql.startsWith("UPDATE orders SET payway = ?")) {
+          const order = orders.get(String(values[3]));
+          if (order?.status !== "pending") return { meta: { changes: 0, last_row_id: 0 } };
+          env.updatedPayment = String(values[1]);
+        }
         if (sql.startsWith("UPDATE orders SET status = 'paid'")) {
           const driver = String(values[1]);
           const txid = String(values[2]);
@@ -476,6 +529,10 @@ function db(handlers: {
       };
     },
   };
+}
+
+function orderRowForTest(id: string, payment: string) {
+  return orderRow(id, { payment, payway: 1, ts: Math.floor(Date.now() / 1000) });
 }
 
 function orderRow(id: string, input: { amount?: number; callback?: string | null; payment: string; payway: number | null; ts: number }) {

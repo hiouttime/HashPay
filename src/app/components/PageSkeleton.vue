@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NSkeleton, NSpace } from "naive-ui";
 withDefaults(defineProps<{
   rows?: number;
   sections?: number;

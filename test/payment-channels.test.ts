@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/server/http/api";
-import { checkChannels, savePayment } from "@/server/payments/channels";
+import { checkChannels, findPayment, savePayment } from "@/server/payments/channels";
 import { decryptSecret } from "@/server/utils/crypto";
 import type { AppEnv } from "@/server/types/env";
+import { sqliteEnv } from "./sqlite";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -11,6 +12,24 @@ afterEach(() => {
 });
 
 describe("payment channels", () => {
+  it("allows one channel per network and address", async () => {
+    const { env } = sqliteEnv({ APP_SECRET: "channel-test-secret" });
+    const input = { address: "0x00000000000000000000000000000000000000Ab", assets: ["usdt"], driver: "bep20", name: "EVM" };
+    const saved = await savePayment(env, input);
+
+    await expect(savePayment(env, { ...input, address: input.address.toLowerCase() })).rejects.toMatchObject({ key: "errors.payment_duplicate", status: 409 });
+    await expect(savePayment(env, { ...input, driver: "polygon" })).resolves.toMatchObject({ driver: "polygon" });
+    await expect(savePayment(env, { ...input, id: saved.id, name: "Renamed" })).resolves.toMatchObject({ id: saved.id, name: "Renamed" });
+  });
+
+  it("drops stored assets the network no longer offers", async () => {
+    const { env, sqlite } = sqliteEnv({ APP_SECRET: "channel-test-secret" });
+    const saved = await savePayment(env, { address: "0x00000000000000000000000000000000000000Ab", assets: ["usdt"], driver: "bep20", name: "EVM" });
+    sqlite.prepare("UPDATE payments SET assets = ? WHERE id = ?").run(JSON.stringify(["usdt", "eth"]), saved.id);
+
+    await expect(findPayment(env, saved.id)).resolves.toMatchObject({ assets: ["usdt"] });
+  });
+
   it("keeps Binance ID as address and verifies it with API details", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ uid: 34355667 })));
     const env = envWithPayments();

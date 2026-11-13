@@ -1,47 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appState } from "@/server/services/app";
-import type { AppEnv } from "@/server/types/env";
+import { sqliteEnv } from "./sqlite";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 function createEnv(configs: Map<string, string | null>) {
-  return {
-    DB: {
-      batch: vi.fn(async (statements: { run: () => Promise<unknown> }[]) => {
-        for (const statement of statements) await statement.run();
-        return [];
-      }),
-      exec: vi.fn(async () => ({})),
-      prepare(sql: string) {
-        let values: unknown[] = [];
-        return {
-          bind(...args: unknown[]) {
-            values = args;
-            return this;
-          },
-          async all() {
-            if (sql.includes("FROM d1_migrations")) return { results: [] };
-            return { results: [] };
-          },
-          async first() {
-            if (sql.includes("SELECT value FROM configs")) {
-              const key = String(values[0]);
-              return configs.has(key) ? { value: configs.get(key) } : null;
-            }
-            return { key: "domain" };
-          },
-          async run() {
-            configs.set(String(values[0]), values[1] as string | null);
-            return {};
-          },
-        };
-      },
-    },
-    QUEUE_NOTIFY: {},
-    TGBOT_TOKEN: "token",
-  } as unknown as AppEnv;
+  const { env, sqlite } = sqliteEnv({ QUEUE_NOTIFY: {} as never, TGBOT_TOKEN: "token" });
+  const insert = sqlite.prepare("INSERT INTO configs(key, value, updated_at) VALUES(?, ?, 0)");
+  for (const [key, value] of configs) insert.run(key, value);
+  const config = (key: string) => (sqlite.prepare("SELECT value FROM configs WHERE key = ?").get(key) as { value: string } | undefined)?.value;
+  return Object.assign(env, { config });
 }
 
 describe("app state", () => {
@@ -55,7 +25,7 @@ describe("app state", () => {
       ["title", "Demo Pay"],
     ]);
 
-    const status = await appState(createEnv(configs), "https://hashpay.test/admin");
+    const status = await appState(createEnv(configs));
 
     expect(status.ready).toBe(true);
     expect(status.title).toBe("Demo Pay");
@@ -74,11 +44,12 @@ describe("app state", () => {
       ["bot_secret", "secret"],
     ]);
 
-    const status = await appState(createEnv(configs), "https://hashpay.test/admin");
+    const env = createEnv(configs);
+    const status = await appState(env);
 
     expect(status.username).toBe("FreshHashPayBot");
     expect(status.title).toBe("HashPay");
-    expect(configs.get("bot_username")).toBe("FreshHashPayBot");
+    expect(env.config("bot_username")).toBe("FreshHashPayBot");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

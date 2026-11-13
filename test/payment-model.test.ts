@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignPayment, paymentExplorerUrl, paymentOptions, payments, validateChannel } from "@/server/payments/driver";
+import { assignPayment, paymentOptions, validateChannel } from "@/server/payments/driver";
 import {
   assetName,
   evmAssets,
@@ -7,7 +7,9 @@ import {
   key,
   paymentAssetTelegramEmojiId,
   paymentById,
+  paymentExplorerUrl,
   paymentNetworkTelegramEmojiId,
+  payments,
   solanaAssets,
 } from "@/shared/payments";
 

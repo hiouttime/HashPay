@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { MessageApi } from "naive-ui";
-import * as pay from "@/app/payments";
+import { checkoutOptions, type CheckoutOption } from "@/app/payments";
 import { browserMatches, canProbeInBrowser } from "@/app/payments/browser";
 import { api, type Checkout, type Order } from "@/app/api";
 import { appT } from "@/app/i18n";
@@ -22,7 +22,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
   let paymentProbePoll: ReturnType<typeof setInterval> | undefined;
   const checkedTx = new Set<string>();
 
-  const paymentOptions = computed(() => pay.checkoutOptions(checkout.value?.options ?? []));
+  const paymentOptions = computed(() => checkoutOptions(checkout.value?.options ?? []));
   const paidReturnSeconds = computed(() => {
     if (!paidReturnDueAt.value) return 5;
     return Math.max(0, Math.ceil((paidReturnDueAt.value - nowMs.value) / 1000));
@@ -78,7 +78,7 @@ export function useCheckout(orderId: string, message: MessageApi) {
     }
   }
 
-  async function selectPayment(option: pay.CheckoutOption) {
+  async function selectPayment(option: CheckoutOption) {
     const current = checkout.value;
     const order = current?.order;
     if (!order || order.status !== "pending" || isExpired(order, nowMs.value)) return;

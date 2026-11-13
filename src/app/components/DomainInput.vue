@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NInput, NInputGroup, NInputGroupLabel } from "naive-ui";
 import { computed } from "vue";
 import { toDomain } from "@/shared/domain";
 

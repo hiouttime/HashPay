@@ -1,11 +1,13 @@
-import Decimal from "decimal.js";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson, fetchText, host, reason } from "@/server/utils/http";
+import { unitAmount } from "@/shared/amount";
 import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
+
+export const evm = { check, scan };
 
 const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const logSpan = 100;
@@ -13,33 +15,28 @@ const logSpan = 100;
 type Chain = {
   blockSeconds: number;
   explorer?: string;
-  native: string;
   rpc?: string;
 };
 
 const chains: Record<string, Chain> = {
-  base: { blockSeconds: 2, explorer: "https://base.blockscout.com", native: "eth" },
-  bep20: {
-    blockSeconds: 0.4,
-    native: "bnb",
-    rpc: "https://bsc-rpc.publicnode.com",
-  },
-  erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
-  polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },
-  xlayer: { blockSeconds: 1, native: "okb", rpc: "https://xlayer-mainnet.rpc.sentio.xyz" },
+  base: { blockSeconds: 2, explorer: "https://base.blockscout.com" },
+  bep20: { blockSeconds: 0.4, rpc: "https://bsc-rpc.publicnode.com" },
+  erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com" },
+  polygon: { blockSeconds: 2, rpc: "https://gateway.tenderly.co/public/polygon" },
+  xlayer: { blockSeconds: 1, rpc: "https://xlayer-mainnet.rpc.sentio.xyz" },
 };
 
-export async function check(channel: PaymentChannel) {
+async function check(channel: PaymentChannel) {
   const chain = chains[key(channel.driver)];
   if (!chain) throw new Error("EVM network is not configured");
   if (!chain.explorer) {
     await rpc(chain, "eth_blockNumber", []);
     return;
   }
-  await json<Record<string, unknown>>(`${chain.explorer}/api/v2/addresses/${channel.address}`);
+  await fetchJson<Record<string, unknown>>(`${chain.explorer}/api/v2/addresses/${channel.address}`);
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
   return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
@@ -64,12 +61,12 @@ async function blockscout(baseUrl: string, address: string, asset: string, netwo
   const token = evmAssets[network]?.[asset];
   if (token) {
     const params = new URLSearchParams({ token: token.contract, type: "ERC-20" });
-    const payload = await json<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/token-transfers?${params}`);
+    const payload = await fetchJson<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/token-transfers?${params}`);
     return (payload.items ?? []).map((item) => {
       const row = item as Record<string, unknown>;
       const total = row.total as { value?: unknown } | undefined;
       return {
-        amount: amount(total?.value, token.decimals),
+        amount: unitAmount(total?.value, token.decimals),
         currency: asset,
         hash: String(row.transaction_hash ?? ""),
         raw: row,
@@ -79,12 +76,12 @@ async function blockscout(baseUrl: string, address: string, asset: string, netwo
     });
   }
 
-  const payload = await json<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/transactions`);
+  const payload = await fetchJson<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/transactions`);
   return (payload.items ?? []).flatMap((item) => {
     const row = item as Record<string, unknown>;
     if (row.status !== "ok") return [];
     return [{
-      amount: amount(row.value, 18),
+      amount: unitAmount(row.value, 18),
       currency: asset,
       hash: String(row.hash ?? ""),
       raw: row,
@@ -110,7 +107,7 @@ async function tokenLogs(chain: Chain, address: string, asset: string, contract:
     topics: [transferTopic, null, topicAddress(address)],
   }])));
   return chunks.flat().map((log) => ({
-    amount: amount(log.data, decimals),
+    amount: unitAmount(log.data, decimals),
     currency: asset,
     hash: String(log.transactionHash ?? ""),
     raw: { ...log, contract },
@@ -132,10 +129,6 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
   return valid ? tx.amount : null;
 }
 
-async function json<T>(url: string) {
-  return fetchJson<T>(url);
-}
-
 async function rpc<T>(chain: Chain, method: string, params: unknown[]) {
   if (!chain.rpc) throw new Error("RPC is not configured");
   const { res, text } = await fetchText(chain.rpc, {
@@ -149,11 +142,6 @@ async function rpc<T>(chain: Chain, method: string, params: unknown[]) {
     throw new Error(`${host(chain.rpc)} ${method}: ${reason(payload.error?.message ?? "RPC response is invalid")}`);
   }
   return payload.result;
-}
-
-function amount(value: unknown, decimals: number) {
-  const text = String(value ?? "0");
-  return new Decimal(text.startsWith("0x") ? BigInt(text).toString() : text).div(new Decimal(10).pow(decimals)).toNumber();
 }
 
 function addressOf(value: unknown) {

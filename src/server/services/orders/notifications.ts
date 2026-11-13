@@ -1,7 +1,8 @@
 import { jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { getOrder } from "@/server/services/orders/repository";
+import { getOrder, type Order } from "@/server/services/orders/repository";
 import { encryptCallbackEnvelope } from "@/server/utils/crypto";
+import { fetchText } from "@/server/utils/http";
 import { ezfpContext, ezfpNotification, signedEzfpUrl } from "@/server/services/merchants/ezfp";
 import type { AppEnv } from "@/server/types/env";
 
@@ -63,23 +64,11 @@ export async function deliverNotify(env: AppEnv, notifyId: number) {
     await recordFailure(env, notifyId, notify.attempts, "Merchant public key is missing");
     return;
   }
-  let error: string | null;
-  if (notify.merchantType === "ezfp") {
-    const context = ezfpContext(notify.payment);
-    error = context
-      ? await ezfpDeliveryError(
-          notify.callback,
-          ezfpNotification(
-            { currency: notify.currency, description: notify.description, id: notify.orderId, merchantNo: notify.merchantNo },
-            { id: notify.merchant },
-            context,
-          ),
-          notify.authKey,
-        )
-      : "Ezfp order context is missing";
-  } else {
-    error = await deliveryError(notify.callback, notify.payload_json, notify.merchant, notify.authKey);
-  }
+  const send = notify.merchantType === "ezfp"
+    ? sendEzfp(notify.callback, { currency: notify.currency, description: notify.description, id: notify.orderId, merchantNo: notify.merchantNo, payment: notify.payment }, notify.merchant, notify.authKey)
+    : sendEncrypted(notify.callback, notify.payload_json, notify.merchant, notify.authKey);
+  // A delivery resolves to null on success or to the reason it failed.
+  const error = await send.catch((failure) => failure instanceof Error ? failure.message : "Notify request failed");
   if (error) {
     await recordFailure(env, notifyId, notify.attempts, error);
     return;
@@ -87,38 +76,28 @@ export async function deliverNotify(env: AppEnv, notifyId: number) {
   await run(env, "UPDATE notify SET status = 'done', attempts = attempts + 1, updated_at = ? WHERE id = ?", now(), notifyId);
 }
 
-async function ezfpDeliveryError(callback: string, params: Record<string, string>, secret: string) {
-  try {
-    const response = await fetch(signedEzfpUrl(callback, params, secret), { method: "GET" });
-    const text = await response.text();
-    if (!response.ok) return `HTTP ${response.status}`;
-    return text.trim().toLowerCase() === "success" ? null : `Unexpected response: ${text.trim() || "(empty)"}`;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Notify request failed";
-  }
+async function sendEzfp(callback: string, order: Pick<Order, "currency" | "description" | "id" | "merchantNo" | "payment">, merchant: string, secret: string) {
+  const context = ezfpContext(order.payment);
+  if (!context) return "Ezfp order context is missing";
+  const { res, text } = await fetchText(signedEzfpUrl(callback, ezfpNotification(order, { id: merchant }, context), secret), { method: "GET", redirect: "manual" });
+  if (!res.ok) return `HTTP ${res.status}`;
+  return text.trim().toLowerCase() === "success" ? null : `Unexpected response: ${text.trim().slice(0, 200) || "(empty)"}`;
 }
 
-async function deliveryError(callback: string, payload: string, merchant: string, publicKey: string) {
-  try {
-    const timestamp = String(now());
-    const body = JSON.stringify(await encryptCallbackEnvelope(publicKey, JSON.stringify({
-      payload: jsonParseObject(payload, {}),
-      timestamp: Number(timestamp),
-    })));
-    const response = await fetch(callback, {
-      body,
-      headers: {
-        "content-type": "application/json",
-        "x-hashpay-encryption": "RSA-OAEP-256+A256GCM",
-        "x-hashpay-merchant": merchant,
-        "x-hashpay-timestamp": timestamp,
-      },
-      method: "POST",
-    });
-    return response.ok ? null : `HTTP ${response.status}`;
-  } catch (error) {
-    return error instanceof Error ? error.message : "Notify request failed";
-  }
+async function sendEncrypted(callback: string, payload: string, merchant: string, publicKey: string) {
+  const timestamp = now();
+  const { res } = await fetchText(callback, {
+    body: JSON.stringify(await encryptCallbackEnvelope(publicKey, JSON.stringify({ payload: jsonParseObject(payload, {}), timestamp }))),
+    headers: {
+      "content-type": "application/json",
+      "x-hashpay-encryption": "RSA-OAEP-256+A256GCM",
+      "x-hashpay-merchant": merchant,
+      "x-hashpay-timestamp": String(timestamp),
+    },
+    method: "POST",
+    redirect: "manual",
+  });
+  return res.ok ? null : `HTTP ${res.status}`;
 }
 
 async function recordFailure(env: AppEnv, notifyId: number, attemptCount: number, error: string) {

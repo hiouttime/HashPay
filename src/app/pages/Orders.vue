@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import NSegmented from "@/app/components/NSegmented.vue";
 import { computed, onMounted, reactive, watch } from "vue";
-import { useMessage } from "naive-ui";
+import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSkeleton, useMessage } from "naive-ui";
 import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
 import { api } from "@/app/api";

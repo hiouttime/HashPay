@@ -8,6 +8,12 @@ export function sameAmount(a: number, b: number) {
   return new Decimal(a).minus(b).abs().lte(0.000001);
 }
 
+// Converts an integer base-unit amount (decimal or 0x-hex string) into whole units.
+export function unitAmount(value: unknown, decimals: number) {
+  const text = String(value ?? "0");
+  return new Decimal(text.startsWith("0x") ? BigInt(text).toString() : text).div(new Decimal(10).pow(decimals)).toNumber();
+}
+
 export interface AmountTolerance {
   max: number;
   min: number;

@@ -1,36 +1,24 @@
-import Decimal from "decimal.js";
+import { ceilAmount } from "@/shared/amount";
 
-const amountLocale = "en-US";
-
-function normalizeNegativeZero(value: number) {
-  return Object.is(value, -0) ? 0 : value;
-}
-
+// Adding 0 turns JavaScript's -0 into 0, which would otherwise render as "-0".
 export function ceilDisplayAmount(amount: number) {
-  return normalizeNegativeZero(new Decimal(amount).toDecimalPlaces(2, Decimal.ROUND_CEIL).toNumber());
+  return ceilAmount(amount) + 0;
 }
 
-export function formatDisplayAmount(value: unknown, options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 }) {
+export function formatAmount(value: unknown, options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 }) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return "--";
-  return ceilDisplayAmount(amount).toLocaleString(amountLocale, options);
+  return ceilDisplayAmount(amount).toLocaleString("en-US", options);
 }
 
-export function formatExactDisplayAmount(value: unknown) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return "--";
-  return ceilDisplayAmount(Math.max(0, amount)).toLocaleString(amountLocale, {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  });
+export function formatExactAmount(value: unknown) {
+  return formatAmount(Math.max(0, Number(value)), { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 }
 
-export function formatIntegerDisplayAmount(value: unknown) {
+export function formatIntegerAmount(value: unknown) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return "--";
-  return normalizeNegativeZero(Math.max(0, Math.trunc(amount))).toLocaleString(amountLocale, {
-    maximumFractionDigits: 0,
-  });
+  return Math.max(0, Math.trunc(amount)).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 export function formatTime(value: unknown) {

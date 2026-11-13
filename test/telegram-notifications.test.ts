@@ -197,6 +197,12 @@ function env(configs: Map<string, string>, merchantName = "") {
             values = args;
             return this;
           },
+          async all() {
+            if (sql.includes("FROM configs WHERE key IN")) {
+              return { results: values.flatMap((key) => configs.get(String(key)) == null ? [] : [{ key, value: configs.get(String(key)) }]) };
+            }
+            return { results: [] };
+          },
           async first() {
             if (sql.includes("SELECT value FROM configs")) {
               const value = configs.get(String(values[0]));

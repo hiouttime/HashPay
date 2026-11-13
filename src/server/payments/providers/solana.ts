@@ -1,10 +1,12 @@
-import Decimal from "decimal.js";
 import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchText, host, reason } from "@/server/utils/http";
+import { unitAmount } from "@/shared/amount";
 import { key, solanaAssets } from "@/shared/payments";
 import type { PaymentSnapshot, TxCandidate } from "@/shared/types/domain";
+
+export const solana = { check, scan };
 
 const endpoint = "https://public.rpc.solanavibestation.com/";
 const tokenPrograms = new Set([
@@ -32,13 +34,13 @@ type Transaction = {
   transaction?: { message?: { instructions?: Instruction[] } };
 };
 
-export async function check(channel: PaymentChannel) {
+async function check(channel: PaymentChannel) {
   const asset = channel.assets.map(key).find((item) => solanaAssets[item]);
   if (!asset) throw new Error("Solana asset is not configured");
   await tokenAccounts(channel.address, solanaAssets[asset]!.contract, "finalized");
 }
 
-export async function scan(input: PaymentCheckInput) {
+async function scan(input: PaymentCheckInput) {
   return paymentMatches(input.orders, await transactions(input), match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
@@ -92,7 +94,7 @@ function candidates(tx: Transaction, input: { account: string; asset: string; de
     const mint = info.mint ?? input.mint;
     if (!raw || mint !== input.mint) return [];
     return [{
-      amount: new Decimal(raw).div(new Decimal(10).pow(input.decimals)).toNumber(),
+      amount: unitAmount(raw, input.decimals),
       currency: input.asset,
       hash: input.signature,
       raw: { mint },
